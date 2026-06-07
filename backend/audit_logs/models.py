@@ -1,0 +1,70 @@
+from django.db import models
+
+# Create your models here.
+import uuid
+
+from django.db import models
+
+from tenants.models import Company, UserProfile
+
+
+class AuditLog(models.Model):
+    ACTION_CHOICES = (
+        ("RECEIPT_UPLOADED", "Receipt Uploaded"),
+        ("EMAIL_RECEIPT_RECEIVED", "Email Receipt Received"),
+        ("AI_PROCESSING_STARTED", "AI Processing Started"),
+        ("AI_PROCESSED", "AI Processed"),
+        ("REPORT_SUBMITTED", "Report Submitted"),
+        ("MANAGER_APPROVED", "Manager Approved"),
+        ("MANAGER_REJECTED", "Manager Rejected"),
+        ("ACCOUNTS_APPROVED", "Accounts Approved"),
+        ("ACCOUNTS_REJECTED", "Accounts Rejected"),
+        ("MARKED_PAID", "Marked Paid"),
+        ("LINE_ITEM_DELETED", "Line Item Deleted"),
+        ("POLICY_UPDATED", "Policy Updated"),
+    )
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="audit_logs"
+    )
+
+    action_by = models.ForeignKey(
+        UserProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="audit_actions"
+    )
+
+    action = models.CharField(
+        max_length=60,
+        choices=ACTION_CHOICES
+    )
+
+    message = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    metadata = models.JSONField(
+        default=dict,
+        blank=True
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.company.name} - {self.action}"

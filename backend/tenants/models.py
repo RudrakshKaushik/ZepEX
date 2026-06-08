@@ -269,4 +269,43 @@ class ReimbursementEmailConfig(models.Model):
     )
 
     def __str__(self):
-        return f"{self.company.name} - {self.email_address}"        
+        return f"{self.company.name} - {self.email_address}"       
+
+
+
+class CompanySMTPConfig(models.Model):
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    company = models.OneToOneField(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="smtp_config"
+    )
+
+    smtp_host = models.CharField(max_length=255)
+
+    smtp_port = models.IntegerField(default=587)
+
+    smtp_email = models.EmailField()
+
+    smtp_password = models.CharField(max_length=255)
+
+    use_tls = models.BooleanField(default=True)
+
+    from_email_name = models.CharField(
+        max_length=100,
+        default="Zepex"
+    )
+
+    is_active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.company.name} SMTP"     

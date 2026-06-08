@@ -32,6 +32,6 @@ urlpatterns = [
     path("api/tenants/", include("tenants.urls")),
     path("api/auth/", include("authentication.urls")),
     path("api/dashboard/", include("dashboards.urls")),
-    path("api/audit-logs/", include("audit_log.urls")),
+    path("api/audit-logs/", include("audit_logs.urls")),
 
 ]

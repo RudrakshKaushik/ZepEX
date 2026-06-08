@@ -41,3 +41,29 @@ def fetch_all_reimbursement_emails_task():
         })
 
     return results    
+
+
+from celery import shared_task
+from .models import ExpenseReport
+from .email_notifications import send_report_status_email
+@shared_task
+def send_report_status_email_task(report_id, subject, message):
+    try:
+        report = ExpenseReport.objects.get(id=report_id)
+
+        send_report_status_email(
+            report=report,
+            subject=subject,
+            message=message
+        )
+
+        return {
+            "success": True,
+            "message": "Email sent successfully."
+        }
+
+    except ExpenseReport.DoesNotExist:
+        return {
+            "success": False,
+            "error": "Report not found."
+        }

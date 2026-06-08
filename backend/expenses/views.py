@@ -30,6 +30,7 @@ from .report_utils import get_or_create_current_month_report
 from audit_logs.utils import create_audit_log
 from audit_logs.utils import create_audit_log
 from .models import ExpenseLineItem
+from .tasks import send_report_status_email_task
 
 
 
@@ -347,6 +348,7 @@ def manager_pending_reports(request):
 
     return Response(serializer.data)
 
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def manager_approve_report(request, report_id):
@@ -408,6 +410,15 @@ def manager_approve_report(request, report_id):
             "total_amount": str(report.total_amount),
             "notes": notes,
         }
+    )
+
+    send_report_status_email_task.delay(
+        str(report.id),
+        "Reimbursement Report Approved by Manager",
+        (
+            "Your reimbursement report has been approved by your manager.\n\n"
+            f"Manager Notes: {notes or 'No notes'}"
+        )
     )
 
     serializer = ExpenseReportSerializer(report)
@@ -485,6 +496,15 @@ def manager_reject_report(request, report_id):
             "total_amount": str(report.total_amount),
             "rejection_reason": notes,
         }
+    )
+
+    send_report_status_email_task.delay(
+        str(report.id),
+        "Reimbursement Report Rejected by Manager",
+        (
+            "Your reimbursement report has been rejected by your manager.\n\n"
+            f"Reason: {notes}"
+        )
     )
 
     serializer = ExpenseReportSerializer(report)
@@ -608,6 +628,7 @@ def accounts_approve_report(request, report_id):
     report.status = ExpenseReport.STATUS_ACCOUNTS_APPROVED
     report.accounts_notes = notes
     report.accounts_action_at = timezone.now()
+
     report.save(update_fields=[
         "status",
         "accounts_notes",
@@ -639,6 +660,15 @@ def accounts_approve_report(request, report_id):
             "total_amount": str(report.total_amount),
             "notes": notes,
         }
+    )
+
+    send_report_status_email_task.delay(
+        str(report.id),
+        "Reimbursement Report Approved by Accounts",
+        (
+            "Your reimbursement report has been approved by accounts.\n\n"
+            f"Accounts Notes: {notes or 'No notes'}"
+        )
     )
 
     serializer = ExpenseReportSerializer(report)
@@ -683,6 +713,7 @@ def accounts_reject_report(request, report_id):
     report.status = ExpenseReport.STATUS_REJECTED
     report.accounts_notes = notes
     report.accounts_action_at = timezone.now()
+
     report.save(update_fields=[
         "status",
         "accounts_notes",
@@ -714,6 +745,15 @@ def accounts_reject_report(request, report_id):
             "total_amount": str(report.total_amount),
             "rejection_reason": notes,
         }
+    )
+
+    send_report_status_email_task.delay(
+        str(report.id),
+        "Reimbursement Report Rejected by Accounts",
+        (
+            "Your reimbursement report has been rejected by accounts.\n\n"
+            f"Reason: {notes}"
+        )
     )
 
     serializer = ExpenseReportSerializer(report)
@@ -752,6 +792,7 @@ def accounts_mark_paid(request, report_id):
     report.status = ExpenseReport.STATUS_PAID
     report.accounts_notes = notes or report.accounts_notes
     report.paid_at = timezone.now()
+
     report.save(update_fields=[
         "status",
         "accounts_notes",
@@ -783,6 +824,15 @@ def accounts_mark_paid(request, report_id):
             "total_amount": str(report.total_amount),
             "notes": notes,
         }
+    )
+
+    send_report_status_email_task.delay(
+        str(report.id),
+        "Reimbursement Payment Completed",
+        (
+            "Your reimbursement report has been marked as paid.\n\n"
+            f"Notes: {notes or 'Payment completed successfully'}"
+        )
     )
 
     serializer = ExpenseReportSerializer(report)

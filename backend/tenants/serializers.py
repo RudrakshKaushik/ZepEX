@@ -207,3 +207,13 @@ class ReimbursementEmailConfigSerializer(serializers.ModelSerializer):
                 "write_only": True
             }
         }    
+
+from .models import CompanySMTPConfig
+class CompanySMTPConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CompanySMTPConfig
+        fields = "__all__"
+        read_only_fields = ["id", "company", "created_at", "updated_at"]
+        extra_kwargs = {
+            "smtp_password": {"write_only": True}
+        }

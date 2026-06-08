@@ -13,6 +13,8 @@ from .views import (
     list_policy_rules,
     get_reimbursement_email_config,
     save_reimbursement_email_config,
+    get_smtp_config,
+    save_smtp_config,
 )
 
 urlpatterns = [
@@ -85,4 +87,6 @@ path(
     save_reimbursement_email_config,
     name="save-reimbursement-email-config"
 ),
+path("smtp-config/", get_smtp_config, name="get-smtp-config"),
+path("smtp-config/save/", save_smtp_config, name="save-smtp-config"),
 ]

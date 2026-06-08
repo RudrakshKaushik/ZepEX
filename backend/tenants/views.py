@@ -425,3 +425,50 @@ def save_reimbursement_email_config(request):
         status=status.HTTP_400_BAD_REQUEST
     )
 
+from .models import CompanySMTPConfig
+from .serializers import CompanySMTPConfigSerializer
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def get_smtp_config(request):
+    company = request.user.profile.company
+
+    try:
+        config = CompanySMTPConfig.objects.get(company=company)
+    except CompanySMTPConfig.DoesNotExist:
+        return Response(
+            {"message": "SMTP configuration not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    serializer = CompanySMTPConfigSerializer(config)
+    return Response(serializer.data)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def save_smtp_config(request):
+    company = request.user.profile.company
+
+    config, created = CompanySMTPConfig.objects.get_or_create(
+        company=company
+    )
+
+    serializer = CompanySMTPConfigSerializer(
+        config,
+        data=request.data,
+        partial=True
+    )
+
+    if serializer.is_valid():
+        serializer.save(company=company)
+
+        return Response({
+            "message": "SMTP configuration saved successfully.",
+            "data": serializer.data
+        })
+
+    return Response(
+        serializer.errors,
+        status=status.HTTP_400_BAD_REQUEST
+    )

@@ -17,6 +17,15 @@ from tenants.models import Department, UserProfile, Company
 from django.db.models import Sum
 from platform_management.models import CompanyRegistrationRequest
 
+from tenants.models import (
+    Department,
+    UserProfile,
+    Company,
+    CompanyPolicy,
+    ReimbursementEmailConfig,
+    CompanySMTPConfig,
+)
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def employee_dashboard(request):
@@ -308,33 +317,23 @@ def company_admin_dashboard(request):
 
     company = profile.company
 
-    departments = Department.objects.filter(
+    departments = Department.objects.filter(company=company)
+    users = UserProfile.objects.filter(company=company)
+    reports = ExpenseReport.objects.filter(company=company)
+
+    smtp_configured = CompanySMTPConfig.objects.filter(
+        company=company,
+        is_active=True
+    ).exists()
+
+    reimbursement_email_configured = ReimbursementEmailConfig.objects.filter(
+        company=company,
+        is_active=True
+    ).exists()
+
+    policy_configured = CompanyPolicy.objects.filter(
         company=company
-    )
-
-    users = UserProfile.objects.filter(
-        company=company
-    )
-
-    reports = ExpenseReport.objects.filter(
-        company=company
-    )
-
-    total_expense_amount = reports.aggregate(
-        total=Sum("total_amount")
-    )["total"] or 0
-
-    paid_amount = reports.filter(
-        status=ExpenseReport.STATUS_PAID
-    ).aggregate(
-        total=Sum("total_amount")
-    )["total"] or 0
-
-    pending_accounts_amount = reports.filter(
-        status=ExpenseReport.STATUS_PENDING_ACCOUNTS
-    ).aggregate(
-        total=Sum("total_amount")
-    )["total"] or 0
+    ).exists()
 
     return Response({
         "company_admin": {
@@ -344,27 +343,24 @@ def company_admin_dashboard(request):
             "company_id": str(company.id),
         },
 
+        "setup_status": {
+            "departments_created": departments.exists(),
+            "users_created": users.exists(),
+            "policy_configured": policy_configured,
+            "reimbursement_email_configured": reimbursement_email_configured,
+            "smtp_configured": smtp_configured,
+        },
+
         "metrics": {
             "total_departments": departments.count(),
             "total_users": users.count(),
             "total_employees": users.filter(role="EMPLOYEE").count(),
             "total_managers": users.filter(role="MANAGER").count(),
             "total_accounts_users": users.filter(role="ACCOUNTS").count(),
-
             "total_reports": reports.count(),
-            "draft_reports": reports.filter(status=ExpenseReport.STATUS_DRAFT).count(),
             "pending_manager_reports": reports.filter(status=ExpenseReport.STATUS_SUBMITTED).count(),
             "pending_accounts_reports": reports.filter(status=ExpenseReport.STATUS_PENDING_ACCOUNTS).count(),
-            "accounts_approved_reports": reports.filter(status=ExpenseReport.STATUS_ACCOUNTS_APPROVED).count(),
             "paid_reports": reports.filter(status=ExpenseReport.STATUS_PAID).count(),
-            "rejected_reports": reports.filter(status__in=[
-                ExpenseReport.STATUS_MANAGER_REJECTED,
-                ExpenseReport.STATUS_REJECTED,
-            ]).count(),
-
-            "total_expense_amount": str(total_expense_amount),
-            "pending_accounts_amount": str(pending_accounts_amount),
-            "paid_amount": str(paid_amount),
         }
     })
 

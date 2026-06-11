@@ -24,10 +24,10 @@ from .services import extract_receipt_with_gemini
 from django.utils import timezone
 from .models import ApprovalHistory
 from .serializers import ExpenseReportSerializer
+from django.conf import settings
 from django.utils import timezone
 from .tasks import process_receipt_ai_task
 from .report_utils import get_or_create_current_month_report
-from audit_logs.utils import create_audit_log
 from audit_logs.utils import create_audit_log
 from .models import ExpenseLineItem
 from .tasks import send_report_status_email_task
@@ -87,8 +87,6 @@ def upload_receipt(request):
         status=ExpenseReceipt.STATUS_AI_PROCESSING
     )
 
-    process_receipt_ai_task.delay(str(receipt.id))
-
     create_audit_log(
         company=profile.company,
         action="RECEIPT_UPLOADED",
@@ -114,14 +112,53 @@ def upload_receipt(request):
         }
     )
 
+    if settings.CELERY_TASK_ALWAYS_EAGER:
+        ai_result = process_receipt_ai_task(str(receipt.id))
+        receipt.refresh_from_db()
+        if ai_result.get("success"):
+            create_audit_log(
+                company=profile.company,
+                action="AI_PROCESSING_COMPLETED",
+                action_by=profile,
+                message="AI extraction completed for uploaded receipt.",
+                metadata={
+                    "receipt_id": str(receipt.id),
+                    "report_id": str(report.id),
+                    "vendor": receipt.vendor_name,
+                    "total_amount": str(receipt.total_amount),
+                },
+            )
+        else:
+            create_audit_log(
+                company=profile.company,
+                action="AI_PROCESSING_FAILED",
+                action_by=profile,
+                message=ai_result.get("error", "AI extraction failed."),
+                metadata={
+                    "receipt_id": str(receipt.id),
+                    "report_id": str(report.id),
+                    "error": ai_result.get("error"),
+                },
+            )
+    else:
+        process_receipt_ai_task.delay(str(receipt.id))
+        ai_result = {"success": None, "pending": True}
+
     serializer = ExpenseReceiptSerializer(receipt)
+    message = (
+        "Receipt uploaded and processed successfully."
+        if ai_result.get("success")
+        else "Receipt uploaded. AI processing started."
+        if ai_result.get("pending")
+        else "Receipt uploaded but AI extraction failed."
+    )
 
     return Response(
         {
-            "message": "Receipt uploaded successfully. AI processing started.",
+            "message": message,
             "report_id": report.id,
             "receipt": serializer.data,
-            "ai_processing": "started"
+            "ai_result": ai_result,
         },
         status=status.HTTP_201_CREATED
     )

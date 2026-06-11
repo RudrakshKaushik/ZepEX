@@ -2,8 +2,8 @@ from django.shortcuts import render
 
 # Create your views here.
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from .models import CompanyRegistrationRequest
@@ -14,6 +14,8 @@ from tenants.models import Company, UserProfile
 from django.contrib.auth.models import User
 
 @api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
 def create_company_request(request):
 
     serializer = CompanyRegistrationRequestSerializer(

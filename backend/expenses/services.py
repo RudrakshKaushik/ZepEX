@@ -83,7 +83,8 @@ Rules:
             ]
         }
 
-        api_key = os.getenv("GEMINI_API_KEY")
+        if not settings.GEMINI_API_KEY:
+            raise Exception("GEMINI_API_KEY is not configured.")
 
         response = requests.post(
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
@@ -167,7 +168,7 @@ Rules:
         }
 
     except Exception as e:
-        receipt.status = "SUBMITTED"
+        receipt.status = ExpenseReceipt.STATUS_DRAFT
         receipt.save(update_fields=["status"])
 
         return {

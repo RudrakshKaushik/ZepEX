@@ -23,6 +23,10 @@ load_dotenv(BASE_DIR / ".env")
 # --------------------------------------------------
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
+if not SECRET_KEY:
+    raise ValueError(
+        "DJANGO_SECRET_KEY is not set. Copy backend/.env.example to backend/.env and set a secret key."
+    )
 
 DEBUG = os.getenv("DJANGO_DEBUG", "False") == "True"
 
@@ -215,6 +219,13 @@ CELERY_RESULT_SERIALIZER = "json"
 
 CELERY_TIMEZONE = "UTC"
 
+# Run tasks inline during local dev (no Redis/Celery worker required)
+CELERY_TASK_ALWAYS_EAGER = os.getenv(
+    "CELERY_TASK_ALWAYS_EAGER",
+    "True" if DEBUG else "False",
+) == "True"
+CELERY_TASK_EAGER_PROPAGATES = True
+
 # --------------------------------------------------
 # CORS
 # --------------------------------------------------
@@ -222,6 +233,12 @@ CELERY_TIMEZONE = "UTC"
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:5175",
+    "http://127.0.0.1:5175",
 ]
 
 

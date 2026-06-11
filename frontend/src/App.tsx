@@ -1,0 +1,91 @@
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { AuthProvider } from '@/context/AuthContext'
+import { ProtectedRoute } from '@/routes/ProtectedRoute'
+import { LandingPage } from '@/pages/LandingPage'
+import { LoginPage } from '@/pages/LoginPage'
+import { PlatformLoginPage } from '@/pages/platform/PlatformLoginPage'
+import { RegisterPage } from '@/pages/RegisterPage'
+import { PlatformDashboard } from '@/pages/platform/PlatformDashboard'
+import { CompanyRequestsPage } from '@/pages/platform/CompanyRequestsPage'
+import { PlatformAuditLogsPage } from '@/pages/platform/PlatformAuditLogsPage'
+import { AdminDashboard } from '@/pages/tenant/admin/AdminDashboard'
+import { DepartmentsPage } from '@/pages/tenant/admin/DepartmentsPage'
+import { EmployeesPage } from '@/pages/tenant/admin/EmployeesPage'
+import { PolicyPage } from '@/pages/tenant/admin/PolicyPage'
+import { SettingsPage } from '@/pages/tenant/admin/SettingsPage'
+import { AuditLogsPage } from '@/pages/tenant/admin/AuditLogsPage'
+import { EmployeeDashboard } from '@/pages/tenant/employee/EmployeeDashboard'
+import { ExpensesPage } from '@/pages/tenant/employee/ExpensesPage'
+import { ManagerDashboard } from '@/pages/tenant/manager/ManagerDashboard'
+import { ManagerReportsPage } from '@/pages/tenant/manager/ManagerReportsPage'
+import { AccountsDashboard } from '@/pages/tenant/accounts/AccountsDashboard'
+import { AccountsReportsPage } from '@/pages/tenant/accounts/AccountsReportsPage'
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/platform/login" element={<PlatformLoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+
+          <Route
+            element={
+              <ProtectedRoute allowedRoles={['PLATFORM_OWNER']} loginPath="/platform/login" />
+            }
+          >
+            <Route path="/platform" element={<PlatformDashboard />} />
+            <Route path="/platform/requests" element={<CompanyRequestsPage />} />
+            <Route path="/platform/audit-logs" element={<PlatformAuditLogsPage />} />
+            <Route path="/platform-dashboard" element={<Navigate to="/platform" replace />} />
+          </Route>
+
+          <Route element={<ProtectedRoute allowedRoles={['COMPANY_ADMIN']} />}>
+            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/admin/departments" element={<DepartmentsPage />} />
+            <Route path="/admin/employees" element={<EmployeesPage />} />
+            <Route path="/admin/policy" element={<PolicyPage />} />
+            <Route path="/admin/settings" element={<SettingsPage />} />
+            <Route path="/admin/audit-logs" element={<AuditLogsPage />} />
+            <Route
+              path="/company-admin-dashboard"
+              element={<Navigate to="/admin" replace />}
+            />
+          </Route>
+
+          <Route element={<ProtectedRoute allowedRoles={['EMPLOYEE', 'MANAGER']} />}>
+            <Route path="/employee" element={<EmployeeDashboard />} />
+            <Route path="/employee/expenses" element={<ExpensesPage />} />
+            <Route
+              path="/employee-dashboard"
+              element={<Navigate to="/employee" replace />}
+            />
+          </Route>
+
+          <Route element={<ProtectedRoute allowedRoles={['MANAGER']} />}>
+            <Route path="/manager" element={<ManagerDashboard />} />
+            <Route path="/manager/reports" element={<ManagerReportsPage />} />
+            <Route path="/manager/expenses" element={<ExpensesPage />} />
+            <Route
+              path="/manager-dashboard"
+              element={<Navigate to="/manager" replace />}
+            />
+          </Route>
+
+          <Route element={<ProtectedRoute allowedRoles={['ACCOUNTS']} />}>
+            <Route path="/accounts" element={<AccountsDashboard />} />
+            <Route path="/accounts/reports" element={<AccountsReportsPage />} />
+            <Route
+              path="/accounts-dashboard"
+              element={<Navigate to="/accounts" replace />}
+            />
+          </Route>
+
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
+  )
+}

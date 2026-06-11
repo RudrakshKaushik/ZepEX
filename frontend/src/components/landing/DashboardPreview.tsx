@@ -14,8 +14,8 @@ import { cn } from '@/lib/utils'
 type PreviewTab = 'employee' | 'admin'
 
 const tabs: { id: PreviewTab; label: string }[] = [
-  { id: 'employee', label: 'Employee' },
   { id: 'admin', label: 'Admin' },
+  { id: 'employee', label: 'Employee' },
 ]
 
 function BrowserChrome({ title }: { title: string }) {
@@ -74,7 +74,6 @@ function EmployeePreview() {
           { label: 'Dashboard', icon: LayoutDashboard, active: true },
           { label: 'Expenses', icon: Receipt },
           { label: 'Reports', icon: FileText },
-          { label: 'Settings', icon: Settings },
         ]}
       />
       <div className="min-w-0 flex-1 bg-slate-50/50 p-4 sm:p-5">
@@ -216,11 +215,11 @@ function AdminPreview() {
 }
 
 export function DashboardPreview() {
-  const [activeTab, setActiveTab] = useState<PreviewTab>('employee')
+  const [activeTab, setActiveTab] = useState<PreviewTab>('admin')
 
   return (
     <div className="mt-12 sm:mt-16">
-      <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
+      <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-start">
         <p className="text-sm font-medium text-slate-600">Preview the workspace</p>
         <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-1">
           {tabs.map((tab) => (

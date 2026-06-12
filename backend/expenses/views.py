@@ -375,7 +375,7 @@ def manager_approve_report(request, report_id):
 
     notes = request.data.get("notes", "")
 
-    report.status = ExpenseReport.STATUS_PENDING_ACCOUNTS
+    report.status = ExpenseReport.STATUS_PENDING_COMPANY_ADMIN
     report.manager_notes = notes
     report.manager_action_at = timezone.now()
 
@@ -387,7 +387,7 @@ def manager_approve_report(request, report_id):
     ])
 
     report.receipts.all().update(
-        status=ExpenseReceipt.STATUS_PENDING_ACCOUNTS,
+        status=ExpenseReceipt.STATUS_PENDING_COMPANY_ADMIN,
         manager_notes=notes
     )
 
@@ -402,12 +402,13 @@ def manager_approve_report(request, report_id):
         company=profile.company,
         action="MANAGER_APPROVED",
         action_by=profile,
-        message=f"Manager approved expense report {report.id}",
+        message=f"Manager approved expense report {report.id} and sent it to company admin.",
         metadata={
             "report_id": str(report.id),
             "employee_email": report.employee.user.email,
             "department": report.department.name if report.department else None,
             "total_amount": str(report.total_amount),
+            "next_stage": "PENDING_COMPANY_ADMIN",
             "notes": notes,
         }
     )
@@ -416,7 +417,8 @@ def manager_approve_report(request, report_id):
         str(report.id),
         "Reimbursement Report Approved by Manager",
         (
-            "Your reimbursement report has been approved by your manager.\n\n"
+            "Your reimbursement report has been approved by your manager "
+            "and sent to company admin for review.\n\n"
             f"Manager Notes: {notes or 'No notes'}"
         )
     )
@@ -424,7 +426,7 @@ def manager_approve_report(request, report_id):
     serializer = ExpenseReportSerializer(report)
 
     return Response({
-        "message": "Report approved by manager and sent to accounts.",
+        "message": "Report approved by manager and sent to company admin.",
         "report": serializer.data
     })
 
@@ -1002,4 +1004,199 @@ def admin_employee_expenses(request, employee_id):
         "count": reports.count(),
 
         "results": serializer.data
+    })
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def company_admin_pending_reports(request):
+
+    profile = request.user.profile
+
+    if profile.role != "COMPANY_ADMIN":
+        return Response(
+            {"error": "Only company admin can view reports."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    reports = ExpenseReport.objects.filter(
+        company=profile.company,
+        status=ExpenseReport.STATUS_PENDING_COMPANY_ADMIN
+    ).select_related(
+        "employee__user",
+        "department"
+    ).prefetch_related(
+        "receipts",
+        "receipts__line_items"
+    ).order_by("-created_at")
+
+    serializer = ExpenseReportSerializer(
+        reports,
+        many=True
+    )
+
+    return Response({
+        "count": reports.count(),
+        "results": serializer.data
+    })
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def company_admin_approve_report(request, report_id):
+
+    profile = request.user.profile
+
+    if profile.role != "COMPANY_ADMIN":
+        return Response(
+            {"error": "Only company admin can approve reports."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    try:
+        report = ExpenseReport.objects.get(
+            id=report_id,
+            company=profile.company,
+            status=ExpenseReport.STATUS_PENDING_COMPANY_ADMIN
+        )
+
+    except ExpenseReport.DoesNotExist:
+
+        return Response(
+            {"error": "Report not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    notes = request.data.get("notes", "")
+
+    report.status = ExpenseReport.STATUS_PENDING_ACCOUNTS
+    report.company_admin_notes = notes
+    report.company_admin_action_at = timezone.now()
+
+    report.save(update_fields=[
+        "status",
+        "company_admin_notes",
+        "company_admin_action_at",
+        "updated_at"
+    ])
+
+    report.receipts.all().update(
+        status=ExpenseReceipt.STATUS_PENDING_ACCOUNTS
+    )
+
+    ApprovalHistory.objects.create(
+        report=report,
+        action_by=profile,
+        action="COMPANY_ADMIN_APPROVED",
+        comments=notes
+    )
+
+    create_audit_log(
+        company=profile.company,
+        action="COMPANY_ADMIN_APPROVED",
+        action_by=profile,
+        message=f"Company admin approved expense report {report.id} and sent it to accounts.",
+        metadata={
+            "report_id": str(report.id),
+            "employee_email": report.employee.user.email,
+            "department": report.department.name if report.department else None,
+            "total_amount": str(report.total_amount),
+            "next_stage": "PENDING_ACCOUNTS",
+            "notes": notes,
+        }
+    )
+
+    send_report_status_email_task.delay(
+        str(report.id),
+        "Reimbursement Report Approved by Company Admin",
+        (
+            "Your reimbursement report has been approved by company admin "
+            "and sent to accounts for final verification.\n\n"
+            f"Company Admin Notes: {notes or 'No notes'}"
+        )
+    )
+
+    serializer = ExpenseReportSerializer(report)
+
+    return Response({
+        "message": "Report approved by company admin and sent to accounts.",
+        "report": serializer.data
+    })
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def company_admin_reject_report(request, report_id):
+
+    profile = request.user.profile
+
+    if profile.role != "COMPANY_ADMIN":
+        return Response(
+            {"error": "Only company admin can reject reports."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    try:
+        report = ExpenseReport.objects.get(
+            id=report_id,
+            company=profile.company,
+            status=ExpenseReport.STATUS_PENDING_COMPANY_ADMIN
+        )
+
+    except ExpenseReport.DoesNotExist:
+
+        return Response(
+            {"error": "Report not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    notes = request.data.get("notes", "")
+
+    report.status = ExpenseReport.STATUS_COMPANY_ADMIN_REJECTED
+    report.company_admin_notes = notes
+    report.company_admin_action_at = timezone.now()
+
+    report.save(update_fields=[
+        "status",
+        "company_admin_notes",
+        "company_admin_action_at",
+        "updated_at"
+    ])
+
+    report.receipts.all().update(
+        status=ExpenseReceipt.STATUS_COMPANY_ADMIN_REJECTED
+    )
+
+    ApprovalHistory.objects.create(
+        report=report,
+        action_by=profile,
+        action="COMPANY_ADMIN_REJECTED",
+        comments=notes
+    )
+
+    create_audit_log(
+        company=profile.company,
+        action="COMPANY_ADMIN_REJECTED",
+        action_by=profile,
+        message=f"Company admin rejected expense report {report.id}.",
+        metadata={
+            "report_id": str(report.id),
+            "employee_email": report.employee.user.email,
+            "department": report.department.name if report.department else None,
+            "total_amount": str(report.total_amount),
+            "status": "COMPANY_ADMIN_REJECTED",
+            "notes": notes,
+        }
+    )
+
+    send_report_status_email_task.delay(
+        str(report.id),
+        "Reimbursement Report Rejected by Company Admin",
+        (
+            "Your reimbursement report has been rejected by company admin.\n\n"
+            f"Company Admin Notes: {notes or 'No notes'}"
+        )
+    )
+
+    serializer = ExpenseReportSerializer(report)
+
+    return Response({
+        "message": "Report rejected by company admin.",
+        "report": serializer.data
     })

@@ -358,9 +358,22 @@ def company_admin_dashboard(request):
             "total_managers": users.filter(role="MANAGER").count(),
             "total_accounts_users": users.filter(role="ACCOUNTS").count(),
             "total_reports": reports.count(),
-            "pending_manager_reports": reports.filter(status=ExpenseReport.STATUS_SUBMITTED).count(),
-            "pending_accounts_reports": reports.filter(status=ExpenseReport.STATUS_PENDING_ACCOUNTS).count(),
-            "paid_reports": reports.filter(status=ExpenseReport.STATUS_PAID).count(),
+
+            "pending_manager_reports": reports.filter(
+                status=ExpenseReport.STATUS_SUBMITTED
+            ).count(),
+
+            "pending_company_admin_reports": reports.filter(
+                status=ExpenseReport.STATUS_PENDING_COMPANY_ADMIN
+            ).count(),
+
+            "pending_accounts_reports": reports.filter(
+                status=ExpenseReport.STATUS_PENDING_ACCOUNTS
+            ).count(),
+
+            "paid_reports": reports.filter(
+                status=ExpenseReport.STATUS_PAID
+            ).count(),
         }
     })
 

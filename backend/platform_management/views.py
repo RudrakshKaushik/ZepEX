@@ -13,6 +13,17 @@ from .permissions import IsPlatformOwner
 from tenants.models import Company, UserProfile
 from django.contrib.auth.models import User
 from tenants.permissions import IsCompanyAdmin
+from tenants.models import Company
+from rest_framework.decorators import (
+    api_view,
+    permission_classes
+)
+
+from rest_framework.permissions import IsAuthenticated
+
+from rest_framework.response import Response
+
+from rest_framework import status
 
 @api_view(["POST"])
 def create_company_request(request):
@@ -236,4 +247,36 @@ def activate_company(request, company_id):
 
     return Response({
         "message": "Company activated successfully."
+    })
+from tenants.models import Company
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def delete_company(request, company_id):
+
+    if not hasattr(request.user, "platform_owner"):
+        return Response(
+            {"error": "Only platform owner can delete companies."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    try:
+        company = Company.objects.get(id=company_id)
+
+    except Company.DoesNotExist:
+        return Response(
+            {"error": "Company not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    company_name = company.name
+    company_id_value = str(company.id)
+
+    company.delete()
+
+    return Response({
+        "message": "Company deleted successfully.",
+        "deleted_company": {
+            "id": company_id_value,
+            "name": company_name
+        }
     })

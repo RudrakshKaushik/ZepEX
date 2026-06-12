@@ -16,6 +16,10 @@ from .views import (
     trigger_reimbursement_email_fetch,
     my_uploaded_expenses,
     admin_employee_expenses,
+    company_admin_pending_reports,
+    company_admin_approve_report,
+    company_admin_reject_report,
+
 )
 
 urlpatterns = [
@@ -34,6 +38,9 @@ urlpatterns = [
     path("emails/fetch/",trigger_reimbursement_email_fetch,name="trigger-reimbursement-email-fetch"),
     path("my-uploaded-expenses/",my_uploaded_expenses,name="my-uploaded-expenses"),
     path("admin/employee/<uuid:employee_id>/expenses/",admin_employee_expenses,name="admin-employee-expenses"),
+    path( "company-admin/pending-reports/",company_admin_pending_reports,name="company-admin-pending-reports"),
+    path("company-admin/reports/<uuid:report_id>/approve/",company_admin_approve_report,name="company-admin-approve-report"),
+    path("company-admin/reports/<uuid:report_id>/reject/",company_admin_reject_report,name="company-admin-reject-report"),
     
 
 ]

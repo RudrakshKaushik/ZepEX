@@ -6,23 +6,65 @@ from tenants.models import Company, Department, UserProfile
 
 
 class ExpenseReport(models.Model):
+
     STATUS_DRAFT = "DRAFT"
+
     STATUS_SUBMITTED = "SUBMITTED"
+
     STATUS_MANAGER_APPROVED = "MANAGER_APPROVED"
+
     STATUS_MANAGER_REJECTED = "MANAGER_REJECTED"
+
+    STATUS_PENDING_COMPANY_ADMIN = "PENDING_COMPANY_ADMIN"
+
+    STATUS_COMPANY_ADMIN_APPROVED = "COMPANY_ADMIN_APPROVED"
+
+    STATUS_COMPANY_ADMIN_REJECTED = "COMPANY_ADMIN_REJECTED"
+
     STATUS_PENDING_ACCOUNTS = "PENDING_ACCOUNTS"
+
     STATUS_ACCOUNTS_APPROVED = "ACCOUNTS_APPROVED"
+
     STATUS_REJECTED = "REJECTED"
+
     STATUS_PAID = "PAID"
 
     STATUS_CHOICES = (
         (STATUS_DRAFT, "Draft"),
+
         (STATUS_SUBMITTED, "Submitted"),
+
         (STATUS_MANAGER_APPROVED, "Manager Approved"),
+
         (STATUS_MANAGER_REJECTED, "Manager Rejected"),
-        (STATUS_PENDING_ACCOUNTS, "Pending Accounts"),
-        (STATUS_ACCOUNTS_APPROVED, "Accounts Approved"),
+
+        (
+            STATUS_PENDING_COMPANY_ADMIN,
+            "Pending Company Admin"
+        ),
+
+        (
+            STATUS_COMPANY_ADMIN_APPROVED,
+            "Company Admin Approved"
+        ),
+
+        (
+            STATUS_COMPANY_ADMIN_REJECTED,
+            "Company Admin Rejected"
+        ),
+
+        (
+            STATUS_PENDING_ACCOUNTS,
+            "Pending Accounts"
+        ),
+
+        (
+            STATUS_ACCOUNTS_APPROVED,
+            "Accounts Approved"
+        ),
+
         (STATUS_REJECTED, "Rejected"),
+
         (STATUS_PAID, "Paid"),
     )
 
@@ -73,6 +115,15 @@ class ExpenseReport(models.Model):
         null=True,
         blank=True
     )
+    company_admin_notes = models.TextField(
+    null=True,
+    blank=True
+    )
+
+    company_admin_action_at = models.DateTimeField(
+    null=True,
+    blank=True
+)
 
     accounts_action_at = models.DateTimeField(
         null=True,
@@ -172,32 +223,101 @@ class ExpenseSubmission(models.Model):
 
 
 class ExpenseReceipt(models.Model):
+
     STATUS_DRAFT = "DRAFT"
+
     STATUS_AI_PROCESSING = "AI_PROCESSING"
+
     STATUS_AI_PROCESSED = "AI_PROCESSED"
+
     STATUS_VALID = "VALID"
+
     STATUS_POLICY_VIOLATION = "POLICY_VIOLATION"
+
     STATUS_SUBMITTED_TO_MANAGER = "SUBMITTED_TO_MANAGER"
+
     STATUS_MANAGER_APPROVED = "MANAGER_APPROVED"
+
     STATUS_MANAGER_REJECTED = "MANAGER_REJECTED"
+
+    STATUS_PENDING_COMPANY_ADMIN = "PENDING_COMPANY_ADMIN"
+
+    STATUS_COMPANY_ADMIN_APPROVED = "COMPANY_ADMIN_APPROVED"
+
+    STATUS_COMPANY_ADMIN_REJECTED = "COMPANY_ADMIN_REJECTED"
+
     STATUS_PENDING_ACCOUNTS = "PENDING_ACCOUNTS"
+
     STATUS_ACCOUNTS_APPROVED = "ACCOUNTS_APPROVED"
+
     STATUS_REJECTED = "REJECTED"
+
     STATUS_PAID = "PAID"
 
     STATUS_CHOICES = (
+
         (STATUS_DRAFT, "Draft"),
+
         (STATUS_AI_PROCESSING, "AI Processing"),
+
         (STATUS_AI_PROCESSED, "AI Processed"),
+
         (STATUS_VALID, "Valid"),
-        (STATUS_POLICY_VIOLATION, "Policy Violation"),
-        (STATUS_SUBMITTED_TO_MANAGER, "Submitted To Manager"),
-        (STATUS_MANAGER_APPROVED, "Manager Approved"),
-        (STATUS_MANAGER_REJECTED, "Manager Rejected"),
-        (STATUS_PENDING_ACCOUNTS, "Pending Accounts"),
-        (STATUS_ACCOUNTS_APPROVED, "Accounts Approved"),
-        (STATUS_REJECTED, "Rejected"),
-        (STATUS_PAID, "Paid"),
+
+        (
+            STATUS_POLICY_VIOLATION,
+            "Policy Violation"
+        ),
+
+        (
+            STATUS_SUBMITTED_TO_MANAGER,
+            "Submitted To Manager"
+        ),
+
+        (
+            STATUS_MANAGER_APPROVED,
+            "Manager Approved"
+        ),
+
+        (
+            STATUS_MANAGER_REJECTED,
+            "Manager Rejected"
+        ),
+
+        (
+            STATUS_PENDING_COMPANY_ADMIN,
+            "Pending Company Admin"
+        ),
+
+        (
+            STATUS_COMPANY_ADMIN_APPROVED,
+            "Company Admin Approved"
+        ),
+
+        (
+            STATUS_COMPANY_ADMIN_REJECTED,
+            "Company Admin Rejected"
+        ),
+
+        (
+            STATUS_PENDING_ACCOUNTS,
+            "Pending Accounts"
+        ),
+
+        (
+            STATUS_ACCOUNTS_APPROVED,
+            "Accounts Approved"
+        ),
+
+        (
+            STATUS_REJECTED,
+            "Rejected"
+        ),
+
+        (
+            STATUS_PAID,
+            "Paid"
+        ),
     )
 
     id = models.UUIDField(

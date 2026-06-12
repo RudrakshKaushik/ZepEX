@@ -31,7 +31,7 @@ from audit_logs.utils import create_audit_log
 from audit_logs.utils import create_audit_log
 from .models import ExpenseLineItem
 from .tasks import send_report_status_email_task
-
+from tenants.permissions import IsCompanyAdmin
 
 
 @api_view(["POST"])
@@ -919,3 +919,87 @@ def trigger_reimbursement_email_fetch(request):
     return Response({
         "message": "Email fetching started in background."
     })    
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def my_uploaded_expenses(request):
+    profile = request.user.profile
+
+    if profile.role not in ["EMPLOYEE", "MANAGER"]:
+        return Response(
+            {"error": "Only employees and managers can view uploaded expenses."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    reports = ExpenseReport.objects.filter(
+        company=profile.company,
+        employee=profile
+    ).prefetch_related(
+        "receipts",
+        "receipts__line_items"
+    ).order_by("-month", "-created_at")
+
+    serializer = ExpenseReportSerializer(
+        reports,
+        many=True
+    )
+
+    return Response({
+        "count": reports.count(),
+        "results": serializer.data
+    })
+
+
+from tenants.permissions import IsCompanyAdmin
+@api_view(["GET"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin,
+])
+def admin_employee_expenses(request, employee_id):
+
+    company = request.user.profile.company
+
+    try:
+        employee = UserProfile.objects.get(
+            id=employee_id,
+            company=company
+        )
+
+    except UserProfile.DoesNotExist:
+
+        return Response(
+            {"error": "Employee not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    reports = ExpenseReport.objects.filter(
+        company=company,
+        employee=employee
+    ).prefetch_related(
+        "receipts",
+        "receipts__line_items"
+    ).order_by(
+        "-month",
+        "-created_at"
+    )
+
+    serializer = ExpenseReportSerializer(
+        reports,
+        many=True
+    )
+
+    return Response({
+        "employee": {
+            "id": str(employee.id),
+            "name": f"{employee.user.first_name} {employee.user.last_name}",
+            "email": employee.user.email,
+            "department": employee.department.name if employee.department else None,
+            "role": employee.role,
+        },
+
+        "count": reports.count(),
+
+        "results": serializer.data
+    })

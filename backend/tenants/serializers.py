@@ -7,22 +7,52 @@ from .models import (
     ExternalDatabaseConfig,
     CompanyPolicy,
     PolicyCategoryRule,
+    ReimbursementEmailConfig,
+    CompanySMTPConfig,
 )
 
-
+from .models import Company
 class DepartmentSerializer(serializers.ModelSerializer):
+
+    def validate_name(self, value):
+        name = value.strip()
+
+        request = self.context.get("request")
+
+        if request:
+            company = request.user.profile.company
+
+            queryset = Department.objects.filter(
+                company=company,
+                name__iexact=name
+            )
+
+            if self.instance:
+                queryset = queryset.exclude(id=self.instance.id)
+
+            if queryset.exists():
+                raise serializers.ValidationError(
+                    "Department with this name already exists."
+                )
+
+        return name
+
     class Meta:
         model = Department
         fields = [
             "id",
             "name",
             "manager",
+            "is_active",
             "created_at",
+            "updated_at",
         ]
+
         read_only_fields = [
             "id",
             "manager",
             "created_at",
+            "updated_at",
         ]
 
 
@@ -42,6 +72,11 @@ class UserProfileSerializer(serializers.ModelSerializer):
         read_only=True
     )
 
+    is_active = serializers.BooleanField(
+        source="user.is_active",
+        read_only=True
+    )
+
     department_name = serializers.CharField(
         source="department.name",
         read_only=True
@@ -58,6 +93,10 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "department",
             "department_name",
             "role",
+            "phone_number",
+            "address",
+            "profile_picture",
+            "is_active",
             "created_at",
         ]
         read_only_fields = [
@@ -102,10 +141,13 @@ class PolicyCategoryRuleSerializer(serializers.ModelSerializer):
             "category_name",
             "max_amount",
             "category_description",
+            "is_active",
+            "updated_at",
         ]
         read_only_fields = [
             "id",
             "policy",
+            "updated_at",
         ]
 
 
@@ -163,12 +205,14 @@ class EmployeeCreateSerializer(serializers.Serializer):
     )
 
     def validate_email(self, value):
-        if User.objects.filter(email=value).exists():
+        email = value.lower().strip()
+
+        if User.objects.filter(email__iexact=email).exists():
             raise serializers.ValidationError(
                 "User with this email already exists."
             )
 
-        return value
+        return email
 
     def validate(self, attrs):
         role = attrs.get("role")
@@ -190,8 +234,8 @@ class EmployeeCreateSerializer(serializers.Serializer):
                 })
 
         return attrs
-    
-from .models import ReimbursementEmailConfig
+
+
 class ReimbursementEmailConfigSerializer(serializers.ModelSerializer):
     class Meta:
         model = ReimbursementEmailConfig
@@ -206,14 +250,71 @@ class ReimbursementEmailConfigSerializer(serializers.ModelSerializer):
             "imap_password": {
                 "write_only": True
             }
-        }    
+        }
 
-from .models import CompanySMTPConfig
+
 class CompanySMTPConfigSerializer(serializers.ModelSerializer):
     class Meta:
         model = CompanySMTPConfig
         fields = "__all__"
-        read_only_fields = ["id", "company", "created_at", "updated_at"]
+        read_only_fields = [
+            "id",
+            "company",
+            "created_at",
+            "updated_at",
+        ]
         extra_kwargs = {
-            "smtp_password": {"write_only": True}
+            "smtp_password": {
+                "write_only": True
+            }
         }
+
+
+class CompanyUserUpdateSerializer(serializers.Serializer):
+    first_name = serializers.CharField(
+        required=False
+    )
+
+    last_name = serializers.CharField(
+        required=False
+    )
+
+    role = serializers.ChoiceField(
+        choices=["EMPLOYEE", "MANAGER", "ACCOUNTS"],
+        required=False
+    )
+
+    department_id = serializers.UUIDField(
+        required=False,
+        allow_null=True
+    )
+
+    phone_number = serializers.CharField(
+        required=False,
+        allow_blank=True
+    )
+
+    address = serializers.CharField(
+        required=False,
+        allow_blank=True
+    )
+
+class DepartmentUpdateSerializer(serializers.Serializer):
+    name = serializers.CharField(required=False)
+
+    manager_id = serializers.UUIDField(required=False, allow_null=True)    
+
+
+class CompanySerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Company
+
+        fields = [
+            "id",
+            "name",
+            "domain",
+            "reimbursement_email_prefix",
+            "is_verified",
+            "created_at",
+        ]    

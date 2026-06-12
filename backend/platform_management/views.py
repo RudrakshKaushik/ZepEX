@@ -12,6 +12,7 @@ from .permissions import IsPlatformOwner
 
 from tenants.models import Company, UserProfile
 from django.contrib.auth.models import User
+from tenants.permissions import IsCompanyAdmin
 
 @api_view(["POST"])
 def create_company_request(request):
@@ -120,4 +121,119 @@ def reject_company_request(request, request_id):
 
     return Response({
         "message": "Request rejected"
+    })
+
+from tenants.serializers import CompanySerializer
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def company_list(request):
+
+    companies = Company.objects.filter(
+        is_verified=True
+    ).order_by("-created_at")
+
+    serializer = CompanySerializer(
+        companies,
+        many=True
+    )
+
+    return Response({
+        "count": companies.count(),
+        "results": serializer.data
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def pending_company_list(request):
+
+    companies = Company.objects.filter(
+        is_verified=False
+    ).order_by("-created_at")
+
+    serializer = CompanySerializer(
+        companies,
+        many=True
+    )
+
+    return Response({
+        "count": companies.count(),
+        "results": serializer.data
+    })
+from audit_logs.utils import create_audit_log
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def deactivate_company(request, company_id):
+
+    try:
+        company = Company.objects.get(
+            id=company_id
+        )
+
+    except Company.DoesNotExist:
+
+        return Response(
+            {"error": "Company not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    company.is_active = False
+
+    company.save(update_fields=[
+        "is_active",
+        "updated_at"
+    ])
+
+    create_audit_log(
+        company=company,
+        action="COMPANY_DEACTIVATED",
+        action_by=None,
+        message=f"Company {company.name} deactivated.",
+        metadata={
+            "company_id": str(company.id),
+            "company_name": company.name,
+        }
+    )
+
+    return Response({
+        "message": "Company deactivated successfully."
+    })
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def activate_company(request, company_id):
+
+    try:
+        company = Company.objects.get(
+            id=company_id
+        )
+
+    except Company.DoesNotExist:
+
+        return Response(
+            {"error": "Company not found."
+        },
+        status=status.HTTP_404_NOT_FOUND
+    )
+
+    company.is_active = True
+
+    company.save(update_fields=[
+        "is_active",
+        "updated_at"
+    ])
+
+    create_audit_log(
+        company=company,
+        action="COMPANY_ACTIVATED",
+        action_by=None,
+        message=f"Company {company.name} activated.",
+        metadata={
+            "company_id": str(company.id),
+            "company_name": company.name,
+        }
+    )
+
+    return Response({
+        "message": "Company activated successfully."
     })

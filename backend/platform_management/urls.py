@@ -5,6 +5,10 @@ from .views import (
     list_company_requests,
     approve_company_request,
     reject_company_request,
+    company_list,
+    pending_company_list,
+    deactivate_company,
+    activate_company,
 )
 
 urlpatterns = [
@@ -32,4 +36,25 @@ urlpatterns = [
         reject_company_request,
         name="reject-company-request"
     ),
+    path(
+    "companies/",
+    company_list,
+    name="company-list"
+),
+
+path(
+    "pending-companies/",
+    pending_company_list,
+    name="pending-company-list"
+),
+path(
+    "companies/<uuid:company_id>/deactivate/",
+    deactivate_company,
+    name="deactivate-company"
+),
+
+path("companies/<uuid:company_id>/activate/", activate_company,name="activate-company"),
+
+
+
 ]

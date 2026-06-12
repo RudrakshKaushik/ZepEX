@@ -22,6 +22,20 @@ class AuditLog(models.Model):
         ("MARKED_PAID", "Marked Paid"),
         ("LINE_ITEM_DELETED", "Line Item Deleted"),
         ("POLICY_UPDATED", "Policy Updated"),
+        ("USER_UPDATED", "User Updated"),
+        ("USER_DEACTIVATED", "User Deactivated"),
+        ("USER_ACTIVATED", "User Activated"),
+        ("DEPARTMENT_UPDATED", "Department Updated"),
+        ("DEPARTMENT_DEACTIVATED", "Department Deactivated"),
+        ("DEPARTMENT_ACTIVATED", "Department Activated"),
+        ("DEPARTMENT_CREATED", "Department Created"),
+        ("POLICY_RULE_UPDATED", "Policy Rule Updated"),
+        ("POLICY_RULE_DEACTIVATED", "Policy Rule Deactivated"),
+        ("POLICY_RULE_ACTIVATED", "Policy Rule Activated"),
+        ("POLICY_RULE_DELETED", "Policy Rule Deleted"),
+        ("COMPANY_DEACTIVATED", "Company Deactivated"),
+        ("COMPANY_ACTIVATED", "Company Activated"),
+
     )
 
     id = models.UUIDField(

@@ -15,6 +15,18 @@ from .views import (
     save_reimbursement_email_config,
     get_smtp_config,
     save_smtp_config,
+    edit_company_user,
+    deactivate_company_user,
+    activate_company_user,
+    update_department,
+    deactivate_department,
+    activate_department,
+    update_policy_rule,
+    deactivate_policy_rule,
+    activate_policy_rule,
+    
+
+    
 )
 
 urlpatterns = [
@@ -89,4 +101,44 @@ path(
 ),
 path("smtp-config/", get_smtp_config, name="get-smtp-config"),
 path("smtp-config/save/", save_smtp_config, name="save-smtp-config"),
+path(
+    "users/<int:user_id>/edit/",
+    edit_company_user,
+    name="edit-company-user"
+),
+
+path(
+    "users/<int:user_id>/deactivate/",
+    deactivate_company_user,
+    name="deactivate-company-user"
+),
+
+path(
+    "users/<int:user_id>/activate/",
+    activate_company_user,
+    name="activate-company-user"
+),
+path(
+    "users/<uuid:user_id>/edit/",
+    edit_company_user,
+    name="edit-company-user"
+),
+
+path(
+    "users/<uuid:user_id>/deactivate/",
+    deactivate_company_user,
+    name="deactivate-company-user"
+),
+
+path(
+    "users/<uuid:user_id>/activate/",
+    activate_company_user,
+    name="activate-company-user"
+),
+path("departments/<uuid:department_id>/update/", update_department, name="update-department"),
+path("departments/<uuid:department_id>/deactivate/", deactivate_department, name="deactivate-department"),
+path("departments/<uuid:department_id>/activate/", activate_department, name="activate-department"),
+path("policy/rules/<uuid:rule_id>/update/", update_policy_rule, name="update-policy-rule"),
+path("policy/rules/<uuid:rule_id>/deactivate/", deactivate_policy_rule, name="deactivate-policy-rule"),
+path("policy/rules/<uuid:rule_id>/activate/", activate_policy_rule, name="activate-policy-rule"),
 ]

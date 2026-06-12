@@ -35,6 +35,8 @@ class AuditLog(models.Model):
         ("POLICY_RULE_DELETED", "Policy Rule Deleted"),
         ("COMPANY_DEACTIVATED", "Company Deactivated"),
         ("COMPANY_ACTIVATED", "Company Activated"),
+        ("USER_DELETED", "User Deleted"),
+        ("DEPARTMENT_DELETED", "Department Deleted"),
 
     )
 

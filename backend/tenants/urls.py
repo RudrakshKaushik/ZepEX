@@ -24,6 +24,8 @@ from .views import (
     update_policy_rule,
     deactivate_policy_rule,
     activate_policy_rule,
+    delete_company_user,
+    delete_department,
     
 
     
@@ -141,4 +143,10 @@ path("departments/<uuid:department_id>/activate/", activate_department, name="ac
 path("policy/rules/<uuid:rule_id>/update/", update_policy_rule, name="update-policy-rule"),
 path("policy/rules/<uuid:rule_id>/deactivate/", deactivate_policy_rule, name="deactivate-policy-rule"),
 path("policy/rules/<uuid:rule_id>/activate/", activate_policy_rule, name="activate-policy-rule"),
+path(
+    "users/<uuid:user_id>/delete/",
+    delete_company_user,
+    name="delete-company-user"
+),
+path("departments/<uuid:department_id>/delete/",delete_department,name="delete-department"),
 ]

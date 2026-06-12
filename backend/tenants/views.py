@@ -1105,3 +1105,105 @@ def activate_policy_rule(request, rule_id):
     return Response({
         "message": "Policy rule activated successfully."
     })
+
+@api_view(["DELETE"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin
+])
+def delete_company_user(request, user_id):
+
+    company = request.user.profile.company
+
+    try:
+        profile = UserProfile.objects.select_related(
+            "user"
+        ).get(
+            id=user_id,
+            company=company
+        )
+
+    except UserProfile.DoesNotExist:
+
+        return Response(
+            {"error": "User not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    if profile.user == request.user:
+
+        return Response(
+            {"error": "You cannot delete your own account."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    email = profile.user.email
+
+    profile.user.delete()
+
+    create_audit_log(
+        company=company,
+        action="USER_DELETED",
+        action_by=request.user.profile,
+        message=f"Deleted user {email}",
+        metadata={
+            "deleted_user": email,
+        }
+    )
+
+    return Response({
+        "message": "User deleted successfully."
+    })    
+
+@api_view(["DELETE"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin
+])
+def delete_department(request, department_id):
+
+    company = request.user.profile.company
+
+    try:
+        department = Department.objects.get(
+            id=department_id,
+            company=company
+        )
+
+    except Department.DoesNotExist:
+
+        return Response(
+            {"error": "Department not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    active_users = department.employees.filter(
+        user__is_active=True
+    ).exists()
+
+    if active_users:
+
+        return Response(
+            {
+                "error": "Cannot delete department with active users."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    department_name = department.name
+
+    department.delete()
+
+    create_audit_log(
+        company=company,
+        action="DEPARTMENT_DELETED",
+        action_by=request.user.profile,
+        message=f"Deleted department {department_name}",
+        metadata={
+            "department_name": department_name,
+        }
+    )
+
+    return Response({
+        "message": "Department deleted successfully."
+    })

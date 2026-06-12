@@ -9,6 +9,7 @@ from .views import (
     pending_company_list,
     deactivate_company,
     activate_company,
+    delete_company,
 )
 
 urlpatterns = [
@@ -54,6 +55,8 @@ path(
 ),
 
 path("companies/<uuid:company_id>/activate/", activate_company,name="activate-company"),
+path("companies/<uuid:company_id>/delete/",delete_company,name="delete-company"
+),
 
 
 

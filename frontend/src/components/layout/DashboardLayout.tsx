@@ -51,7 +51,7 @@ export function DashboardLayout({
     [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.email
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="min-h-screen w-full overflow-x-clip bg-background lg:flex">
       {sidebarOpen && (
         <button
           type="button"
@@ -63,26 +63,20 @@ export function DashboardLayout({
 
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border bg-card transition-transform lg:static lg:translate-x-0',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full',
+          'z-50 flex w-[min(16rem,85vw)] flex-col border-r border-border bg-card lg:static lg:w-64 lg:shrink-0',
+          sidebarOpen ? 'fixed inset-y-0 left-0' : 'hidden lg:flex',
         )}
       >
         <div className="flex h-16 items-center gap-2 border-b border-border px-6">
           <div
             className={cn(
-              'flex h-9 w-9 items-center justify-center rounded-lg',
-              portal === 'platform'
-                ? 'bg-slate-900 text-white'
-                : 'bg-primary text-primary-foreground',
+              'flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground',
             )}
           >
             <Zap className="h-5 w-5" />
           </div>
           <div>
             <p className="font-bold leading-none">ZepEX</p>
-            <p className="text-xs text-muted-foreground">
-              {portal === 'platform' ? 'Platform' : 'Workspace'}
-            </p>
           </div>
           <button
             type="button"
@@ -133,22 +127,27 @@ export function DashboardLayout({
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border bg-card/80 px-4 backdrop-blur sm:px-6">
+      <div className="flex min-h-screen w-full min-w-0 flex-1 flex-col lg:min-h-0">
+        <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 border-b border-border bg-card/80 px-4 backdrop-blur sm:gap-4 sm:px-6">
           <button
             type="button"
-            className="lg:hidden"
+            className="shrink-0 lg:hidden"
             onClick={() => setSidebarOpen(true)}
+            aria-label="Open menu"
           >
             <Menu className="h-5 w-5" />
           </button>
-          <div className="flex-1">
-            <h1 className="text-lg font-semibold">{title}</h1>
-            {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-base font-semibold sm:text-lg">{title}</h1>
+            {subtitle && (
+              <p className="truncate text-xs text-muted-foreground sm:text-sm">{subtitle}</p>
+            )}
           </div>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6">{children}</main>
+        <main className="box-border w-full min-w-0 max-w-full flex-1 overflow-x-clip p-4 sm:p-6">
+          {children}
+        </main>
       </div>
     </div>
   )

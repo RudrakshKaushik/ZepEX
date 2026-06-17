@@ -14,6 +14,11 @@ import { PageLoader } from '@/components/ui/spinner'
 import type { CompanyRegistrationRequest } from '@/types'
 import { formatDateTime } from '@/lib/utils'
 
+const platformNavWithAudit = [
+  ...platformNav,
+  { label: 'Audit Logs', to: '/platform/audit-logs', icon: ScrollText },
+]
+
 export function CompanyRequestsPage() {
   const [requests, setRequests] = useState<CompanyRegistrationRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -73,52 +78,64 @@ export function CompanyRequestsPage() {
     <DashboardLayout
       portal="platform"
       title="Company Requests"
-      subtitle="Review and approve new tenant registrations"
-      navItems={[
-        ...platformNav,
-        { label: 'Audit Logs', to: '/platform/audit-logs', icon: ScrollText },
-      ]}
+      subtitle="Review and approve registrations"
+      navItems={platformNavWithAudit}
     >
-      {message && (
-        <div className="mb-4 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          {message}
-        </div>
-      )}
-      {error && (
-        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-      )}
+      <div className="w-full max-w-full overflow-hidden">
+        {message && (
+          <div className="mb-4 break-words rounded-lg bg-emerald-50 px-3 py-3 text-sm text-emerald-800 sm:px-4">
+            {message}
+          </div>
+        )}
+        {error && (
+          <div className="mb-4 break-words rounded-lg bg-red-50 px-3 py-3 text-sm text-red-700 sm:px-4">
+            {error}
+          </div>
+        )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>All registration requests</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {requests.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No registration requests.</p>
-          ) : (
-            <div className="space-y-4">
-              {requests.map((req) => (
-                <div
+        <Card className="w-full max-w-full overflow-hidden">
+          <CardHeader className="space-y-0 p-4 sm:p-6 sm:pb-4">
+            <CardTitle className="text-base sm:text-lg">All registration requests</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 p-4 pt-0 sm:space-y-4 sm:p-6 sm:pt-0">
+            {requests.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No registration requests.</p>
+            ) : (
+              requests.map((req) => (
+                <article
                   key={req.id}
-                  className="flex flex-col gap-4 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"
+                  className="w-full max-w-full overflow-hidden rounded-xl border p-3 sm:p-4"
                 >
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-semibold">{req.company_name}</h3>
-                      <StatusBadge status={req.status} />
-                    </div>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {req.company_domain} · Admin: {req.admin_name} ({req.admin_email})
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Submitted {formatDateTime(req.created_at)}
-                    </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-semibold sm:text-base">{req.company_name}</h3>
+                    <StatusBadge status={req.status} />
                   </div>
+
+                  <dl className="mt-2 space-y-1 text-sm text-muted-foreground">
+                    <div className="break-words">
+                      <dt className="sr-only">Domain</dt>
+                      <dd>{req.company_domain}</dd>
+                    </div>
+                    <div>
+                      <dt className="sr-only">Admin</dt>
+                      <dd>Admin: {req.admin_name}</dd>
+                    </div>
+                    <div className="break-all">
+                      <dt className="sr-only">Email</dt>
+                      <dd>{req.admin_email}</dd>
+                    </div>
+                    <div>
+                      <dt className="sr-only">Submitted</dt>
+                      <dd className="text-xs">Submitted {formatDateTime(req.created_at)}</dd>
+                    </div>
+                  </dl>
+
                   {req.status === 'PENDING' && (
-                    <div className="flex gap-2">
+                    <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:w-fit">
                       <Button
                         size="sm"
                         variant="success"
+                        className="w-full sm:w-auto"
                         disabled={actionId === req.id}
                         onClick={() => handleApprove(req.id)}
                       >
@@ -128,6 +145,7 @@ export function CompanyRequestsPage() {
                       <Button
                         size="sm"
                         variant="destructive"
+                        className="w-full sm:w-auto"
                         disabled={actionId === req.id}
                         onClick={() => handleReject(req.id)}
                       >
@@ -136,12 +154,12 @@ export function CompanyRequestsPage() {
                       </Button>
                     </div>
                   )}
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                </article>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </DashboardLayout>
   )
 }

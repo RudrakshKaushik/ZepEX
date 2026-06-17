@@ -34,3 +34,16 @@ export function formatDateTime(date: string | null | undefined) {
     minute: '2-digit',
   })
 }
+
+export function formatAuditMessage(message: string) {
+  if (
+    message.includes('generativelanguage.googleapis.com') ||
+    message.includes('Gemini API')
+  ) {
+    return 'AI extraction failed — Gemini API is not enabled or blocked for your API key.'
+  }
+  if (message.length > 160) {
+    return `${message.slice(0, 160)}…`
+  }
+  return message
+}

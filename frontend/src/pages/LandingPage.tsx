@@ -344,9 +344,6 @@ export function LandingPage() {
                     {i + 1}
                   </span>
                   <p className="min-w-0 flex-1 text-sm font-medium">{step}</p>
-                  {i < 3 && (
-                    <ArrowRight className="hidden h-4 w-4 shrink-0 text-slate-400 sm:block" />
-                  )}
                 </div>
               ))}
             </div>

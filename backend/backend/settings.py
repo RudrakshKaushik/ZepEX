@@ -115,20 +115,12 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 # DATABASE
 # --------------------------------------------------
 
+import dj_database_url
+
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-
-        'NAME': os.getenv("DATABASE_NAME"),
-
-        'USER': os.getenv("DATABASE_USER"),
-
-        'PASSWORD': os.getenv("DATABASE_PASSWORD"),
-
-        'HOST': os.getenv("DATABASE_HOST"),
-
-        'PORT': os.getenv("DATABASE_PORT"),
-    }
+    "default": dj_database_url.parse(
+        os.getenv("DATABASE_URL")
+    )
 }
 
 # --------------------------------------------------
@@ -207,9 +199,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # CELERY
 # --------------------------------------------------
 
-CELERY_BROKER_URL = "redis://localhost:6379/0"
+CELERY_BROKER_URL = os.getenv("REDIS_URL")
 
-CELERY_RESULT_BACKEND = "redis://localhost:6379/0"
+CELERY_RESULT_BACKEND = os.getenv("REDIS_URL")
 
 CELERY_ACCEPT_CONTENT = ["json"]
 
@@ -230,17 +222,17 @@ CELERY_TASK_EAGER_PROPAGATES = True
 # CORS
 # --------------------------------------------------
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
+CORS_ALLOWED_ORIGINS = _env_list(
+    "DJANGO_CORS_ALLOWED_ORIGINS",
     "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:5174",
-    "http://127.0.0.1:5174",
-    "http://localhost:5175",
-    "http://127.0.0.1:5175",
-]
+)
 
+CORS_ALLOW_CREDENTIALS = True
+
+CSRF_TRUSTED_ORIGINS = _env_list(
+    "DJANGO_CSRF_TRUSTED_ORIGINS",
+    "http://localhost:5173",
+)
 
 # --------------------------------------------------
 # EMAIL CONFIG

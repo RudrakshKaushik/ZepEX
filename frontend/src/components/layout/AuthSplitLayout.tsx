@@ -1,40 +1,61 @@
-import { ArrowLeft, Zap } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { ReactNode } from 'react'
+import logo from '@/assets/logo.png'
 
 type AuthSplitLayoutProps = {
-  headline: string
-  description: string
+  headline?: string
+  description?: string
   children: ReactNode
+  heroImage?: string
 }
 
-export function AuthSplitLayout({ headline, description, children }: AuthSplitLayoutProps) {
+export function AuthSplitLayout({
+  headline,
+  description,
+  children,
+  heroImage,
+}: AuthSplitLayoutProps) {
   return (
-    <div className="flex min-h-screen">
-      <div className="hidden w-1/2 bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-800 p-12 text-white lg:flex lg:flex-col lg:justify-between">
-        <div className="flex items-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20">
-            <Zap className="h-5 w-5" />
-          </div>
-          <span className="text-xl font-bold">ZepEX</span>
-        </div>
-        <div>
-          <h2 className="text-4xl font-bold leading-tight">{headline}</h2>
-          <p className="mt-4 max-w-md text-indigo-100">{description}</p>
-        </div>
-        <p className="text-sm text-indigo-200">© ZepEX Expense Platform</p>
-      </div>
-
-      <div className="flex flex-1 items-center justify-center p-6">
-        <div className="w-full max-w-md">
+    <div className="flex min-h-screen bg-white">
+      <div className="flex flex-1 flex-col justify-center px-6 py-10 sm:px-10 lg:px-14 xl:px-20">
+        <div className="mx-auto w-full max-w-md">
           <Link
             to="/"
-            className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+            className="mb-8 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
-            <ArrowLeft className="h-4 w-4" /> Back
+            <ArrowLeft className="h-4 w-4" />
+            Back to Home
           </Link>
           {children}
         </div>
+      </div>
+
+      <div className="hidden min-h-screen flex-col p-4 sm:p-5 lg:flex lg:w-[45%] xl:p-6">
+        {heroImage ? (
+          <div className="relative min-h-0 flex-1 overflow-hidden rounded-2xl lg:rounded-3xl">
+            <img
+              src={heroImage}
+              alt=""
+              className="absolute inset-0 h-full w-full object-center"
+            />
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col justify-between overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-800 p-12 text-white lg:rounded-3xl">
+            <div className="flex items-center gap-2">
+              <img src={logo} alt="ZepEX" className="h-full w-25" />
+            </div>
+            {headline && (
+              <div>
+                <h2 className="text-4xl font-bold leading-tight">{headline}</h2>
+                {description && (
+                  <p className="mt-4 max-w-md text-indigo-100">{description}</p>
+                )}
+              </div>
+            )}
+            <p className="text-sm text-indigo-200">© ZepEX Expense Platform</p>
+          </div>
+        )}
       </div>
     </div>
   )

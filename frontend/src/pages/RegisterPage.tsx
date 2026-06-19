@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { registerCompany } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
+import registerImg from '@/assets/register_img.png'
 import { AuthSplitLayout } from '@/components/layout/AuthSplitLayout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -59,10 +60,7 @@ export function RegisterPage() {
   }
 
   return (
-    <AuthSplitLayout
-      headline="Launch your company expense workspace."
-      description="Register once and get an AI-powered platform for receipt capture, policy checks, and reimbursements — built for every role on your team."
-    >
+    <AuthSplitLayout heroImage={registerImg}>
       <Card>
         <CardHeader>
           <CardTitle>Register your company</CardTitle>

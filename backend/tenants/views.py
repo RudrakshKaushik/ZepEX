@@ -154,6 +154,24 @@ def create_employee(request):
             company=company,
             is_active=True
         )
+    else:
+        from tenants.role_utils import resolve_company_role
+
+        company_role = resolve_company_role(
+            company,
+            data["role"],
+        )
+
+    if not company_role and data["role"] in ("EMPLOYEE", "MANAGER", "ACCOUNTS"):
+        return Response(
+            {
+                "error": (
+                    "No company role assigned. Create default roles under "
+                    "Admin → Roles, then try again."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
     profile = UserProfile.objects.create(
         user=user,
@@ -213,6 +231,23 @@ def list_employees(request):
     )
 
     return Response(serializer.data)
+
+
+@api_view(["POST"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin
+])
+def assign_missing_company_roles_view(request):
+    from tenants.role_utils import assign_missing_company_roles
+
+    company = request.user.profile.company
+    updated = assign_missing_company_roles(company)
+
+    return Response({
+        "message": f"Assigned company roles to {updated} user(s).",
+        "updated_count": updated,
+    })
 
 
 @api_view(["POST"])

@@ -1435,33 +1435,6 @@ def my_uploaded_expenses(request):
 from .models import DuplicateReceiptLog
 from .serializers import DuplicateReceiptLogSerializer
 
-
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def duplicate_receipts(request):
-
-    company = request.user.profile.company
-
-    duplicates = DuplicateReceiptLog.objects.filter(
-        original_receipt__company=company
-    ).select_related(
-        "original_receipt",
-        "duplicate_receipt"
-    ).order_by("-created_at")
-
-    serializer = DuplicateReceiptLogSerializer(
-        duplicates,
-        many=True
-    )
-
-    return Response({
-        "count": duplicates.count(),
-        "results": serializer.data
-    })
-
-from .models import DuplicateReceiptLog
-from .serializers import DuplicateReceiptLogSerializer
-
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def duplicate_receipts(request):

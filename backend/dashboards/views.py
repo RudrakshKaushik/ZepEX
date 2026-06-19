@@ -718,10 +718,10 @@ def platform_owner_dashboard(request):
 @permission_classes([IsAuthenticated])
 def dashboard_router(request):
 
-    profile = request.user.profile
-
     if hasattr(request.user, "platform_owner"):
         return platform_owner_dashboard(request)
+
+    profile = request.user.profile
 
     if profile.role == "COMPANY_ADMIN":
         return company_admin_dashboard(request)

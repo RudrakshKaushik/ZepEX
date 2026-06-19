@@ -1,11 +1,6 @@
-import { Banknote, Check, X } from 'lucide-react'
+import { Banknote } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import {
-  accountsApproveReport,
-  accountsMarkPaid,
-  accountsRejectReport,
-  getAccountsPendingReports,
-} from '@/api'
+import { accountsMarkPaid, getPaymentDashboard } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
 import { ReportDetail } from '@/components/ReportDetail'
 import { DashboardLayout, accountsNav } from '@/components/layout/DashboardLayout'
@@ -25,8 +20,11 @@ export function AccountsReportsPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await getAccountsPendingReports()
-      setReports(data.reports)
+      const { data } = await getPaymentDashboard()
+      const approved = (data.approved_reports ?? []).filter(
+        (report: ExpenseReport) => report.status === 'APPROVED',
+      )
+      setReports(approved)
     } finally {
       setLoading(false)
     }
@@ -36,21 +34,12 @@ export function AccountsReportsPage() {
     load()
   }, [load])
 
-  const runAction = async (
-    reportId: string,
-    action: 'approve' | 'reject' | 'paid',
-  ) => {
+  const handleMarkPaid = async (reportId: string) => {
     setActionId(reportId)
     setError('')
     const note = notes[reportId] || ''
     try {
-      if (action === 'approve') {
-        await accountsApproveReport(reportId, note || 'Verified by accounts department')
-      } else if (action === 'reject') {
-        await accountsRejectReport(reportId, note || 'Receipt verification failed.')
-      } else {
-        await accountsMarkPaid(reportId, note || 'Payment completed successfully')
-      }
+      await accountsMarkPaid(reportId, note || 'Payment completed successfully')
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -63,8 +52,8 @@ export function AccountsReportsPage() {
 
   return (
     <DashboardLayout
-      title="Pending Reports"
-      subtitle="Verify, approve, and mark reimbursements as paid"
+      title="Approved Reports"
+      subtitle="Mark approved reimbursements as paid"
       navItems={accountsNav}
     >
       {error && (
@@ -74,7 +63,7 @@ export function AccountsReportsPage() {
       {reports.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
-            No reports pending accounts review.
+            No approved reports awaiting payment.
           </CardContent>
         </Card>
       ) : (
@@ -88,49 +77,20 @@ export function AccountsReportsPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <ReportDetail report={report} />
-                {report.manager_notes && (
-                  <p className="rounded-lg bg-muted/60 p-3 text-sm">
-                    <strong>Manager notes:</strong> {report.manager_notes}
-                  </p>
-                )}
                 <Textarea
-                  placeholder="Accounts notes"
+                  placeholder="Payment notes (optional)"
                   value={notes[report.id] || ''}
                   onChange={(e) =>
                     setNotes({ ...notes, [report.id]: e.target.value })
                   }
                 />
-                <div className="flex flex-wrap gap-2">
-                  {report.status === 'PENDING_ACCOUNTS' && (
-                    <>
-                      <Button
-                        variant="success"
-                        disabled={actionId === report.id}
-                        onClick={() => runAction(report.id, 'approve')}
-                      >
-                        <Check className="h-4 w-4" />
-                        Approve
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        disabled={actionId === report.id}
-                        onClick={() => runAction(report.id, 'reject')}
-                      >
-                        <X className="h-4 w-4" />
-                        Reject
-                      </Button>
-                    </>
-                  )}
-                  {report.status === 'ACCOUNTS_APPROVED' && (
-                    <Button
-                      disabled={actionId === report.id}
-                      onClick={() => runAction(report.id, 'paid')}
-                    >
-                      <Banknote className="h-4 w-4" />
-                      Mark as paid
-                    </Button>
-                  )}
-                </div>
+                <Button
+                  disabled={actionId === report.id}
+                  onClick={() => handleMarkPaid(report.id)}
+                >
+                  <Banknote className="h-4 w-4" />
+                  Mark as paid
+                </Button>
               </CardContent>
             </Card>
           ))}

@@ -1,34 +1,29 @@
 import { ScrollText } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { getPlatformAuditLogs } from '@/api'
-import { AuditLogList } from '@/components/AuditLogList'
-import { DashboardLayout, platformNav } from '@/components/layout/DashboardLayout'
-import { PageLoader } from '@/components/ui/spinner'
-import type { AuditLogEntry } from '@/types'
+import { DashboardLayout, platformNavWithAudit } from '@/components/layout/DashboardLayout'
+import { AdminListPanel } from '@/components/admin/AdminListPanel'
 
 export function PlatformAuditLogsPage() {
-  const [logs, setLogs] = useState<AuditLogEntry[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    getPlatformAuditLogs()
-      .then((res) => setLogs(res.data.results))
-      .finally(() => setLoading(false))
-  }, [])
-
-  if (loading) return <PageLoader />
-
   return (
     <DashboardLayout
       portal="platform"
-      title="Platform Audit Logs"
-      subtitle="Cross-tenant activity trail"
-      navItems={[
-        ...platformNav,
-        { label: 'Audit Logs', to: '/platform/audit-logs', icon: ScrollText },
-      ]}
+      title="Audit Logs"
+      subtitle="Platform activity monitoring"
+      breadcrumb="Audit Logs"
+      icon={ScrollText}
+      navItems={platformNavWithAudit}
     >
-      <AuditLogList logs={logs} badgeClassName="bg-slate-100 text-slate-700" />
+      <AdminListPanel
+        title="Platform Audit Trail"
+        description="Detailed audit trails are recorded per company and viewed by company administrators."
+      >
+        <div className="px-5 py-8 sm:px-6">
+          <p className="text-sm text-gray-600">
+            Platform owners can monitor company onboarding and expense metrics from the dashboard.
+            Company-specific audit logs become available to each company admin once their setup
+            checklist is fully complete.
+          </p>
+        </div>
+      </AdminListPanel>
     </DashboardLayout>
   )
 }

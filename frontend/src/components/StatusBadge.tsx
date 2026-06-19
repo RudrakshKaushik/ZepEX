@@ -11,6 +11,12 @@ const statusVariant: Record<string, 'default' | 'success' | 'warning' | 'destruc
   PAID: 'success',
   AI_PROCESSED: 'secondary',
   DRAFT: 'muted',
+  ACTIVE: 'success',
+  INACTIVE: 'muted',
+  MANAGER: 'default',
+  EMPLOYEE: 'secondary',
+  ACCOUNTS: 'secondary',
+  COMPANY_ADMIN: 'default',
 }
 
 export function StatusBadge({ status }: { status: string }) {

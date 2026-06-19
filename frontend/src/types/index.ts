@@ -5,6 +5,13 @@ export type UserRole =
   | 'EMPLOYEE'
   | 'ACCOUNTS'
 
+export interface UserPermissions {
+  can_upload_receipt: boolean
+  can_submit_expense: boolean
+  can_approve_expense: boolean
+  can_mark_paid: boolean
+}
+
 export interface Company {
   id: string
   name: string
@@ -21,6 +28,10 @@ export interface User {
   first_name: string
   last_name: string
   role: UserRole
+  system_role?: UserRole
+  company_role?: string | null
+  company_role_id?: number | null
+  permissions?: UserPermissions
   company: Company | null
   department: Department | null
 }
@@ -28,8 +39,43 @@ export interface User {
 export interface LoginResponse {
   message: string
   token: string
-  user: User
+  user: {
+    id: number
+    email: string
+    first_name: string
+    last_name: string
+    system_role: UserRole
+    company_role?: string | null
+    company_role_id?: number | null
+    permissions?: UserPermissions
+    company: Company | null
+    department: Department | null
+  }
   redirect_to: string
+}
+
+export interface UserProfile {
+  id: number
+  email: string
+  first_name: string
+  last_name: string
+  role: UserRole
+  company: string
+  department: string
+  phone_number: string | null
+  address: string | null
+  profile_picture: string | null
+}
+
+export interface CompanyRole {
+  id: number
+  name: string
+  can_upload_receipt: boolean
+  can_submit_expense: boolean
+  can_approve_expense: boolean
+  can_mark_paid: boolean
+  is_active: boolean
+  created_at: string
 }
 
 export interface CompanyRegistrationRequest {
@@ -46,6 +92,7 @@ export interface DepartmentRecord {
   id: string
   name: string
   manager: string | null
+  is_active?: boolean
   created_at: string
 }
 
@@ -58,6 +105,11 @@ export interface EmployeeRecord {
   department: string | null
   department_name?: string
   role: UserRole
+  company_role?: number | null
+  company_role_name?: string
+  phone_number?: string | null
+  address?: string | null
+  is_active?: boolean
   created_at: string
 }
 
@@ -67,6 +119,29 @@ export interface PolicyRule {
   category_name: string
   max_amount: string
   category_description: string
+  is_active?: boolean
+}
+
+export interface ApprovalWorkflowStep {
+  id: string
+  step_order: number
+  approver_role: number
+  approver_role_name: string
+  department: string | null
+  department_name: string | null
+  routing_type: 'DEPARTMENT' | 'COMPANY'
+  is_active: boolean
+  created_at: string
+}
+
+export interface ApprovalWorkflow {
+  id: string
+  company: string
+  name: string
+  is_active: boolean
+  steps: ApprovalWorkflowStep[]
+  created_at: string
+  updated_at: string
 }
 
 export interface LineItem {
@@ -113,6 +188,7 @@ export interface ExpenseReport {
   company: string
   employee: number
   employee_email: string
+  employee_name?: string
   department: string
   department_name: string
   month: string
@@ -152,10 +228,10 @@ export interface ReimbursementEmailConfig {
 
 export interface SmtpConfig {
   id: string
-  host: string
-  port: number
-  username: string
-  from_email: string
+  smtp_host: string
+  smtp_port: number
+  smtp_email: string
+  from_email_name: string
   use_tls: boolean
   is_active: boolean
 }

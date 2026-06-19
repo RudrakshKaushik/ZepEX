@@ -327,7 +327,7 @@ class DepartmentUpdateSerializer(serializers.Serializer):
         required=False
     )
 
-    manager_id = serializers.UUIDField(
+    manager_id = serializers.IntegerField(
         required=False,
         allow_null=True
     )

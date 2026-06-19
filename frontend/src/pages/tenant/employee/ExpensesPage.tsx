@@ -16,7 +16,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -26,6 +25,12 @@ import type { ExpenseReport } from '@/types'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
 function formatUploadError(message: string) {
+  if (message.includes('company role is not assigned')) {
+    return 'Your account has no company role assigned. Ask your company admin to open Employees → Assign default roles, or edit your user and set a company role.'
+  }
+  if (message.includes('not allowed to upload receipts')) {
+    return 'Your company role does not allow receipt uploads. Ask your admin to assign a role with upload permission (e.g. Employee).'
+  }
   if (message.includes('generativelanguage.googleapis.com') || message.includes('Gemini API')) {
     return 'Gemini API is not enabled for your API key. Create a key at Google AI Studio or enable the Generative Language API in Cloud Console, then try again.'
   }
@@ -35,7 +40,7 @@ function formatUploadError(message: string) {
 export function ExpensesPage() {
   const { user } = useAuth()
   const location = useLocation()
-  const isManager = user?.role === 'MANAGER'
+  const isManager = user?.permissions?.can_approve_expense ?? user?.role === 'MANAGER'
   const navItems = isManager ? managerNav : employeeNav
 
   const [report, setReport] = useState<ExpenseReport | null>(null)
@@ -253,21 +258,17 @@ export function ExpensesPage() {
           if (!open) resetUploadModal()
         }}
       >
-        <DialogContent className="flex max-h-[min(90vh,640px)] w-[calc(100vw-2rem)] max-w-md flex-col overflow-hidden p-6">
+        <DialogContent className="flex max-h-[min(90vh,640px)] w-[calc(100vw-2rem)] max-w-md flex-col overflow-hidden p-6 sm:max-w-lg">
           <DialogHeader className="shrink-0">
-            <DialogTitle>Upload receipt</DialogTitle>
-            <DialogDescription>
-              Choose an image or PDF, then click Upload. AI will extract vendor, amount, and line
-              items.
-            </DialogDescription>
+            <DialogTitle>Upload Receipt</DialogTitle>
           </DialogHeader>
 
           <div className="min-h-0 min-w-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden pr-1">
             <div
-              className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 text-center transition outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+              className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 text-center transition outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                 dragOver
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border bg-muted/30 hover:border-primary/50 hover:bg-accent/30'
+                  ? 'border-primary bg-blue-50'
+                  : 'border-gray-300 bg-gray-50 hover:border-primary/50'
               }`}
               onClick={() => fileRef.current?.click()}
               onDragOver={(e) => {
@@ -299,22 +300,19 @@ export function ExpensesPage() {
             />
 
             {selectedFiles.length > 0 && (
-              <ul className="space-y-2 rounded-lg border bg-muted/20 p-3">
+              <ul className="space-y-2">
                 {selectedFiles.map((file, index) => (
                   <li
                     key={`${file.name}-${index}`}
                     className="flex items-center gap-2 text-sm"
                   >
-                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate" title={file.name}>
+                    <FileText className="h-4 w-4 shrink-0 text-red-500" />
+                    <span className="min-w-0 flex-1 truncate text-gray-700" title={file.name}>
                       {file.name}
-                    </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {(file.size / 1024).toFixed(0)} KB
                     </span>
                     <button
                       type="button"
-                      className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      className="shrink-0 rounded p-0.5 text-red-500 hover:bg-red-50"
                       onClick={() => removeSelectedFile(index)}
                       aria-label={`Remove ${file.name}`}
                     >
@@ -335,38 +333,24 @@ export function ExpensesPage() {
             )}
           </div>
 
-          <DialogFooter className="mt-2 shrink-0 flex-col gap-2 border-t border-border pt-4 sm:flex-col">
-            <div className="flex w-full gap-2 justify-end">
-              <Button
-                type="button"
-                className="w-full"
-                variant="outline"
-                onClick={() => setUploadOpen(false)}
-                disabled={uploading}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                className="w-full"
-                variant="outline"
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading}
-              >
-                Choose files
-              </Button>
-              {selectedFiles.length > 0 && (
-              <Button
-                className="w-full"
-                disabled={uploading || selectedFiles.length === 0}
-                onClick={handleConfirmUpload}
-              >
+          <DialogFooter className="mt-2 shrink-0 gap-2 border-t border-gray-100 pt-4 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setUploadOpen(false)}
+              disabled={uploading}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={uploading || selectedFiles.length === 0}
+              onClick={handleConfirmUpload}
+            >
               {uploading
                 ? 'Uploading...'
                 : `Upload${selectedFiles.length > 1 ? ` (${selectedFiles.length})` : ''}`}
             </Button>
-            )}
-            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

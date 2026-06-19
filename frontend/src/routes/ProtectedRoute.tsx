@@ -1,14 +1,20 @@
 import { Navigate, Outlet } from 'react-router-dom'
 import { getStoredToken } from '@/api/client'
 import { useAuth } from '@/context/AuthContext'
-import type { UserRole } from '@/types'
+import { canAccessRoute, defaultHomeForUser } from '@/lib/auth'
+import type { UserPermissions, UserRole } from '@/types'
 
 interface ProtectedRouteProps {
   allowedRoles: UserRole[]
+  requiredPermission?: keyof UserPermissions
   loginPath?: string
 }
 
-export function ProtectedRoute({ allowedRoles, loginPath = '/login' }: ProtectedRouteProps) {
+export function ProtectedRoute({
+  allowedRoles,
+  requiredPermission,
+  loginPath = '/login',
+}: ProtectedRouteProps) {
   const { user, isAuthenticated } = useAuth()
   const token = getStoredToken()
 
@@ -16,15 +22,8 @@ export function ProtectedRoute({ allowedRoles, loginPath = '/login' }: Protected
     return <Navigate to={loginPath} replace />
   }
 
-  if (!allowedRoles.includes(user.role)) {
-    const fallback: Record<UserRole, string> = {
-      PLATFORM_OWNER: '/platform',
-      COMPANY_ADMIN: '/admin',
-      MANAGER: '/manager',
-      EMPLOYEE: '/employee',
-      ACCOUNTS: '/accounts',
-    }
-    return <Navigate to={fallback[user.role]} replace />
+  if (!canAccessRoute(user, allowedRoles, requiredPermission)) {
+    return <Navigate to={defaultHomeForUser(user)} replace />
   }
 
   return <Outlet />

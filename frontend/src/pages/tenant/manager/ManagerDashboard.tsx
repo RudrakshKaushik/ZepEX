@@ -1,32 +1,43 @@
-import { CheckCircle2, Clock, FileText, Users, XCircle } from 'lucide-react'
+import { CheckCircle2, Clock, FileText, XCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getManagerDashboard } from '@/api'
+import { getApproverDashboard } from '@/api'
+import { DashboardEmptyState } from '@/components/dashboard/DashboardEmptyState'
+import { DashboardPanel } from '@/components/dashboard/DashboardPanel'
+import { DashboardReportList } from '@/components/dashboard/DashboardReportList'
 import { MetricCard } from '@/components/MetricCard'
 import { DashboardLayout, managerNav } from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageLoader } from '@/components/ui/spinner'
 import type { ExpenseReport } from '@/types'
 
-interface ManagerDashboardData {
-  manager: { name: string; email: string; company: string; department: string }
+interface ApproverDashboardData {
+  approver: {
+    name: string
+    email: string
+    company: string
+    company_role: string
+    department: string | null
+  }
   metrics: {
-    team_members: number
     pending_reports: number
     approved_reports: number
     rejected_reports: number
     violation_reports: number
+    pending_amount: string
+    approved_amount: string
+    rejected_amount: string
   }
-  pending_employee_reports: ExpenseReport[]
+  recent_pending_reports: ExpenseReport[]
+  pending_reports: ExpenseReport[]
 }
 
 export function ManagerDashboard() {
-  const [data, setData] = useState<ManagerDashboardData | null>(null)
+  const [data, setData] = useState<ApproverDashboardData | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    getManagerDashboard()
+    getApproverDashboard()
       .then((res) => setData(res.data))
       .finally(() => setLoading(false))
   }, [])
@@ -34,66 +45,75 @@ export function ManagerDashboard() {
   if (loading) return <PageLoader />
 
   const metrics = data?.metrics
+  const pendingReports = data?.recent_pending_reports ?? []
+  const departmentLabel = data?.approver.department ?? 'All departments'
 
   return (
     <DashboardLayout
       title="Manager Dashboard"
-      subtitle={`${data?.manager.department} · ${data?.manager.company}`}
+      breadcrumb="Manager Dashboard"
+      subtitle={`${departmentLabel} · ${data?.approver.company}`}
       navItems={managerNav}
     >
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard title="Team members" value={metrics?.team_members ?? 0} icon={Users} />
         <MetricCard
-          title="Pending reports"
-          value={metrics?.pending_reports ?? 0}
-          icon={Clock}
-          accent="amber"
+          title="Total Reports"
+          value={
+            (metrics?.pending_reports ?? 0) +
+            (metrics?.approved_reports ?? 0) +
+            (metrics?.rejected_reports ?? 0)
+          }
+          icon={FileText}
+          accent="blue"
         />
         <MetricCard
           title="Approved"
           value={metrics?.approved_reports ?? 0}
           icon={CheckCircle2}
-          accent="emerald"
+          accent="green"
+        />
+        <MetricCard
+          title="Pending"
+          value={metrics?.pending_reports ?? 0}
+          icon={Clock}
+          accent="orange"
         />
         <MetricCard
           title="Rejected"
           value={metrics?.rejected_reports ?? 0}
           icon={XCircle}
-          accent="rose"
+          accent="red"
         />
       </div>
 
-      <div className="mt-4">
-        <Link to="/manager/reports">
-          <Button>
-            <FileText className="h-4 w-4" />
-            Review pending reports
-          </Button>
-        </Link>
-      </div>
-
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle>Pending employee reports</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {data?.pending_employee_reports?.length ? (
-            <div className="space-y-2">
-              {data.pending_employee_reports.map((r) => (
-                <div
-                  key={r.id}
-                  className="flex items-center justify-between rounded-lg border px-4 py-3 text-sm"
-                >
-                  <span>{r.employee_email}</span>
-                  <span className="text-muted-foreground">{r.receipts.length} receipts</span>
-                </div>
-              ))}
-            </div>
+      <div className="mt-6">
+        <DashboardPanel
+          title="Pending Employee Reports"
+          action={
+            <Button asChild>
+              <Link to="/manager/reports">View All Reports</Link>
+            </Button>
+          }
+        >
+          {pendingReports.length > 0 ? (
+            <DashboardReportList
+              reports={pendingReports}
+              viewTo={() => '/manager/reports'}
+            />
           ) : (
-            <p className="text-sm text-muted-foreground">No pending reports.</p>
+            <DashboardEmptyState
+              image="folder"
+              title="No pending reports"
+              description="When employees submit expense reports, they will appear here for your review."
+              action={
+                <Button variant="outline" asChild>
+                  <Link to="/manager/reports">Refresh</Link>
+                </Button>
+              }
+            />
           )}
-        </CardContent>
-      </Card>
+        </DashboardPanel>
+      </div>
     </DashboardLayout>
   )
 }

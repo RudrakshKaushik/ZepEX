@@ -1,14 +1,16 @@
-import { CheckCircle2, Clock, FileText, XCircle } from 'lucide-react'
+import { CheckCircle2, Clock, FileText, Upload, XCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { getEmployeeDashboard } from '@/api'
+import { DashboardEmptyState } from '@/components/dashboard/DashboardEmptyState'
+import { DashboardPanel } from '@/components/dashboard/DashboardPanel'
+import { DashboardReportList } from '@/components/dashboard/DashboardReportList'
 import { MetricCard } from '@/components/MetricCard'
 import { ReportDetail } from '@/components/ReportDetail'
 import { StatusBadge } from '@/components/StatusBadge'
 import { DashboardLayout, employeeNav } from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageLoader } from '@/components/ui/spinner'
 import type { ExpenseReport } from '@/types'
 
@@ -43,10 +45,13 @@ export function EmployeeDashboard() {
   if (loading) return <PageLoader />
 
   const metrics = data?.metrics
+  const currentReport = data?.current_month_report?.report
+  const submittedReports = data?.submitted_reports ?? []
 
   return (
     <DashboardLayout
-      title="My Dashboard"
+      title="Employee Dashboard"
+      breadcrumb="Employee Dashboard"
       subtitle={`${data?.user.company} · ${data?.user.department}`}
       navItems={employeeNav}
     >
@@ -56,41 +61,79 @@ export function EmployeeDashboard() {
           title="Pending"
           value={metrics?.pending_reports ?? 0}
           icon={Clock}
-          accent="amber"
+          accent="orange"
         />
         <MetricCard
           title="Paid"
           value={metrics?.paid_reports ?? 0}
           icon={CheckCircle2}
-          accent="emerald"
+          accent="green"
         />
         <MetricCard
           title="Rejected"
           value={metrics?.rejected_reports ?? 0}
           icon={XCircle}
-          accent="rose"
+          accent="red"
         />
       </div>
 
-      <div className="mt-4">
-        <Link to="/employee/expenses">
-          <Button>Upload receipts & submit report</Button>
-        </Link>
-      </div>
-
-      {data?.current_month_report?.report && (
-        <Card className="mt-6">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Current month report</CardTitle>
-              <StatusBadge status={data.current_month_report.report.status} />
+      <div className="mt-6 space-y-6">
+        <DashboardPanel
+          title="Current Month Report"
+          action={
+            <Button asChild>
+              <Link to="/employee/expenses">
+                <Upload className="h-4 w-4" />
+                Upload receipt
+              </Link>
+            </Button>
+          }
+        >
+          {currentReport && currentReport.receipts?.length > 0 ? (
+            <div>
+              <div className="mb-4 flex items-center justify-end">
+                <StatusBadge status={currentReport.status} />
+              </div>
+              <ReportDetail report={currentReport} showEmployee={false} />
             </div>
-          </CardHeader>
-          <CardContent>
-            <ReportDetail report={data.current_month_report.report} showEmployee={false} />
-          </CardContent>
-        </Card>
-      )}
+          ) : (
+            <DashboardEmptyState
+              image="folder"
+              title="No receipts this month"
+              description="Upload your expense receipts to build your monthly reimbursement report."
+              action={
+                <Button asChild>
+                  <Link to="/employee/expenses">
+                    <Upload className="h-4 w-4" />
+                    Upload receipt
+                  </Link>
+                </Button>
+              }
+            />
+          )}
+        </DashboardPanel>
+
+        <DashboardPanel title="Submitted Reports">
+          {submittedReports.length > 0 ? (
+            <DashboardReportList
+              reports={submittedReports.slice(0, 5)}
+              showEmployee={false}
+              viewTo={() => '/employee/expenses'}
+            />
+          ) : (
+            <DashboardEmptyState
+              image="calendar"
+              title="No submitted reports yet"
+              description="After you submit a monthly report, your reimbursement history will show here."
+              action={
+                <Button variant="outline" asChild>
+                  <Link to="/employee/expenses">Go to expenses</Link>
+                </Button>
+              }
+            />
+          )}
+        </DashboardPanel>
+      </div>
     </DashboardLayout>
   )
 }

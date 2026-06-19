@@ -105,6 +105,10 @@ def approve_company_request(request, request_id):
         is_verified=True
     )
 
+    from tenants.role_utils import ensure_default_company_roles
+
+    ensure_default_company_roles(company)
+
     UserProfile.objects.create(
         user=user,
         company=company,
@@ -169,7 +173,7 @@ def company_list(request):
 
 
 @api_view(["GET"])
-@permission_classes@permission_classes([
+@permission_classes([
     IsAuthenticated,
     IsPlatformOwner
 ])

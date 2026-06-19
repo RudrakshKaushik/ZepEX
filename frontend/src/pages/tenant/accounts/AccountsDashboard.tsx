@@ -1,97 +1,118 @@
 import { CheckCircle2, Clock, DollarSign, FileText } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getAccountsDashboard } from '@/api'
+import { getPaymentDashboard } from '@/api'
+import { DashboardEmptyState } from '@/components/dashboard/DashboardEmptyState'
+import { DashboardPanel } from '@/components/dashboard/DashboardPanel'
+import { DashboardReportList } from '@/components/dashboard/DashboardReportList'
 import { MetricCard } from '@/components/MetricCard'
 import { DashboardLayout, accountsNav } from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageLoader } from '@/components/ui/spinner'
 import type { ExpenseReport } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 
-interface AccountsDashboardData {
-  accounts_user: { name: string; email: string; company: string }
-  metrics: Record<string, number | string>
-  pending_reports: ExpenseReport[]
+interface PaymentDashboardData {
+  payment_user: { name: string; email: string; company: string; company_role: string }
+  metrics: {
+    approved_reports_waiting_payment: number
+    paid_reports: number
+    rejected_reports: number
+    approved_amount: string
+    paid_amount: string
+    rejected_amount: string
+    payment_completion_rate: number
+  }
+  recent_paid_reports: ExpenseReport[]
+  approved_reports: ExpenseReport[]
   paid_reports: ExpenseReport[]
 }
 
 export function AccountsDashboard() {
-  const [data, setData] = useState<AccountsDashboardData | null>(null)
+  const [data, setData] = useState<PaymentDashboardData | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    getAccountsDashboard()
+    getPaymentDashboard()
       .then((res) => setData(res.data))
       .finally(() => setLoading(false))
   }, [])
 
   if (loading) return <PageLoader />
 
-  const metrics = data?.metrics ?? {}
+  const metrics = data?.metrics
+  const awaitingPayment = (data?.approved_reports ?? []).filter((r) => r.status === 'APPROVED')
+  const recentPaid = data?.recent_paid_reports ?? []
 
   return (
     <DashboardLayout
       title="Accounts Dashboard"
-      subtitle={data?.accounts_user.company}
+      breadcrumb="Accounts Dashboard"
+      subtitle={data?.payment_user.company}
       navItems={accountsNav}
     >
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          title="Pending"
-          value={metrics.pending_reports ?? 0}
+          title="Awaiting payment"
+          value={metrics?.approved_reports_waiting_payment ?? 0}
           icon={Clock}
-          accent="amber"
+          accent="orange"
         />
         <MetricCard
-          title="Approved"
-          value={metrics.approved_reports ?? 0}
+          title="Paid reports"
+          value={metrics?.paid_reports ?? 0}
           icon={CheckCircle2}
-          accent="sky"
+          accent="green"
         />
         <MetricCard
-          title="Paid"
-          value={metrics.paid_reports ?? 0}
+          title="Completion rate"
+          value={`${metrics?.payment_completion_rate ?? 0}%`}
           icon={FileText}
-          accent="emerald"
+          accent="blue"
         />
         <MetricCard
           title="Paid amount"
-          value={formatCurrency(String(metrics.paid_amount ?? 0))}
+          value={formatCurrency(String(metrics?.paid_amount ?? 0))}
           icon={DollarSign}
-          accent="indigo"
+          accent="blue"
         />
       </div>
 
-      <div className="mt-4">
-        <Link to="/accounts/reports">
-          <Button>Process pending reports</Button>
-        </Link>
-      </div>
-
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle>Recently paid</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {data?.paid_reports?.length ? (
-            <div className="space-y-2">
-              {data.paid_reports.slice(0, 5).map((r) => (
-                <div
-                  key={r.id}
-                  className="flex items-center justify-between rounded-lg border px-4 py-3 text-sm"
-                >
-                  <span>{r.employee_email}</span>
-                  <span className="text-muted-foreground">{r.department_name}</span>
-                </div>
-              ))}
-            </div>
+      <div className="mt-6 space-y-6">
+        <DashboardPanel
+          title="Approved Reports"
+          action={
+            <Button asChild>
+              <Link to="/accounts/reports">Mark as paid</Link>
+            </Button>
+          }
+        >
+          {awaitingPayment.length > 0 ? (
+            <DashboardReportList
+              reports={awaitingPayment.slice(0, 5)}
+              viewTo={() => '/accounts/reports'}
+            />
           ) : (
-            <p className="text-sm text-muted-foreground">No paid reports yet.</p>
+            <DashboardEmptyState
+              image="folder"
+              title="No reports awaiting payment"
+              description="Approved expense reports ready for payment will appear here."
+            />
           )}
-        </CardContent>
-      </Card>
+        </DashboardPanel>
+
+        <DashboardPanel title="Recently Paid">
+          {recentPaid.length > 0 ? (
+            <DashboardReportList reports={recentPaid.slice(0, 5)} />
+          ) : (
+            <DashboardEmptyState
+              image="calendar"
+              title="No paid reports yet"
+              description="Completed reimbursements will be listed here once marked as paid."
+            />
+          )}
+        </DashboardPanel>
+      </div>
     </DashboardLayout>
   )
 }

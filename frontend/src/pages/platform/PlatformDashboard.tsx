@@ -1,13 +1,15 @@
-import { Building2, ClipboardList, FileText, ScrollText } from 'lucide-react'
+import { Building2, ClipboardList, FileText, LayoutDashboard } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getPlatformDashboard } from '@/api'
+import { AdminDataTable, AdminTableCell, AdminTableRow } from '@/components/admin/AdminDataTable'
+import { AdminListPanel } from '@/components/admin/AdminListPanel'
 import { MetricCard } from '@/components/MetricCard'
 import { StatusBadge } from '@/components/StatusBadge'
-import { DashboardLayout, platformNav } from '@/components/layout/DashboardLayout'
+import { DashboardLayout, platformNavWithAudit } from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageLoader } from '@/components/ui/spinner'
+import { formatMetricDisplay } from '@/lib/format'
 import { formatDate } from '@/lib/utils'
 
 interface PlatformDashboardData {
@@ -35,90 +37,77 @@ export function PlatformDashboard() {
   if (loading) return <PageLoader />
 
   const metrics = data?.metrics ?? {}
+  const companies = data?.recent_companies ?? []
 
   return (
     <DashboardLayout
       portal="platform"
       title="Platform Dashboard"
-      subtitle={`Welcome, ${data?.platform_owner.email}`}
-      navItems={[
-        ...platformNav,
-        { label: 'Audit Logs', to: '/platform/audit-logs', icon: ScrollText },
-      ]}
+      subtitle={data?.platform_owner.email}
+      breadcrumb="Platform Dashboard"
+      icon={LayoutDashboard}
+      navItems={platformNavWithAudit}
+      headerAction={
+        <Button asChild>
+          <Link to="/platform/requests">Review Company Requests</Link>
+        </Button>
+      }
     >
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          title="Total companies"
-          value={metrics.total_companies ?? 0}
+          title="Total Companies"
+          value={formatMetricDisplay(Number(metrics.total_companies ?? 0))}
           icon={Building2}
-          accent="indigo"
+          accent="blue"
         />
         <MetricCard
-          title="Pending requests"
-          value={metrics.pending_company_requests ?? 0}
+          title="Pending Requests"
+          value={formatMetricDisplay(Number(metrics.pending_company_requests ?? 0))}
           icon={ClipboardList}
-          accent="amber"
+          accent="orange"
         />
         <MetricCard
-          title="Total reports"
-          value={metrics.total_reports ?? 0}
+          title="Total Reports"
+          value={formatMetricDisplay(Number(metrics.total_reports ?? 0))}
           icon={FileText}
-          accent="sky"
+          accent="purple"
         />
         <MetricCard
-          title="Paid reports"
-          value={metrics.paid_reports ?? 0}
+          title="Paid Reports"
+          value={formatMetricDisplay(Number(metrics.paid_reports ?? 0))}
           icon={FileText}
-          accent="emerald"
+          accent="green"
         />
       </div>
 
-      <div className="mt-6 flex flex-wrap gap-3">
-        <Link to="/platform/requests">
-          <Button>Review company requests</Button>
-        </Link>
-        <Link to="/platform/audit-logs">
-          <Button variant="outline">View audit logs</Button>
-        </Link>
-      </div>
-
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle>Recent companies</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {data?.recent_companies?.length ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-muted-foreground">
-                  <tr>
-                    <th className="pb-3 font-medium">Company</th>
-                    <th className="pb-3 font-medium">Domain</th>
-                    <th className="pb-3 font-medium">Status</th>
-                    <th className="pb-3 font-medium">Created</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.recent_companies.map((company) => (
-                    <tr key={company.id} className="border-t">
-                      <td className="py-3 font-medium">{company.name}</td>
-                      <td className="py-3">{company.domain}</td>
-                      <td className="py-3">
-                        <StatusBadge status={company.is_verified ? 'APPROVED' : 'PENDING'} />
-                      </td>
-                      <td className="py-3 text-muted-foreground">
-                        {formatDate(company.created_at)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+      <div className="mt-6">
+        <AdminListPanel
+          title="Recent Companies"
+          count={companies.length}
+          description="Latest companies registered on the platform."
+        >
+          {companies.length === 0 ? (
+            <p className="px-5 py-8 text-sm text-gray-400 sm:px-6">No companies yet.</p>
           ) : (
-            <p className="text-sm text-muted-foreground">No companies yet.</p>
+            <AdminDataTable columns={['Company', 'Domain', 'Status', 'Created']}>
+              {companies.map((company) => (
+                <AdminTableRow key={company.id}>
+                  <AdminTableCell className="font-medium text-gray-900">
+                    {company.name}
+                  </AdminTableCell>
+                  <AdminTableCell>{company.domain}</AdminTableCell>
+                  <AdminTableCell>
+                    <StatusBadge status={company.is_verified ? 'APPROVED' : 'PENDING'} />
+                  </AdminTableCell>
+                  <AdminTableCell className="text-gray-500">
+                    {formatDate(company.created_at)}
+                  </AdminTableCell>
+                </AdminTableRow>
+              ))}
+            </AdminDataTable>
           )}
-        </CardContent>
-      </Card>
+        </AdminListPanel>
+      </div>
     </DashboardLayout>
   )
 }

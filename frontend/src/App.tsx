@@ -3,6 +3,7 @@ import { AuthProvider } from '@/context/AuthContext'
 import { ProtectedRoute } from '@/routes/ProtectedRoute'
 import { LandingPage } from '@/pages/LandingPage'
 import { LoginPage } from '@/pages/LoginPage'
+import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
 import { PlatformLoginPage } from '@/pages/platform/PlatformLoginPage'
 import { RegisterPage } from '@/pages/RegisterPage'
 import { PlatformDashboard } from '@/pages/platform/PlatformDashboard'
@@ -20,6 +21,9 @@ import { ManagerDashboard } from '@/pages/tenant/manager/ManagerDashboard'
 import { ManagerReportsPage } from '@/pages/tenant/manager/ManagerReportsPage'
 import { AccountsDashboard } from '@/pages/tenant/accounts/AccountsDashboard'
 import { AccountsReportsPage } from '@/pages/tenant/accounts/AccountsReportsPage'
+import { RolesPage } from '@/pages/tenant/admin/RolesPage'
+import { WorkflowPage } from '@/pages/tenant/admin/WorkflowPage'
+import { ProfilePage } from '@/pages/ProfilePage'
 
 export default function App() {
   return (
@@ -28,8 +32,26 @@ export default function App() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/platform/login" element={<PlatformLoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+
+          <Route
+            element={
+              <ProtectedRoute
+                allowedRoles={[
+                  'PLATFORM_OWNER',
+                  'COMPANY_ADMIN',
+                  'MANAGER',
+                  'EMPLOYEE',
+                  'ACCOUNTS',
+                ]}
+                loginPath="/login"
+              />
+            }
+          >
+            <Route path="/profile" element={<ProfilePage />} />
+          </Route>
 
           <Route
             element={
@@ -46,6 +68,8 @@ export default function App() {
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/admin/departments" element={<DepartmentsPage />} />
             <Route path="/admin/employees" element={<EmployeesPage />} />
+            <Route path="/admin/roles" element={<RolesPage />} />
+            <Route path="/admin/workflow" element={<WorkflowPage />} />
             <Route path="/admin/policy" element={<PolicyPage />} />
             <Route path="/admin/settings" element={<SettingsPage />} />
             <Route path="/admin/audit-logs" element={<AuditLogsPage />} />
@@ -64,7 +88,7 @@ export default function App() {
             />
           </Route>
 
-          <Route element={<ProtectedRoute allowedRoles={['MANAGER']} />}>
+          <Route element={<ProtectedRoute allowedRoles={['MANAGER']} requiredPermission="can_approve_expense" />}>
             <Route path="/manager" element={<ManagerDashboard />} />
             <Route path="/manager/reports" element={<ManagerReportsPage />} />
             <Route path="/manager/expenses" element={<ExpensesPage />} />
@@ -72,13 +96,21 @@ export default function App() {
               path="/manager-dashboard"
               element={<Navigate to="/manager" replace />}
             />
+            <Route
+              path="/approver-dashboard"
+              element={<Navigate to="/manager" replace />}
+            />
           </Route>
 
-          <Route element={<ProtectedRoute allowedRoles={['ACCOUNTS']} />}>
+          <Route element={<ProtectedRoute allowedRoles={['ACCOUNTS']} requiredPermission="can_mark_paid" />}>
             <Route path="/accounts" element={<AccountsDashboard />} />
             <Route path="/accounts/reports" element={<AccountsReportsPage />} />
             <Route
               path="/accounts-dashboard"
+              element={<Navigate to="/accounts" replace />}
+            />
+            <Route
+              path="/payment-dashboard"
               element={<Navigate to="/accounts" replace />}
             />
           </Route>

@@ -8,6 +8,7 @@ import {
 } from 'react'
 import { login as loginApi } from '@/api'
 import { clearStoredAuth, getApiErrorMessage, setStoredToken } from '@/api/client'
+import { normalizeLoginUser, resolvePostLoginPath, roleHome } from '@/lib/auth'
 import type { User, UserRole } from '@/types'
 
 const USER_KEY = 'zepex_user'
@@ -25,18 +26,15 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 function loadStoredUser(): User | null {
   try {
     const raw = localStorage.getItem(USER_KEY)
-    return raw ? (JSON.parse(raw) as User) : null
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as User
+    if (!parsed.role && parsed.system_role) {
+      parsed.role = parsed.system_role
+    }
+    return parsed
   } catch {
     return null
   }
-}
-
-const roleHome: Record<UserRole, string> = {
-  PLATFORM_OWNER: '/platform',
-  COMPANY_ADMIN: '/admin',
-  MANAGER: '/manager',
-  EMPLOYEE: '/employee',
-  ACCOUNTS: '/accounts',
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -44,10 +42,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const { data } = await loginApi(email, password)
+    const normalizedUser = normalizeLoginUser(data.user)
     setStoredToken(data.token)
-    localStorage.setItem(USER_KEY, JSON.stringify(data.user))
-    setUser(data.user)
-    return data.redirect_to || roleHome[data.user.role]
+    localStorage.setItem(USER_KEY, JSON.stringify(normalizedUser))
+    setUser(normalizedUser)
+    return resolvePostLoginPath(normalizedUser, data.redirect_to)
   }, [])
 
   const logout = useCallback(() => {

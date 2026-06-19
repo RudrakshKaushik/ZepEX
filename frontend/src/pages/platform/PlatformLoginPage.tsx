@@ -1,4 +1,4 @@
-import { Shield, Zap } from 'lucide-react'
+import { Shield } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getApiErrorMessage, useAuth } from '@/context/AuthContext'
@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import logo from '@/assets/logo.png'
 
 export function PlatformLoginPage() {
   const { login, logout } = useAuth()
@@ -41,10 +42,7 @@ export function PlatformLoginPage() {
     <div className="flex min-h-screen bg-slate-950">
       <div className="hidden w-1/2 flex-col justify-between bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-12 text-white lg:flex">
         <div className="flex items-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10">
-            <Zap className="h-5 w-5" />
-          </div>
-          <span className="text-xl font-bold">ZepEX Platform</span>
+          <img src={logo} alt="ZepEX" className="h-full w-25" />
         </div>
         <div>
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-slate-600 bg-slate-800/50 px-3 py-1 text-sm text-slate-300">

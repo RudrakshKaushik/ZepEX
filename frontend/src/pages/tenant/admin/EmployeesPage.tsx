@@ -1,43 +1,71 @@
-import { Plus, UserPlus } from 'lucide-react'
+import { Pencil, Plus, Power, PowerOff, Trash2, UserPlus, Users } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
+  activateCompanyUser,
   assignManager,
+  assignMissingCompanyRoles,
   createEmployee,
+  deactivateCompanyUser,
+  deleteCompanyUser,
+  editCompanyUser,
+  listCompanyRoles,
   listDepartments,
   listEmployees,
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
-import { StatusBadge } from '@/components/StatusBadge'
-import { DashboardLayout, adminNav } from '@/components/layout/DashboardLayout'
+import { AdminConfirmDialog } from '@/components/admin/AdminConfirmDialog'
+import { AdminDataTable, AdminTableCell, AdminTableRow, RolePill } from '@/components/admin/AdminDataTable'
+import { AdminListPanel } from '@/components/admin/AdminListPanel'
+import { AdminModalFooter } from '@/components/admin/AdminModalFooter'
+import { DashboardLayout } from '@/components/layout/DashboardLayout'
+import { useAdminNav } from '@/hooks/useAdminNav'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { PageLoader } from '@/components/ui/spinner'
-import type { DepartmentRecord, EmployeeRecord } from '@/types'
+import type { CompanyRole, DepartmentRecord, EmployeeRecord } from '@/types'
 import { formatDate } from '@/lib/utils'
 
 const roles = ['MANAGER', 'EMPLOYEE', 'ACCOUNTS'] as const
 
 const selectClassName =
-  'flex h-10 w-full rounded-lg border border-input bg-card px-3 text-sm'
+  'flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm'
+
+type ConfirmAction = { type: 'deactivate' | 'delete'; emp: EmployeeRecord }
+
+const systemRoleToCompanyRoleName: Record<string, string> = {
+  EMPLOYEE: 'Employee',
+  MANAGER: 'Manager',
+  ACCOUNTS: 'Accounts',
+}
+
+function matchCompanyRoleId(systemRole: string, companyRoles: CompanyRole[]) {
+  const name = systemRoleToCompanyRoleName[systemRole]
+  if (!name) return ''
+  const match = companyRoles.find((r) => r.name.toLowerCase() === name.toLowerCase())
+  return match ? String(match.id) : ''
+}
 
 export function EmployeesPage() {
+  const { navItems } = useAdminNav()
   const [employees, setEmployees] = useState<EmployeeRecord[]>([])
   const [departments, setDepartments] = useState<DepartmentRecord[]>([])
+  const [companyRoles, setCompanyRoles] = useState<CompanyRole[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   const [assignOpen, setAssignOpen] = useState(false)
+  const [confirm, setConfirm] = useState<ConfirmAction | null>(null)
+  const [editing, setEditing] = useState<EmployeeRecord | null>(null)
   const [assignDept, setAssignDept] = useState('')
   const [assignManagerId, setAssignManagerId] = useState('')
   const [form, setForm] = useState({
@@ -47,14 +75,29 @@ export function EmployeesPage() {
     password: '',
     role: 'EMPLOYEE' as string,
     department_id: '',
+    company_role_id: '',
+  })
+  const [editForm, setEditForm] = useState({
+    first_name: '',
+    last_name: '',
+    role: 'EMPLOYEE',
+    department_id: '',
+    company_role_id: '',
+    phone_number: '',
+    address: '',
   })
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [empRes, deptRes] = await Promise.all([listEmployees(), listDepartments()])
+      const [empRes, deptRes, rolesRes] = await Promise.all([
+        listEmployees(),
+        listDepartments(),
+        listCompanyRoles(),
+      ])
       setEmployees(empRes.data)
-      setDepartments(deptRes.data)
+      setDepartments(deptRes.data.filter((d) => d.is_active !== false))
+      setCompanyRoles(rolesRes.data.results)
     } finally {
       setLoading(false)
     }
@@ -72,7 +115,31 @@ export function EmployeesPage() {
       password: '',
       role: 'EMPLOYEE',
       department_id: '',
+      company_role_id: matchCompanyRoleId('EMPLOYEE', companyRoles),
     })
+  }
+
+  const handleFixMissingRoles = async () => {
+    setSaving(true)
+    setError('')
+    setMessage('')
+    try {
+      const { data } = await assignMissingCompanyRoles()
+      setMessage(data.message)
+      await load()
+    } catch (err) {
+      setError(getApiErrorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const setSystemRole = (role: string) => {
+    setForm((prev) => ({
+      ...prev,
+      role,
+      company_role_id: matchCompanyRoleId(role, companyRoles) || prev.company_role_id,
+    }))
   }
 
   const handleCreate = async (e: FormEvent) => {
@@ -80,13 +147,91 @@ export function EmployeesPage() {
     setSaving(true)
     setError('')
     try {
-      const payload = {
-        ...form,
+      await createEmployee({
+        first_name: form.first_name,
+        last_name: form.last_name,
+        email: form.email,
+        password: form.password,
+        role: form.role,
         department_id: form.role === 'ACCOUNTS' ? undefined : form.department_id || undefined,
-      }
-      await createEmployee(payload)
+        company_role_id: form.company_role_id ? parseInt(form.company_role_id, 10) : undefined,
+      })
       resetForm()
       setCreateOpen(false)
+      await load()
+    } catch (err) {
+      setError(getApiErrorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const openEdit = (emp: EmployeeRecord) => {
+    setEditing(emp)
+    setEditForm({
+      first_name: emp.first_name,
+      last_name: emp.last_name,
+      role: emp.role,
+      department_id: emp.department || '',
+      company_role_id: emp.company_role ? String(emp.company_role) : '',
+      phone_number: emp.phone_number || '',
+      address: emp.address || '',
+    })
+    setError('')
+    setEditOpen(true)
+  }
+
+  const handleEdit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!editing) return
+    setSaving(true)
+    setError('')
+    try {
+      await editCompanyUser(editing.id, {
+        first_name: editForm.first_name,
+        last_name: editForm.last_name,
+        role: editForm.role,
+        department_id: editForm.role === 'ACCOUNTS' ? null : editForm.department_id || null,
+        company_role_id: editForm.company_role_id
+          ? parseInt(editForm.company_role_id, 10)
+          : null,
+        phone_number: editForm.phone_number || undefined,
+        address: editForm.address || undefined,
+      })
+      setEditOpen(false)
+      setEditing(null)
+      await load()
+    } catch (err) {
+      setError(getApiErrorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleConfirmAction = async () => {
+    if (!confirm) return
+    setSaving(true)
+    setError('')
+    try {
+      if (confirm.type === 'deactivate') {
+        await deactivateCompanyUser(confirm.emp.id)
+      } else {
+        await deleteCompanyUser(confirm.emp.id)
+      }
+      setConfirm(null)
+      await load()
+    } catch (err) {
+      setError(getApiErrorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleActivate = async (emp: EmployeeRecord) => {
+    setSaving(true)
+    setError('')
+    try {
+      await activateCompanyUser(emp.id)
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -100,7 +245,7 @@ export function EmployeesPage() {
     setSaving(true)
     setError('')
     try {
-      await assignManager(assignDept, assignManagerId)
+      await assignManager(assignDept, parseInt(assignManagerId, 10))
       setAssignDept('')
       setAssignManagerId('')
       setAssignOpen(false)
@@ -112,80 +257,124 @@ export function EmployeesPage() {
     }
   }
 
-  const managers = employees.filter((e) => e.role === 'MANAGER')
+  const managers = employees.filter((e) => e.role === 'MANAGER' && e.is_active !== false)
+  const missingCompanyRoleCount = employees.filter(
+    (e) => !e.company_role_name && ['EMPLOYEE', 'MANAGER', 'ACCOUNTS'].includes(e.role),
+  ).length
 
   if (loading) return <PageLoader />
 
   return (
-    <DashboardLayout title="Employees" subtitle="Manage users and assign managers" navItems={adminNav}>
-      <Card>
-        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
-          <CardTitle>All users ({employees.length})</CardTitle>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => { setError(''); setAssignOpen(true) }}>
-              <UserPlus className="h-4 w-4" />
-              Assign manager
-            </Button>
-            <Button onClick={() => { setError(''); setCreateOpen(true) }}>
-              <Plus className="h-4 w-4" />
-              Create employee
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-left text-muted-foreground">
-                <tr>
-                  <th className="pb-3 font-medium">Name</th>
-                  <th className="pb-3 font-medium">Email</th>
-                  <th className="pb-3 font-medium">Role</th>
-                  <th className="pb-3 font-medium">Department</th>
-                  <th className="pb-3 font-medium">Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {employees.map((emp) => (
-                  <tr key={emp.id} className="border-t">
-                    <td className="py-3 font-medium">
-                      {emp.first_name} {emp.last_name}
-                    </td>
-                    <td className="py-3">{emp.email}</td>
-                    <td className="py-3">
-                      <StatusBadge status={emp.role} />
-                    </td>
-                    <td className="py-3">{emp.department_name || '—'}</td>
-                    <td className="py-3 text-muted-foreground">{formatDate(emp.created_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+    <DashboardLayout
+      title="Employees"
+      subtitle="Manage users and assign managers"
+      breadcrumb="Employees"
+      icon={Users}
+      navItems={navItems}
+      headerAction={
+        <>
+          <Button variant="outline" onClick={() => { setError(''); setAssignOpen(true) }}>
+            <UserPlus className="h-4 w-4" />
+            Assign Manager
+          </Button>
+          <Button onClick={() => { setError(''); resetForm(); setCreateOpen(true) }}>
+            <Plus className="h-4 w-4" />
+            Create Employee
+          </Button>
+        </>
+      }
+    >
+      {message && (
+        <div className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">
+          {message}
+        </div>
+      )}
+      {missingCompanyRoleCount > 0 && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
+          <p>
+            {missingCompanyRoleCount} user(s) have no company role assigned.
+          </p>
+          <Button size="sm" variant="outline" disabled={saving} onClick={handleFixMissingRoles}>
+            Assign default roles
+          </Button>
+        </div>
+      )}
+      {error && !createOpen && !editOpen && !assignOpen && !confirm && (
+        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      )}
+
+      <AdminListPanel
+        title="All Users"
+        count={employees.length}
+        description="View employee details, roles, and department assignments."
+      >
+        <AdminDataTable columns={['Name', 'Email Address', 'Role', 'Department', 'Created', '']}>
+          {employees.map((emp) => (
+            <AdminTableRow key={emp.id}>
+              <AdminTableCell className="font-medium text-gray-900">
+                {emp.first_name} {emp.last_name}
+              </AdminTableCell>
+              <AdminTableCell>{emp.email}</AdminTableCell>
+              <AdminTableCell>
+                <RolePill>{emp.role.toLowerCase()}</RolePill>
+              </AdminTableCell>
+              <AdminTableCell>{emp.department_name || '—'}</AdminTableCell>
+              <AdminTableCell className="text-gray-500">
+                {formatDate(emp.created_at)}
+              </AdminTableCell>
+              <AdminTableCell className="text-right">
+                <div className="flex justify-end gap-1">
+                  <Button size="sm" variant="ghost" disabled={saving} onClick={() => openEdit(emp)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  {emp.is_active === false ? (
+                    <Button size="sm" variant="ghost" disabled={saving} onClick={() => handleActivate(emp)}>
+                      <Power className="h-3.5 w-3.5 text-green-600" />
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={saving}
+                      onClick={() => setConfirm({ type: 'deactivate', emp })}
+                    >
+                      <PowerOff className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={saving}
+                    onClick={() => setConfirm({ type: 'delete', emp })}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                  </Button>
+                </div>
+              </AdminTableCell>
+            </AdminTableRow>
+          ))}
+        </AdminDataTable>
+      </AdminListPanel>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Create employee</DialogTitle>
-            <DialogDescription>Add a new user to your company.</DialogDescription>
+            <DialogTitle>Create Employee</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCreate} className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label>First name</Label>
+            <div className="space-y-2">
+              <Label>Name</Label>
+              <div className="grid gap-2 sm:grid-cols-2">
                 <Input
+                  placeholder="First name"
                   value={form.first_name}
                   onChange={(e) => setForm({ ...form, first_name: e.target.value })}
                   required
                 />
-              </div>
-              <div className="space-y-2">
-                <Label>Last name</Label>
                 <Input
+                  placeholder="Last name"
                   value={form.last_name}
                   onChange={(e) => setForm({ ...form, last_name: e.target.value })}
-                  required
                 />
               </div>
             </div>
@@ -208,11 +397,28 @@ export function EmployeesPage() {
               />
             </div>
             <div className="space-y-2">
+              <Label>Department</Label>
+              <select
+                className={selectClassName}
+                value={form.department_id}
+                onChange={(e) => setForm({ ...form, department_id: e.target.value })}
+                required={form.role !== 'ACCOUNTS'}
+                disabled={form.role === 'ACCOUNTS'}
+              >
+                <option value="">Select department</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
               <Label>Role</Label>
               <select
                 className={selectClassName}
                 value={form.role}
-                onChange={(e) => setForm({ ...form, role: e.target.value })}
+                onChange={(e) => setSystemRole(e.target.value)}
               >
                 {roles.map((r) => (
                   <option key={r} value={r}>
@@ -221,16 +427,74 @@ export function EmployeesPage() {
                 ))}
               </select>
             </div>
-            {form.role !== 'ACCOUNTS' && (
+            {error && createOpen && <p className="text-sm text-red-600">{error}</p>}
+            <AdminModalFooter
+              onCancel={() => setCreateOpen(false)}
+              submitLabel="Create"
+              submitting={saving}
+            />
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Employee</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleEdit} className="space-y-3">
+            <div className="space-y-2">
+              <Label>Name</Label>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Input
+                  value={editForm.first_name}
+                  onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
+                  required
+                />
+                <Input
+                  value={editForm.last_name}
+                  onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Role</Label>
+              <select
+                className={selectClassName}
+                value={editForm.role}
+                onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+              >
+                {roles.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label>Company role</Label>
+              <select
+                className={selectClassName}
+                value={editForm.company_role_id}
+                onChange={(e) => setEditForm({ ...editForm, company_role_id: e.target.value })}
+              >
+                <option value="">None</option>
+                {companyRoles.map((r) => (
+                  <option key={r.id} value={String(r.id)}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {editForm.role !== 'ACCOUNTS' && (
               <div className="space-y-2">
                 <Label>Department</Label>
                 <select
                   className={selectClassName}
-                  value={form.department_id}
-                  onChange={(e) => setForm({ ...form, department_id: e.target.value })}
-                  required
+                  value={editForm.department_id}
+                  onChange={(e) => setEditForm({ ...editForm, department_id: e.target.value })}
                 >
-                  <option value="">Select department</option>
+                  <option value="">None</option>
                   {departments.map((d) => (
                     <option key={d.id} value={d.id}>
                       {d.name}
@@ -239,24 +503,20 @@ export function EmployeesPage() {
                 </select>
               </div>
             )}
-            {error && createOpen && <p className="text-sm text-red-600">{error}</p>}
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? 'Creating...' : 'Create user'}
-              </Button>
-            </DialogFooter>
+            {error && editOpen && <p className="text-sm text-red-600">{error}</p>}
+            <AdminModalFooter
+              onCancel={() => setEditOpen(false)}
+              submitLabel="Save"
+              submitting={saving}
+            />
           </form>
         </DialogContent>
       </Dialog>
 
       <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Assign manager to department</DialogTitle>
-            <DialogDescription>Link a manager to oversee a department.</DialogDescription>
+            <DialogTitle>Assign Role To Department</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleAssign} className="space-y-3">
             <div className="space-y-2">
@@ -286,23 +546,40 @@ export function EmployeesPage() {
                 <option value="">Select manager</option>
                 {managers.map((m) => (
                   <option key={m.id} value={String(m.id)}>
-                    {m.first_name} {m.last_name} ({m.email})
+                    {m.first_name} {m.last_name}
                   </option>
                 ))}
               </select>
             </div>
             {error && assignOpen && <p className="text-sm text-red-600">{error}</p>}
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setAssignOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" variant="secondary" disabled={saving}>
-                {saving ? 'Assigning...' : 'Assign manager'}
-              </Button>
-            </DialogFooter>
+            <AdminModalFooter
+              onCancel={() => setAssignOpen(false)}
+              submitLabel="Assign"
+              submitting={saving}
+            />
           </form>
         </DialogContent>
       </Dialog>
+
+      <AdminConfirmDialog
+        open={confirm?.type === 'deactivate'}
+        onOpenChange={(v) => !v && setConfirm(null)}
+        title="Deactivate Employee"
+        description={`Deactivate ${confirm?.emp.email}? They will not be able to log in.`}
+        confirmLabel="Deactivate"
+        onConfirm={handleConfirmAction}
+        loading={saving}
+      />
+
+      <AdminConfirmDialog
+        open={confirm?.type === 'delete'}
+        onOpenChange={(v) => !v && setConfirm(null)}
+        title="Delete Employee"
+        description={`Permanently delete ${confirm?.emp.email}? This cannot be undone.`}
+        confirmLabel="Delete"
+        onConfirm={handleConfirmAction}
+        loading={saving}
+      />
     </DashboardLayout>
   )
 }

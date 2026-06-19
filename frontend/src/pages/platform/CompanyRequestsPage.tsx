@@ -1,4 +1,4 @@
-import { Check, ScrollText, X } from 'lucide-react'
+import { Building2, Check, ClipboardList, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import {
   approveCompanyRequest,
@@ -6,18 +6,13 @@ import {
   rejectCompanyRequest,
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
+import { AdminListPanel } from '@/components/admin/AdminListPanel'
 import { StatusBadge } from '@/components/StatusBadge'
-import { DashboardLayout, platformNav } from '@/components/layout/DashboardLayout'
+import { DashboardLayout, platformNavWithAudit } from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageLoader } from '@/components/ui/spinner'
 import type { CompanyRegistrationRequest } from '@/types'
 import { formatDateTime } from '@/lib/utils'
-
-const platformNavWithAudit = [
-  ...platformNav,
-  { label: 'Audit Logs', to: '/platform/audit-logs', icon: ScrollText },
-]
 
 export function CompanyRequestsPage() {
   const [requests, setRequests] = useState<CompanyRegistrationRequest[]>([])
@@ -74,68 +69,57 @@ export function CompanyRequestsPage() {
 
   if (loading) return <PageLoader />
 
+  const pendingCount = requests.filter((r) => r.status === 'PENDING').length
+
   return (
     <DashboardLayout
       portal="platform"
       title="Company Requests"
       subtitle="Review and approve registrations"
+      breadcrumb="Company Requests"
+      icon={ClipboardList}
       navItems={platformNavWithAudit}
     >
-      <div className="w-full max-w-full overflow-hidden">
-        {message && (
-          <div className="mb-4 break-words rounded-lg bg-emerald-50 px-3 py-3 text-sm text-emerald-800 sm:px-4">
-            {message}
-          </div>
-        )}
-        {error && (
-          <div className="mb-4 break-words rounded-lg bg-red-50 px-3 py-3 text-sm text-red-700 sm:px-4">
-            {error}
-          </div>
-        )}
+      {message && (
+        <div className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">
+          {message}
+        </div>
+      )}
+      {error && (
+        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      )}
 
-        <Card className="w-full max-w-full overflow-hidden">
-          <CardHeader className="space-y-0 p-4 sm:p-6 sm:pb-4">
-            <CardTitle className="text-base sm:text-lg">All registration requests</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 p-4 pt-0 sm:space-y-4 sm:p-6 sm:pt-0">
-            {requests.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No registration requests.</p>
-            ) : (
-              requests.map((req) => (
-                <article
-                  key={req.id}
-                  className="w-full max-w-full overflow-hidden rounded-xl border p-3 sm:p-4"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-sm font-semibold sm:text-base">{req.company_name}</h3>
-                    <StatusBadge status={req.status} />
+      <AdminListPanel
+        title="Registration Requests"
+        count={requests.length}
+        description={`${pendingCount} request(s) awaiting your review.`}
+      >
+        {requests.length === 0 ? (
+          <p className="px-5 py-8 text-sm text-gray-400 sm:px-6">No registration requests.</p>
+        ) : (
+          <ul className="divide-y divide-[#e2e8f0]">
+            {requests.map((req) => (
+              <li key={req.id} className="px-5 py-4 sm:px-6">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Building2 className="h-4 w-4 shrink-0 text-primary" />
+                      <h3 className="font-semibold text-gray-900">{req.company_name}</h3>
+                      <StatusBadge status={req.status} />
+                    </div>
+                    <p className="mt-1 text-sm text-gray-500">{req.company_domain}</p>
+                    <p className="mt-1 text-sm text-gray-500">
+                      {req.admin_name} · {req.admin_email}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-400">
+                      Submitted {formatDateTime(req.created_at)}
+                    </p>
                   </div>
-
-                  <dl className="mt-2 space-y-1 text-sm text-muted-foreground">
-                    <div className="break-words">
-                      <dt className="sr-only">Domain</dt>
-                      <dd>{req.company_domain}</dd>
-                    </div>
-                    <div>
-                      <dt className="sr-only">Admin</dt>
-                      <dd>Admin: {req.admin_name}</dd>
-                    </div>
-                    <div className="break-all">
-                      <dt className="sr-only">Email</dt>
-                      <dd>{req.admin_email}</dd>
-                    </div>
-                    <div>
-                      <dt className="sr-only">Submitted</dt>
-                      <dd className="text-xs">Submitted {formatDateTime(req.created_at)}</dd>
-                    </div>
-                  </dl>
-
                   {req.status === 'PENDING' && (
-                    <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:w-fit">
+                    <div className="flex gap-2">
                       <Button
                         size="sm"
                         variant="success"
-                        className="w-full sm:w-auto"
                         disabled={actionId === req.id}
                         onClick={() => handleApprove(req.id)}
                       >
@@ -145,7 +129,6 @@ export function CompanyRequestsPage() {
                       <Button
                         size="sm"
                         variant="destructive"
-                        className="w-full sm:w-auto"
                         disabled={actionId === req.id}
                         onClick={() => handleReject(req.id)}
                       >
@@ -154,12 +137,12 @@ export function CompanyRequestsPage() {
                       </Button>
                     </div>
                   )}
-                </article>
-              ))
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </AdminListPanel>
     </DashboardLayout>
   )
 }

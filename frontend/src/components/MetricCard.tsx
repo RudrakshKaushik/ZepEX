@@ -7,15 +7,15 @@ interface MetricCardProps {
   value: string | number
   icon: LucideIcon
   description?: string
-  accent?: 'indigo' | 'emerald' | 'amber' | 'rose' | 'sky'
+  accent?: 'blue' | 'green' | 'orange' | 'red' | 'purple'
 }
 
 const accentStyles = {
-  indigo: 'bg-indigo-50 text-indigo-600',
-  emerald: 'bg-emerald-50 text-emerald-600',
-  amber: 'bg-amber-50 text-amber-600',
-  rose: 'bg-rose-50 text-rose-600',
-  sky: 'bg-sky-50 text-sky-600',
+  blue: 'bg-[#2563eb]',
+  green: 'bg-[#22c55e]',
+  orange: 'bg-[#f59e0b]',
+  red: 'bg-[#ef4444]',
+  purple: 'bg-violet-500',
 }
 
 export function MetricCard({
@@ -23,21 +23,22 @@ export function MetricCard({
   value,
   icon: Icon,
   description,
-  accent = 'indigo',
+  accent = 'blue',
 }: MetricCardProps) {
   return (
-    <Card>
-      <CardContent className="flex items-start justify-between p-6">
-        <div>
-          <p className="text-sm font-medium text-muted-foreground">{title}</p>
-          <p className="mt-2 text-3xl font-bold tracking-tight">{value}</p>
-          {description && (
-            <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+    <Card className="border-gray-200">
+      <CardContent className="p-5 sm:p-6">
+        <div
+          className={cn(
+            'mb-4 flex h-10 w-10 items-center justify-center rounded-full',
+            accentStyles[accent],
           )}
+        >
+          <Icon className="h-5 w-5 text-white" strokeWidth={2.25} />
         </div>
-        <div className={cn('rounded-xl p-3', accentStyles[accent])}>
-          <Icon className="h-5 w-5" />
-        </div>
+        <p className="text-3xl font-bold tracking-tight text-gray-900">{value}</p>
+        <p className="mt-1 text-sm text-gray-500">{title}</p>
+        {description && <p className="mt-0.5 text-xs text-gray-400">{description}</p>}
       </CardContent>
     </Card>
   )

@@ -5,6 +5,7 @@ from .views import (
     list_departments,
     create_employee,
     list_employees,
+    assign_missing_company_roles_view,
     assign_manager,
     get_database_config,
     save_database_config,
@@ -47,6 +48,11 @@ urlpatterns = [
 
     path("employees/", create_employee, name="create-employee"),
     path("employees/list/", list_employees, name="list-employees"),
+    path(
+        "employees/assign-missing-roles/",
+        assign_missing_company_roles_view,
+        name="assign-missing-company-roles",
+    ),
 
     path("users/<int:user_id>/edit/", edit_company_user, name="edit-company-user"),
     path("users/<int:user_id>/deactivate/", deactivate_company_user, name="deactivate-company-user"),

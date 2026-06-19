@@ -6,10 +6,12 @@ import {
   managerRejectReport,
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
+import { DashboardEmptyState } from '@/components/dashboard/DashboardEmptyState'
+import { DashboardPanel } from '@/components/dashboard/DashboardPanel'
 import { ReportDetail } from '@/components/ReportDetail'
 import { DashboardLayout, managerNav } from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { PageLoader } from '@/components/ui/spinner'
 import type { ExpenseReport } from '@/types'
@@ -25,7 +27,7 @@ export function ManagerReportsPage() {
     setLoading(true)
     try {
       const { data } = await getManagerPendingReports()
-      setReports(data)
+      setReports(data.results)
     } finally {
       setLoading(false)
     }
@@ -49,13 +51,15 @@ export function ManagerReportsPage() {
   }
 
   const handleReject = async (reportId: string) => {
+    const reason = notes[reportId]?.trim()
+    if (!reason) {
+      setError('Rejection reason is required.')
+      return
+    }
     setActionId(reportId)
     setError('')
     try {
-      await managerRejectReport(
-        reportId,
-        notes[reportId] || 'Receipt amount exceeds limit',
-      )
+      await managerRejectReport(reportId, reason)
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -69,7 +73,7 @@ export function ManagerReportsPage() {
   return (
     <DashboardLayout
       title="Pending Reports"
-      subtitle="Review and approve employee expense reports"
+      breadcrumb="Pending Reports"
       navItems={managerNav}
     >
       {error && (
@@ -77,22 +81,23 @@ export function ManagerReportsPage() {
       )}
 
       {reports.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            No reports awaiting your approval.
-          </CardContent>
-        </Card>
+        <DashboardPanel title="Pending Employee Reports">
+          <DashboardEmptyState
+            image="folder"
+            title="No Pending Reports"
+            description="When employees submit expense reports, they will appear here for your review."
+            onRefresh={load}
+          />
+        </DashboardPanel>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {reports.map((report) => (
             <Card key={report.id}>
-              <CardHeader>
-                <CardTitle>{report.employee_email}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-4 p-5 sm:p-6">
+                <p className="font-semibold text-gray-900">{report.employee_email}</p>
                 <ReportDetail report={report} />
                 <Textarea
-                  placeholder="Notes (optional)"
+                  placeholder="Notes (required for rejection)"
                   value={notes[report.id] || ''}
                   onChange={(e) =>
                     setNotes({ ...notes, [report.id]: e.target.value })

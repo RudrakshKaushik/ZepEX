@@ -1,3 +1,4 @@
+import { Settings } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import {
   getReimbursementEmailConfig,
@@ -7,7 +8,8 @@ import {
   triggerEmailFetch,
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
-import { DashboardLayout, adminNav } from '@/components/layout/DashboardLayout'
+import { DashboardLayout } from '@/components/layout/DashboardLayout'
+import { useAdminNav, invalidateAdminSetupCache } from '@/hooks/useAdminNav'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -15,6 +17,7 @@ import { Label } from '@/components/ui/label'
 import { PageLoader } from '@/components/ui/spinner'
 
 export function SettingsPage() {
+  const { navItems } = useAdminNav()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
@@ -28,11 +31,11 @@ export function SettingsPage() {
     is_active: true,
   })
   const [smtpForm, setSmtpForm] = useState({
-    host: '',
-    port: '587',
-    username: '',
-    password: '',
-    from_email: '',
+    smtp_host: '',
+    smtp_port: '587',
+    smtp_email: '',
+    smtp_password: '',
+    from_email_name: 'ZepEx Notifications',
     use_tls: true,
     is_active: true,
   })
@@ -51,13 +54,13 @@ export function SettingsPage() {
           }))
         }
         const smtpData = smtpRes.data
-        if ('host' in smtpData) {
+        if ('smtp_host' in smtpData) {
           setSmtpForm((f) => ({
             ...f,
-            host: smtpData.host,
-            port: String(smtpData.port),
-            username: smtpData.username,
-            from_email: smtpData.from_email,
+            smtp_host: smtpData.smtp_host,
+            smtp_port: String(smtpData.smtp_port),
+            smtp_email: smtpData.smtp_email,
+            from_email_name: smtpData.from_email_name,
             use_tls: smtpData.use_tls,
             is_active: smtpData.is_active,
           }))
@@ -77,6 +80,7 @@ export function SettingsPage() {
         imap_port: parseInt(emailForm.imap_port, 10),
       })
       setMessage('Reimbursement email config saved.')
+      invalidateAdminSetupCache()
     } catch (err) {
       setError(getApiErrorMessage(err))
     } finally {
@@ -92,9 +96,10 @@ export function SettingsPage() {
     try {
       await saveSmtpConfig({
         ...smtpForm,
-        port: parseInt(smtpForm.port, 10),
+        smtp_port: parseInt(smtpForm.smtp_port, 10),
       })
       setMessage('SMTP config saved.')
+      invalidateAdminSetupCache()
     } catch (err) {
       setError(getApiErrorMessage(err))
     } finally {
@@ -107,7 +112,9 @@ export function SettingsPage() {
     setError('')
     try {
       const { data } = await triggerEmailFetch()
-      setMessage(data.message)
+      setMessage(
+        `Processed ${data.processed_count} emails (${data.skipped_count} skipped).`,
+      )
     } catch (err) {
       setError(getApiErrorMessage(err))
     } finally {
@@ -118,7 +125,13 @@ export function SettingsPage() {
   if (loading) return <PageLoader />
 
   return (
-    <DashboardLayout title="Settings" subtitle="Email ingestion & notifications" navItems={adminNav}>
+    <DashboardLayout
+      title="Settings"
+      subtitle="Email ingestion & notifications"
+      breadcrumb="Settings"
+      icon={Settings}
+      navItems={navItems}
+    >
       {message && (
         <div className="mb-4 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           {message}
@@ -194,40 +207,43 @@ export function SettingsPage() {
             <form onSubmit={saveSmtp} className="space-y-3">
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>Host</Label>
+                  <Label>SMTP host</Label>
                   <Input
-                    value={smtpForm.host}
-                    onChange={(e) => setSmtpForm({ ...smtpForm, host: e.target.value })}
+                    value={smtpForm.smtp_host}
+                    onChange={(e) => setSmtpForm({ ...smtpForm, smtp_host: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Port</Label>
                   <Input
-                    value={smtpForm.port}
-                    onChange={(e) => setSmtpForm({ ...smtpForm, port: e.target.value })}
+                    value={smtpForm.smtp_port}
+                    onChange={(e) => setSmtpForm({ ...smtpForm, smtp_port: e.target.value })}
                   />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Username</Label>
+                <Label>SMTP email</Label>
                 <Input
-                  value={smtpForm.username}
-                  onChange={(e) => setSmtpForm({ ...smtpForm, username: e.target.value })}
+                  type="email"
+                  value={smtpForm.smtp_email}
+                  onChange={(e) => setSmtpForm({ ...smtpForm, smtp_email: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
                 <Label>Password</Label>
                 <Input
                   type="password"
-                  value={smtpForm.password}
-                  onChange={(e) => setSmtpForm({ ...smtpForm, password: e.target.value })}
+                  value={smtpForm.smtp_password}
+                  onChange={(e) => setSmtpForm({ ...smtpForm, smtp_password: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
-                <Label>From email</Label>
+                <Label>From name</Label>
                 <Input
-                  value={smtpForm.from_email}
-                  onChange={(e) => setSmtpForm({ ...smtpForm, from_email: e.target.value })}
+                  value={smtpForm.from_email_name}
+                  onChange={(e) =>
+                    setSmtpForm({ ...smtpForm, from_email_name: e.target.value })
+                  }
                 />
               </div>
               <Button type="submit" disabled={saving}>

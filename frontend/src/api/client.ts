@@ -9,7 +9,13 @@ export const api = axios.create({
   },
 })
 
-const PUBLIC_API_PATHS = ['/auth/login/', '/platform/register-company/']
+const PUBLIC_API_PATHS = [
+  '/auth/login/',
+  '/auth/forgot-password/',
+  '/auth/verify-reset-otp/',
+  '/auth/reset-password/',
+  '/platform/register-company/',
+]
 
 api.interceptors.request.use((config) => {
   const url = config.url ?? ''

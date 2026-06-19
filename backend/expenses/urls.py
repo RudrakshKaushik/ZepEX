@@ -63,7 +63,6 @@ path(
     "duplicates/",
     duplicate_receipts,
     name="duplicate-receipts"
-),    
-path("duplicates/", duplicate_receipts, name="duplicate-receipts"),
+),
 
 ]

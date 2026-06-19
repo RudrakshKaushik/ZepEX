@@ -18,6 +18,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / ".env")
 
+
+def _env_list(key: str, default: str = "") -> list[str]:
+    value = os.getenv(key, default)
+    return [item.strip() for item in value.split(",") if item.strip()]
+
 # --------------------------------------------------
 # SECURITY
 # --------------------------------------------------

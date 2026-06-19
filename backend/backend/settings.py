@@ -227,17 +227,25 @@ CELERY_TASK_EAGER_PROPAGATES = True
 # CORS
 # --------------------------------------------------
 
-CORS_ALLOWED_ORIGINS = _env_list(
-    "DJANGO_CORS_ALLOWED_ORIGINS",
+# --------------------------------------------------
+# CORS
+# --------------------------------------------------
+
+CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
-)
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
 
 CORS_ALLOW_CREDENTIALS = True
 
-CSRF_TRUSTED_ORIGINS = _env_list(
-    "DJANGO_CSRF_TRUSTED_ORIGINS",
+CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
-)
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
 
 # --------------------------------------------------
 # EMAIL CONFIG

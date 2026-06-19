@@ -169,7 +169,7 @@ def company_list(request):
 
 
 @api_view(["GET"])
-@permission_classes@permission_classes([
+@permission_classes([
     IsAuthenticated,
     IsPlatformOwner
 ])

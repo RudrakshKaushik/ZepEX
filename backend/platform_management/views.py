@@ -46,7 +46,10 @@ def create_company_request(request):
     )
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated, IsPlatformOwner])
+@permission_classes([
+    IsAuthenticated,
+    IsPlatformOwner
+])
 def list_company_requests(request):
 
     requests_data = CompanyRegistrationRequest.objects.all().order_by(
@@ -61,7 +64,10 @@ def list_company_requests(request):
     return Response(serializer.data)
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated, IsPlatformOwner])
+@permission_classes([
+    IsAuthenticated,
+    IsPlatformOwner
+])
 def approve_company_request(request, request_id):
 
     try:
@@ -114,7 +120,10 @@ def approve_company_request(request, request_id):
     })
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated, IsPlatformOwner])
+@permission_classes([
+    IsAuthenticated,
+    IsPlatformOwner
+])
 def reject_company_request(request, request_id):
 
     try:
@@ -136,7 +145,10 @@ def reject_company_request(request, request_id):
 
 from tenants.serializers import CompanySerializer
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([
+    IsAuthenticated,
+    IsPlatformOwner
+])
 def company_list(request):
 
     companies = Company.objects.filter(
@@ -155,7 +167,10 @@ def company_list(request):
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes@permission_classes([
+    IsAuthenticated,
+    IsPlatformOwner
+])
 def pending_company_list(request):
 
     companies = Company.objects.filter(
@@ -173,7 +188,10 @@ def pending_company_list(request):
     })
 from audit_logs.utils import create_audit_log
 @api_view(["PATCH"])
-@permission_classes([IsAuthenticated])
+@permission_classes([
+    IsAuthenticated,
+    IsPlatformOwner
+])
 def deactivate_company(request, company_id):
 
     try:
@@ -211,7 +229,10 @@ def deactivate_company(request, company_id):
     })
 
 @api_view(["PATCH"])
-@permission_classes([IsAuthenticated])
+@permission_classes([
+    IsAuthenticated,
+    IsPlatformOwner
+])
 def activate_company(request, company_id):
 
     try:
@@ -250,7 +271,10 @@ def activate_company(request, company_id):
     })
 from tenants.models import Company
 @api_view(["DELETE"])
-@permission_classes([IsAuthenticated])
+@permission_classes([
+    IsAuthenticated,
+    IsPlatformOwner
+])
 def delete_company(request, company_id):
 
     if not hasattr(request.user, "platform_owner"):

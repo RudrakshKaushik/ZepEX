@@ -9,14 +9,18 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import (
+    Company,
     Department,
-    UserProfile
+    UserProfile,
+    CompanyRole,
 )
 
 from .serializers import (
     DepartmentSerializer,
     EmployeeCreateSerializer,
-    UserProfileSerializer
+    UserProfileSerializer,
+    PolicyCategoryRuleSerializer,
+    CompanyPolicySerializer,
 )
 
 from .models import (
@@ -25,8 +29,10 @@ from .models import (
 )
 
 from .serializers import (
-    CompanyPolicySerializer,
-    PolicyCategoryRuleSerializer
+    DepartmentSerializer,
+    UserProfileSerializer,
+    EmployeeCreateSerializer,
+    CompanyRoleSerializer,
 )
 from .permissions import IsCompanyAdmin
 from .models import ExternalDatabaseConfig
@@ -109,7 +115,8 @@ def list_departments(request):
 def create_employee(request):
 
     serializer = EmployeeCreateSerializer(
-        data=request.data
+        data=request.data,
+        context={"request": request}
     )
 
     if not serializer.is_valid():
@@ -119,6 +126,7 @@ def create_employee(request):
         )
 
     data = serializer.validated_data
+    company = request.user.profile.company
 
     email = data["email"].lower().strip()
 
@@ -133,26 +141,45 @@ def create_employee(request):
     department = None
 
     if data.get("department_id"):
+        department = Department.objects.get(
+            id=data["department_id"],
+            company=company
+        )
 
-        try:
-            department = Department.objects.get(
-                id=data["department_id"],
-                company=request.user.profile.company
-            )
+    company_role = None
 
-        except Department.DoesNotExist:
-            return Response(
-                {
-                    "error": "Department not found."
-                },
-                status=status.HTTP_404_NOT_FOUND
-            )
+    if data.get("company_role_id"):
+        company_role = CompanyRole.objects.get(
+            id=data["company_role_id"],
+            company=company,
+            is_active=True
+        )
 
     profile = UserProfile.objects.create(
         user=user,
-        company=request.user.profile.company,
+        company=company,
         department=department,
-        role=data["role"]
+        role=data["role"],
+        company_role=company_role
+    )
+
+    create_audit_log(
+        company=company,
+        action="USER_UPDATED",
+        action_by=request.user.profile,
+        message=f"Created user {profile.user.email}",
+        metadata={
+            "created_user": profile.user.email,
+            "role": profile.role,
+            "company_role": (
+                profile.company_role.name
+                if profile.company_role else None
+            ),
+            "department": (
+                profile.department.name
+                if profile.department else None
+            ),
+        }
     )
 
     return Response(
@@ -266,22 +293,32 @@ def save_database_config(request):
 
     company = request.user.profile.company
 
-    config, created = ExternalDatabaseConfig.objects.get_or_create(
-        company=company
-    )
+    try:
+        config = ExternalDatabaseConfig.objects.get(
+            company=company
+        )
 
-    serializer = ExternalDatabaseConfigSerializer(
-        config,
-        data=request.data,
-        partial=True
-    )
+        serializer = ExternalDatabaseConfigSerializer(
+            config,
+            data=request.data,
+            partial=True
+        )
+
+    except ExternalDatabaseConfig.DoesNotExist:
+
+        serializer = ExternalDatabaseConfigSerializer(
+            data=request.data
+        )
 
     if serializer.is_valid():
 
-        serializer.save()
+        serializer.save(company=company)
 
         return Response(
-            serializer.data,
+            {
+                "message": "Database configuration saved successfully.",
+                "data": serializer.data
+            },
             status=status.HTTP_200_OK
         )
 
@@ -629,7 +666,11 @@ def edit_company_user(request, user_id):
     company = request.user.profile.company
 
     try:
-        profile = UserProfile.objects.select_related("user").get(
+        profile = UserProfile.objects.select_related(
+            "user",
+            "department",
+            "company_role"
+        ).get(
             id=user_id,
             company=company
         )
@@ -642,7 +683,8 @@ def edit_company_user(request, user_id):
         )
 
     serializer = CompanyUserUpdateSerializer(
-        data=request.data
+        data=request.data,
+        context={"request": request}
     )
 
     if not serializer.is_valid():
@@ -657,7 +699,7 @@ def edit_company_user(request, user_id):
     if profile.user == request.user and "role" in data:
 
         return Response(
-            {"error": "You cannot change your own role."},
+            {"error": "You cannot change your own system role."},
             status=status.HTTP_400_BAD_REQUEST
         )
 
@@ -686,25 +728,32 @@ def edit_company_user(request, user_id):
         department_id = data["department_id"]
 
         if department_id is None:
-
             profile.department = None
 
         else:
+            department = Department.objects.get(
+                id=department_id,
+                company=company,
+                is_active=True
+            )
 
-            try:
-                department = Department.objects.get(
-                    id=department_id,
-                    company=company
-                )
+            profile.department = department
 
-                profile.department = department
+    if "company_role_id" in data:
 
-            except Department.DoesNotExist:
+        company_role_id = data["company_role_id"]
 
-                return Response(
-                    {"error": "Department not found."},
-                    status=status.HTTP_404_NOT_FOUND
-                )
+        if company_role_id is None:
+            profile.company_role = None
+
+        else:
+            company_role = CompanyRole.objects.get(
+                id=company_role_id,
+                company=company,
+                is_active=True
+            )
+
+            profile.company_role = company_role
 
     profile.phone_number = data.get(
         "phone_number",
@@ -726,7 +775,14 @@ def edit_company_user(request, user_id):
         metadata={
             "updated_user": profile.user.email,
             "role": profile.role,
-            "department": profile.department.name if profile.department else None,
+            "company_role": (
+                profile.company_role.name
+                if profile.company_role else None
+            ),
+            "department": (
+                profile.department.name
+                if profile.department else None
+            ),
         }
     )
 
@@ -738,13 +794,27 @@ def edit_company_user(request, user_id):
             "first_name": user.first_name,
             "last_name": user.last_name,
             "role": profile.role,
-            "department": profile.department.name if profile.department else None,
+            "company_role": (
+                profile.company_role.name
+                if profile.company_role else None
+            ),
+            "company_role_id": (
+                profile.company_role.id
+                if profile.company_role else None
+            ),
+            "department": (
+                profile.department.name
+                if profile.department else None
+            ),
+            "department_id": (
+                str(profile.department.id)
+                if profile.department else None
+            ),
             "phone_number": profile.phone_number,
             "address": profile.address,
             "is_active": user.is_active,
         }
     })
-
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated, IsCompanyAdmin])
 def deactivate_company_user(request, user_id):
@@ -1206,4 +1276,454 @@ def delete_department(request, department_id):
 
     return Response({
         "message": "Department deleted successfully."
+    })
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def create_company_role(request):
+
+    profile = request.user.profile
+
+    if profile.role != "COMPANY_ADMIN":
+        return Response(
+            {"error": "Only company admin can create roles."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    serializer = CompanyRoleSerializer(
+        data=request.data,
+        context={"request": request}
+    )
+
+    if serializer.is_valid():
+
+        serializer.save(
+            company=profile.company
+        )
+
+        return Response(
+            {
+                "message": "Role created successfully.",
+                "role": serializer.data
+            },
+            status=status.HTTP_201_CREATED
+        )
+
+    return Response(
+        serializer.errors,
+        status=status.HTTP_400_BAD_REQUEST
+    )
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def company_roles(request):
+
+    profile = request.user.profile
+
+    roles = CompanyRole.objects.filter(
+        company=profile.company,
+        is_active=True
+    ).order_by("name")
+
+    serializer = CompanyRoleSerializer(
+        roles,
+        many=True
+    )
+
+    return Response({
+        "count": roles.count(),
+        "results": serializer.data
+    })
+
+@api_view(["PUT"])
+@permission_classes([IsAuthenticated])
+def update_company_role(request, role_id):
+
+    profile = request.user.profile
+
+    if profile.role != "COMPANY_ADMIN":
+        return Response(
+            {"error": "Only company admin can update roles."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    try:
+        role = CompanyRole.objects.get(
+            id=role_id,
+            company=profile.company
+        )
+
+    except CompanyRole.DoesNotExist:
+
+        return Response(
+            {"error": "Role not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    serializer = CompanyRoleSerializer(
+        role,
+        data=request.data,
+        partial=True,
+        context={"request": request}
+    )
+
+    if serializer.is_valid():
+
+        serializer.save()
+
+        return Response({
+            "message": "Role updated successfully.",
+            "role": serializer.data
+        })
+
+    return Response(
+        serializer.errors,
+        status=status.HTTP_400_BAD_REQUEST
+    )
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def deactivate_company_role(request, role_id):
+
+    profile = request.user.profile
+
+    if profile.role != "COMPANY_ADMIN":
+        return Response(
+            {"error": "Only company admin can deactivate roles."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    try:
+        role = CompanyRole.objects.get(
+            id=role_id,
+            company=profile.company
+        )
+
+    except CompanyRole.DoesNotExist:
+
+        return Response(
+            {"error": "Role not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    role.is_active = False
+    role.save(update_fields=["is_active"])
+
+    return Response({
+        "message": "Role deactivated successfully."
+    })
+
+import psycopg2
+import pymysql
+import pyodbc
+import oracledb
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def test_database_connection(request):
+    company = request.user.profile.company
+
+    try:
+        config = ExternalDatabaseConfig.objects.get(company=company)
+    except ExternalDatabaseConfig.DoesNotExist:
+        return Response(
+            {"error": "Database configuration not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    try:
+        if config.db_engine == "postgresql":
+            conn = psycopg2.connect(
+                host=config.db_host,
+                port=config.db_port,
+                dbname=config.db_name,
+                user=config.db_user,
+                password=config.db_password,
+                connect_timeout=10,
+            )
+
+        elif config.db_engine == "mysql":
+            conn = pymysql.connect(
+                host=config.db_host,
+                port=config.db_port,
+                database=config.db_name,
+                user=config.db_user,
+                password=config.db_password,
+                connect_timeout=10,
+            )
+
+        elif config.db_engine == "mssql":
+            conn = pyodbc.connect(
+                (
+                    "DRIVER={ODBC Driver 17 for SQL Server};"
+                    f"SERVER={config.db_host},{config.db_port};"
+                    f"DATABASE={config.db_name};"
+                    f"UID={config.db_user};"
+                    f"PWD={config.db_password};"
+                    "TrustServerCertificate=yes;"
+                ),
+                timeout=10
+            )
+
+        elif config.db_engine == "oracle":
+            dsn = oracledb.makedsn(
+                config.db_host,
+                config.db_port,
+                service_name=config.db_name
+            )
+
+            conn = oracledb.connect(
+                user=config.db_user,
+                password=config.db_password,
+                dsn=dsn
+            )
+
+        else:
+            return Response(
+                {"error": "Unsupported database engine."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        conn.close()
+
+        create_audit_log(
+            company=company,
+            action="DATABASE_CONNECTED",
+            action_by=request.user.profile,
+            message="External database connection tested successfully.",
+            metadata={
+                "db_engine": config.db_engine,
+                "db_host": config.db_host,
+                "db_name": config.db_name,
+            }
+        )
+
+        return Response({
+            "success": True,
+            "message": "Database connection successful.",
+            "db_engine": config.db_engine
+        })
+
+    except Exception as e:
+        create_audit_log(
+            company=company,
+            action="DATABASE_CONNECTION_FAILED",
+            action_by=request.user.profile,
+            message="External database connection failed.",
+            metadata={
+                "db_engine": config.db_engine,
+                "error": str(e),
+            }
+        )
+
+        return Response(
+            {
+                "success": False,
+                "error": str(e)
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+from django.utils import timezone
+from .models import DatabaseSyncLog
+
+def get_external_db_connection(config):
+    if config.db_engine == "postgresql":
+        return psycopg2.connect(
+            host=config.db_host,
+            port=config.db_port,
+            dbname=config.db_name,
+            user=config.db_user,
+            password=config.db_password,
+            connect_timeout=10,
+        )
+
+    if config.db_engine == "mysql":
+        return pymysql.connect(
+            host=config.db_host,
+            port=config.db_port,
+            database=config.db_name,
+            user=config.db_user,
+            password=config.db_password,
+            connect_timeout=10,
+        )
+
+    if config.db_engine == "mssql":
+        return pyodbc.connect(
+            (
+                "DRIVER={ODBC Driver 17 for SQL Server};"
+                f"SERVER={config.db_host},{config.db_port};"
+                f"DATABASE={config.db_name};"
+                f"UID={config.db_user};"
+                f"PWD={config.db_password};"
+                "TrustServerCertificate=yes;"
+            ),
+            timeout=10
+        )
+
+    if config.db_engine == "oracle":
+        dsn = oracledb.makedsn(
+            config.db_host,
+            config.db_port,
+            service_name=config.db_name
+        )
+
+        return oracledb.connect(
+            user=config.db_user,
+            password=config.db_password,
+            dsn=dsn
+        )
+
+    raise Exception("Unsupported database engine.")
+
+from tenants.services import sync_company_external_database
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def sync_external_database(request):
+
+    result = sync_company_external_database(
+        company=request.user.profile.company,
+        action_by=request.user.profile
+    )
+
+    if result["success"]:
+        return Response(result)
+
+    return Response(
+        result,
+        status=status.HTTP_400_BAD_REQUEST
+    )
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def database_sync_status(request):
+
+    company = request.user.profile.company
+
+    latest_log = DatabaseSyncLog.objects.filter(
+        company=company
+    ).order_by("-started_at").first()
+
+    try:
+        config = ExternalDatabaseConfig.objects.get(company=company)
+        last_synced_at = config.last_synced_at
+    except ExternalDatabaseConfig.DoesNotExist:
+        last_synced_at = None
+
+    if not latest_log:
+        return Response({
+            "last_synced_at": last_synced_at,
+            "latest_sync": None
+        })
+
+    return Response({
+        "last_synced_at": last_synced_at,
+        "latest_sync": {
+            "status": latest_log.status,
+            "records_created": latest_log.records_created,
+            "records_updated": latest_log.records_updated,
+            "error_message": latest_log.error_message,
+            "started_at": latest_log.started_at,
+            "completed_at": latest_log.completed_at,
+        }
+    })    
+
+from .serializers import DatabaseSyncLogSerializer
+from .models import DatabaseSyncLog
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def database_sync_logs(request):
+
+    company = request.user.profile.company
+
+    logs = DatabaseSyncLog.objects.filter(
+        company=company
+    ).order_by("-started_at")
+
+    status_filter = request.GET.get("status")
+
+    if status_filter:
+        logs = logs.filter(status=status_filter.upper())
+
+    serializer = DatabaseSyncLogSerializer(
+        logs,
+        many=True
+    )
+
+    return Response({
+        "count": logs.count(),
+        "results": serializer.data
+    })
+
+from django.db.models import Sum
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from tenants.permissions import IsCompanyAdmin
+from tenants.models import DatabaseSyncLog
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def database_sync_dashboard(request):
+
+    company = request.user.profile.company
+
+    logs = DatabaseSyncLog.objects.filter(
+        company=company
+    )
+
+    latest_sync = logs.order_by("-started_at").first()
+
+    successful_syncs = logs.filter(
+        status=DatabaseSyncLog.STATUS_SUCCESS
+    )
+
+    failed_syncs = logs.filter(
+        status=DatabaseSyncLog.STATUS_FAILED
+    )
+
+    total_records_created = logs.aggregate(
+        total=Sum("records_created")
+    )["total"] or 0
+
+    total_records_updated = logs.aggregate(
+        total=Sum("records_updated")
+    )["total"] or 0
+
+    return Response({
+        "metrics": {
+            "total_syncs": logs.count(),
+            "successful_syncs": successful_syncs.count(),
+            "failed_syncs": failed_syncs.count(),
+            "total_records_created": total_records_created,
+            "total_records_updated": total_records_updated,
+        },
+
+        "latest_sync": {
+            "id": str(latest_sync.id),
+            "status": latest_sync.status,
+            "records_created": latest_sync.records_created,
+            "records_updated": latest_sync.records_updated,
+            "error_message": latest_sync.error_message,
+            "started_at": latest_sync.started_at,
+            "completed_at": latest_sync.completed_at,
+        } if latest_sync else None,
+
+        "recent_syncs": [
+            {
+                "id": str(log.id),
+                "status": log.status,
+                "records_created": log.records_created,
+                "records_updated": log.records_updated,
+                "error_message": log.error_message,
+                "started_at": log.started_at,
+                "completed_at": log.completed_at,
+            }
+            for log in logs.order_by("-started_at")[:10]
+        ]
     })

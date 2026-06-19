@@ -9,6 +9,10 @@ from rest_framework.response import Response
 
 from .serializers import LoginSerializer
 
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
+from django.core.mail import EmailMultiAlternatives
+
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -28,35 +32,81 @@ def login_api(request):
     )
 
     if hasattr(user, "platform_owner"):
-        role = "PLATFORM_OWNER"
+        system_role = "PLATFORM_OWNER"
+        company_role = None
+        company_role_id = None
         company = None
         department = None
+
+        permissions = {
+            "can_upload_receipt": False,
+            "can_submit_expense": False,
+            "can_approve_expense": False,
+            "can_mark_paid": False,
+        }
 
     else:
         try:
             profile = user.profile
+
         except Exception:
             return Response(
                 {"error": "User profile not found."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        role = profile.role
+        system_role = profile.role
+
+        company_role = (
+            profile.company_role.name
+            if profile.company_role
+            else None
+        )
+
+        company_role_id = (
+            profile.company_role.id
+            if profile.company_role
+            else None
+        )
+
         company = {
             "id": str(profile.company.id),
             "name": profile.company.name
         }
-        department = {
-            "id": str(profile.department.id),
-            "name": profile.department.name
-        } if profile.department else None
+
+        department = (
+            {
+                "id": str(profile.department.id),
+                "name": profile.department.name
+            }
+            if profile.department else None
+        )
+
+        permissions = {
+            "can_upload_receipt": (
+                profile.company_role.can_upload_receipt
+                if profile.company_role else False
+            ),
+            "can_submit_expense": (
+                profile.company_role.can_submit_expense
+                if profile.company_role else False
+            ),
+            "can_approve_expense": (
+                profile.company_role.can_approve_expense
+                if profile.company_role else False
+            ),
+            "can_mark_paid": (
+                profile.company_role.can_mark_paid
+                if profile.company_role else False
+            ),
+        }
 
     redirect_map = {
         "PLATFORM_OWNER": "/platform-dashboard",
         "COMPANY_ADMIN": "/company-admin-dashboard",
         "EMPLOYEE": "/employee-dashboard",
-        "MANAGER": "/manager-dashboard",
-        "ACCOUNTS": "/accounts-dashboard",
+        "MANAGER": "/approver-dashboard",
+        "ACCOUNTS": "/payment-dashboard",
     }
 
     return Response({
@@ -67,11 +117,18 @@ def login_api(request):
             "email": user.email,
             "first_name": user.first_name,
             "last_name": user.last_name,
-            "role": role,
+
+            "system_role": system_role,
+
+            "company_role": company_role,
+            "company_role_id": company_role_id,
+
             "company": company,
             "department": department,
+
+            "permissions": permissions,
         },
-        "redirect_to": redirect_map.get(role)
+        "redirect_to": redirect_map.get(system_role)
     })
 
 from rest_framework.permissions import IsAuthenticated
@@ -155,18 +212,32 @@ def forgot_password_api(request):
         otp=otp
     )
 
-    send_mail(
-        subject="ZepEx Password Reset OTP",
-        message=f"Your password reset OTP is {otp}. It is valid for 5 minutes.",
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[email],
-        fail_silently=False,
+    html_content = render_to_string(
+        "emails/password_reset_otp.html",
+        {
+            "otp": otp,
+        }
     )
+
+    text_content = strip_tags(html_content)
+
+    email_message = EmailMultiAlternatives(
+        subject="ZepEx Password Reset OTP",
+        body=text_content,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[email],
+    )
+
+    email_message.attach_alternative(
+        html_content,
+        "text/html"
+    )
+
+    email_message.send()
 
     return Response({
         "message": "Password reset OTP sent successfully."
     })
-
 
 @api_view(["POST"])
 @permission_classes([AllowAny])

@@ -47,20 +47,23 @@ from celery import shared_task
 from .models import ExpenseReport
 from .email_notifications import send_report_status_email
 @shared_task
-def send_report_status_email_task(report_id, subject, message):
+def send_report_status_email_task(
+    report_id,
+    subject,
+    message,
+    notify_previous_approvers=False
+):
     try:
         report = ExpenseReport.objects.get(id=report_id)
 
-        send_report_status_email(
+        result = send_report_status_email(
             report=report,
             subject=subject,
-            message=message
+            message=message,
+            notify_previous_approvers=notify_previous_approvers
         )
 
-        return {
-            "success": True,
-            "message": "Email sent successfully."
-        }
+        return result
 
     except ExpenseReport.DoesNotExist:
         return {

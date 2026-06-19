@@ -8,63 +8,16 @@ from tenants.models import Company, Department, UserProfile
 class ExpenseReport(models.Model):
 
     STATUS_DRAFT = "DRAFT"
-
     STATUS_SUBMITTED = "SUBMITTED"
-
-    STATUS_MANAGER_APPROVED = "MANAGER_APPROVED"
-
-    STATUS_MANAGER_REJECTED = "MANAGER_REJECTED"
-
-    STATUS_PENDING_COMPANY_ADMIN = "PENDING_COMPANY_ADMIN"
-
-    STATUS_COMPANY_ADMIN_APPROVED = "COMPANY_ADMIN_APPROVED"
-
-    STATUS_COMPANY_ADMIN_REJECTED = "COMPANY_ADMIN_REJECTED"
-
-    STATUS_PENDING_ACCOUNTS = "PENDING_ACCOUNTS"
-
-    STATUS_ACCOUNTS_APPROVED = "ACCOUNTS_APPROVED"
-
+    STATUS_APPROVED = "APPROVED"
     STATUS_REJECTED = "REJECTED"
-
     STATUS_PAID = "PAID"
 
     STATUS_CHOICES = (
         (STATUS_DRAFT, "Draft"),
-
         (STATUS_SUBMITTED, "Submitted"),
-
-        (STATUS_MANAGER_APPROVED, "Manager Approved"),
-
-        (STATUS_MANAGER_REJECTED, "Manager Rejected"),
-
-        (
-            STATUS_PENDING_COMPANY_ADMIN,
-            "Pending Company Admin"
-        ),
-
-        (
-            STATUS_COMPANY_ADMIN_APPROVED,
-            "Company Admin Approved"
-        ),
-
-        (
-            STATUS_COMPANY_ADMIN_REJECTED,
-            "Company Admin Rejected"
-        ),
-
-        (
-            STATUS_PENDING_ACCOUNTS,
-            "Pending Accounts"
-        ),
-
-        (
-            STATUS_ACCOUNTS_APPROVED,
-            "Accounts Approved"
-        ),
-
+        (STATUS_APPROVED, "Approved"),
         (STATUS_REJECTED, "Rejected"),
-
         (STATUS_PAID, "Paid"),
     )
 
@@ -95,7 +48,7 @@ class ExpenseReport(models.Model):
     month = models.DateField()
 
     status = models.CharField(
-        max_length=30,
+        max_length=40,
         choices=STATUS_CHOICES,
         default=STATUS_DRAFT
     )
@@ -111,38 +64,26 @@ class ExpenseReport(models.Model):
         blank=True
     )
 
-    manager_action_at = models.DateTimeField(
-        null=True,
-        blank=True
-    )
-    company_admin_notes = models.TextField(
-    null=True,
-    blank=True
-    )
-
-    company_admin_action_at = models.DateTimeField(
-    null=True,
-    blank=True
-)
-
-    accounts_action_at = models.DateTimeField(
-        null=True,
-        blank=True
-    )
-
     paid_at = models.DateTimeField(
         null=True,
         blank=True
     )
 
-    manager_notes = models.TextField(
+    paid_notes = models.TextField(
         blank=True,
         null=True
     )
 
-    accounts_notes = models.TextField(
+    current_workflow_step = models.ForeignKey(
+        "ApprovalWorkflowStep",
+        on_delete=models.SET_NULL,
+        null=True,
         blank=True,
-        null=True
+        related_name="current_reports"
+    )
+
+    workflow_completed = models.BooleanField(
+        default=False
     )
 
     created_at = models.DateTimeField(
@@ -159,6 +100,7 @@ class ExpenseReport(models.Model):
             "employee",
             "month",
         )
+
         ordering = [
             "-month",
             "-created_at",
@@ -225,99 +167,25 @@ class ExpenseSubmission(models.Model):
 class ExpenseReceipt(models.Model):
 
     STATUS_DRAFT = "DRAFT"
-
     STATUS_AI_PROCESSING = "AI_PROCESSING"
-
     STATUS_AI_PROCESSED = "AI_PROCESSED"
-
     STATUS_VALID = "VALID"
-
     STATUS_POLICY_VIOLATION = "POLICY_VIOLATION"
-
-    STATUS_SUBMITTED_TO_MANAGER = "SUBMITTED_TO_MANAGER"
-
-    STATUS_MANAGER_APPROVED = "MANAGER_APPROVED"
-
-    STATUS_MANAGER_REJECTED = "MANAGER_REJECTED"
-
-    STATUS_PENDING_COMPANY_ADMIN = "PENDING_COMPANY_ADMIN"
-
-    STATUS_COMPANY_ADMIN_APPROVED = "COMPANY_ADMIN_APPROVED"
-
-    STATUS_COMPANY_ADMIN_REJECTED = "COMPANY_ADMIN_REJECTED"
-
-    STATUS_PENDING_ACCOUNTS = "PENDING_ACCOUNTS"
-
-    STATUS_ACCOUNTS_APPROVED = "ACCOUNTS_APPROVED"
-
+    STATUS_PENDING_APPROVAL = "PENDING_APPROVAL"
+    STATUS_APPROVED = "APPROVED"
     STATUS_REJECTED = "REJECTED"
-
     STATUS_PAID = "PAID"
 
     STATUS_CHOICES = (
-
         (STATUS_DRAFT, "Draft"),
-
         (STATUS_AI_PROCESSING, "AI Processing"),
-
         (STATUS_AI_PROCESSED, "AI Processed"),
-
         (STATUS_VALID, "Valid"),
-
-        (
-            STATUS_POLICY_VIOLATION,
-            "Policy Violation"
-        ),
-
-        (
-            STATUS_SUBMITTED_TO_MANAGER,
-            "Submitted To Manager"
-        ),
-
-        (
-            STATUS_MANAGER_APPROVED,
-            "Manager Approved"
-        ),
-
-        (
-            STATUS_MANAGER_REJECTED,
-            "Manager Rejected"
-        ),
-
-        (
-            STATUS_PENDING_COMPANY_ADMIN,
-            "Pending Company Admin"
-        ),
-
-        (
-            STATUS_COMPANY_ADMIN_APPROVED,
-            "Company Admin Approved"
-        ),
-
-        (
-            STATUS_COMPANY_ADMIN_REJECTED,
-            "Company Admin Rejected"
-        ),
-
-        (
-            STATUS_PENDING_ACCOUNTS,
-            "Pending Accounts"
-        ),
-
-        (
-            STATUS_ACCOUNTS_APPROVED,
-            "Accounts Approved"
-        ),
-
-        (
-            STATUS_REJECTED,
-            "Rejected"
-        ),
-
-        (
-            STATUS_PAID,
-            "Paid"
-        ),
+        (STATUS_POLICY_VIOLATION, "Policy Violation"),
+        (STATUS_PENDING_APPROVAL, "Pending Approval"),
+        (STATUS_APPROVED, "Approved"),
+        (STATUS_REJECTED, "Rejected"),
+        (STATUS_PAID, "Paid"),
     )
 
     id = models.UUIDField(
@@ -327,12 +195,12 @@ class ExpenseReceipt(models.Model):
     )
 
     report = models.ForeignKey(
-    ExpenseReport,
-    on_delete=models.CASCADE,
-    related_name="receipts",
-    null=True,
-    blank=True
-)
+        ExpenseReport,
+        on_delete=models.CASCADE,
+        related_name="receipts",
+        null=True,
+        blank=True
+    )
 
     submission = models.ForeignKey(
         ExpenseSubmission,
@@ -411,16 +279,6 @@ class ExpenseReceipt(models.Model):
         default=False
     )
 
-    manager_notes = models.TextField(
-        blank=True,
-        null=True
-    )
-
-    accounts_notes = models.TextField(
-        blank=True,
-        null=True
-    )
-
     created_at = models.DateTimeField(
         auto_now_add=True
     )
@@ -493,19 +351,20 @@ class ExpenseLineItem(models.Model):
 
 
 class ApprovalHistory(models.Model):
+
     ACTION_REPORT_SUBMITTED = "REPORT_SUBMITTED"
-    ACTION_MANAGER_APPROVED = "MANAGER_APPROVED"
-    ACTION_MANAGER_REJECTED = "MANAGER_REJECTED"
-    ACTION_ACCOUNTS_APPROVED = "ACCOUNTS_APPROVED"
-    ACTION_ACCOUNTS_REJECTED = "ACCOUNTS_REJECTED"
+
+    ACTION_STEP_APPROVED = "STEP_APPROVED"
+    ACTION_STEP_REJECTED = "STEP_REJECTED"
+
     ACTION_PAID = "PAID"
 
     ACTION_CHOICES = (
         (ACTION_REPORT_SUBMITTED, "Report Submitted"),
-        (ACTION_MANAGER_APPROVED, "Manager Approved"),
-        (ACTION_MANAGER_REJECTED, "Manager Rejected"),
-        (ACTION_ACCOUNTS_APPROVED, "Accounts Approved"),
-        (ACTION_ACCOUNTS_REJECTED, "Accounts Rejected"),
+
+        (ACTION_STEP_APPROVED, "Step Approved"),
+        (ACTION_STEP_REJECTED, "Step Rejected"),
+
         (ACTION_PAID, "Paid"),
     )
 
@@ -556,3 +415,127 @@ class ApprovalHistory(models.Model):
     def __str__(self):
         target = self.report_id or self.receipt_id
         return f"{target} - {self.action}"
+
+class ApprovalWorkflow(models.Model):
+
+    company = models.OneToOneField(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="approval_workflow"
+    )
+
+    name = models.CharField(
+        max_length=100,
+        default="Default Workflow"
+    )
+
+    is_active = models.BooleanField(
+        default=True
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True
+    )
+
+    def __str__(self):
+        return f"{self.company.name} - {self.name}"
+
+
+class ApprovalWorkflowStep(models.Model):
+
+    ROUTING_DEPARTMENT = "DEPARTMENT"
+    ROUTING_COMPANY = "COMPANY"
+
+    ROUTING_CHOICES = (
+        (ROUTING_DEPARTMENT, "Department Based"),
+        (ROUTING_COMPANY, "Company Wide"),
+    )
+
+    workflow = models.ForeignKey(
+        ApprovalWorkflow,
+        on_delete=models.CASCADE,
+        related_name="steps"
+    )
+
+    step_order = models.PositiveIntegerField()
+
+    approver_role = models.ForeignKey(
+        "tenants.CompanyRole",
+        on_delete=models.PROTECT,
+        related_name="workflow_steps"
+    )
+
+    # NEW FIELD
+    department = models.ForeignKey(
+        Department,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="workflow_steps"
+    )
+
+    routing_type = models.CharField(
+        max_length=20,
+        choices=ROUTING_CHOICES,
+        default=ROUTING_COMPANY
+    )
+
+    is_active = models.BooleanField(
+        default=True
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    class Meta:
+        ordering = ["step_order"]
+
+        unique_together = (
+            "workflow",
+            "step_order"
+        )
+
+    def __str__(self):
+        return (
+            f"{self.workflow.company.name} - "
+            f"Step {self.step_order} - "
+            f"{self.approver_role.name}"
+        )
+
+class DuplicateReceiptLog(models.Model):
+
+    DUPLICATE_SAME_EMPLOYEE = "SAME_EMPLOYEE"
+    DUPLICATE_CROSS_EMPLOYEE = "CROSS_EMPLOYEE"
+
+    DUPLICATE_TYPE_CHOICES = (
+        (DUPLICATE_SAME_EMPLOYEE, "Same Employee"),
+        (DUPLICATE_CROSS_EMPLOYEE, "Cross Employee"),
+    )
+
+    original_receipt = models.ForeignKey(
+        ExpenseReceipt,
+        on_delete=models.CASCADE,
+        related_name="original_duplicate_logs"
+    )
+
+    duplicate_receipt = models.ForeignKey(
+        ExpenseReceipt,
+        on_delete=models.CASCADE,
+        related_name="duplicate_logs"
+    )
+
+    duplicate_type = models.CharField(
+        max_length=30,
+        choices=DUPLICATE_TYPE_CHOICES,
+        default=DUPLICATE_SAME_EMPLOYEE
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.duplicate_type}: {self.original_receipt.id} -> {self.duplicate_receipt.id}"        

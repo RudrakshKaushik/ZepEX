@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>{{ subject }}</title>
+</head>
+<body style="margin:0; padding:0; background:#f4f6f8; font-family:Arial, sans-serif;">
+
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8; padding:30px 0;">
+    <tr>
+        <td align="center">
+            <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff; border-radius:10px; overflow:hidden;">
+                <tr>
+                    <td style="background:#1f2937; color:#ffffff; padding:24px; text-align:center;">
+                        <h2 style="margin:0;">ZepEx</h2>
+                        <p style="margin:6px 0 0;">{{ company_name }}</p>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td style="padding:30px;">
+                        <h3 style="margin-top:0; color:#111827;">{{ subject }}</h3>
+
+                        <p>Hello {{ employee_name }},</p>
+
+                        <p style="line-height:1.6;">
+                            {{ message|linebreaksbr }}
+                        </p>
+
+                        <table width="100%" cellpadding="8" cellspacing="0" style="border-collapse:collapse; margin-top:20px;">
+                            <tr>
+                                <td style="border:1px solid #e5e7eb;"><strong>Report ID</strong></td>
+                                <td style="border:1px solid #e5e7eb;">{{ report_id }}</td>
+                            </tr>
+                            <tr>
+                                <td style="border:1px solid #e5e7eb;"><strong>Month</strong></td>
+                                <td style="border:1px solid #e5e7eb;">{{ month }}</td>
+                            </tr>
+                            <tr>
+                                <td style="border:1px solid #e5e7eb;"><strong>Status</strong></td>
+                                <td style="border:1px solid #e5e7eb;">{{ status }}</td>
+                            </tr>
+                            <tr>
+                                <td style="border:1px solid #e5e7eb;"><strong>Total Amount</strong></td>
+                                <td style="border:1px solid #e5e7eb;">{{ total_amount }}</td>
+                            </tr>
+                        </table>
+
+                        <p style="margin-top:25px;">
+                            Regards,<br>
+                            <strong>ZepEx Team</strong>
+                        </p>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td style="background:#f9fafb; padding:16px; text-align:center; color:#6b7280; font-size:12px;">
+                        This is an automated email from ZepEx.
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+
+</body>
+</html>

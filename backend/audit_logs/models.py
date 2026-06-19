@@ -10,19 +10,43 @@ from tenants.models import Company, UserProfile
 
 class AuditLog(models.Model):
     ACTION_CHOICES = (
-        ("RECEIPT_UPLOADED", "Receipt Uploaded"),
-        ("EMAIL_RECEIPT_RECEIVED", "Email Receipt Received"),
-        ("AI_PROCESSING_STARTED", "AI Processing Started"),
-        ("AI_PROCESSED", "AI Processed"),
-        ("REPORT_SUBMITTED", "Report Submitted"),
-        ("MANAGER_APPROVED", "Manager Approved"),
-        ("MANAGER_REJECTED", "Manager Rejected"),
-        ("ACCOUNTS_APPROVED", "Accounts Approved"),
-        ("ACCOUNTS_REJECTED", "Accounts Rejected"),
-        ("MARKED_PAID", "Marked Paid"),
-        ("LINE_ITEM_DELETED", "Line Item Deleted"),
-        ("POLICY_UPDATED", "Policy Updated"),
-    )
+    ("RECEIPT_UPLOADED", "Receipt Uploaded"),
+    ("EMAIL_RECEIPT_RECEIVED", "Email Receipt Received"),
+    ("AI_PROCESSING_STARTED", "AI Processing Started"),
+    ("AI_PROCESSED", "AI Processed"),
+
+    ("REPORT_SUBMITTED", "Report Submitted"),
+    ("STEP_APPROVED", "Step Approved"),
+    ("STEP_REJECTED", "Step Rejected"),
+    ("MARKED_PAID", "Marked Paid"),
+
+    ("WORKFLOW_CONFIGURED", "Workflow Configured"),
+    ("WORKFLOW_STEP_CREATED", "Workflow Step Created"),
+    ("EMAIL_FETCH_TRIGGERED", "Email Fetch Triggered"),
+
+    ("LINE_ITEM_DELETED", "Line Item Deleted"),
+    ("POLICY_UPDATED", "Policy Updated"),
+    ("USER_UPDATED", "User Updated"),
+    ("USER_DEACTIVATED", "User Deactivated"),
+    ("USER_ACTIVATED", "User Activated"),
+    ("DEPARTMENT_CREATED", "Department Created"),
+    ("DEPARTMENT_UPDATED", "Department Updated"),
+    ("DEPARTMENT_DEACTIVATED", "Department Deactivated"),
+    ("DEPARTMENT_ACTIVATED", "Department Activated"),
+    ("POLICY_RULE_UPDATED", "Policy Rule Updated"),
+    ("POLICY_RULE_DEACTIVATED", "Policy Rule Deactivated"),
+    ("POLICY_RULE_ACTIVATED", "Policy Rule Activated"),
+    ("POLICY_RULE_DELETED", "Policy Rule Deleted"),
+    ("COMPANY_DEACTIVATED", "Company Deactivated"),
+    ("COMPANY_ACTIVATED", "Company Activated"),
+    ("USER_DELETED", "User Deleted"),
+    ("DEPARTMENT_DELETED", "Department Deleted"),
+    ("DATABASE_CONNECTED", "Database Connected"),
+    ("DATABASE_CONNECTION_FAILED", "Database Connection Failed"),
+    ("SYNC_STARTED", "Sync Started"),
+    ("SYNC_COMPLETED", "Sync Completed"),
+    ("SYNC_FAILED", "Sync Failed"),
+)
 
     id = models.UUIDField(
         primary_key=True,

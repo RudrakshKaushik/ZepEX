@@ -2,28 +2,103 @@ from django.contrib.auth.models import User
 from rest_framework import serializers
 
 from .models import (
+    Company,
     Department,
     UserProfile,
+    CompanyRole,
     ExternalDatabaseConfig,
     CompanyPolicy,
     PolicyCategoryRule,
+    ReimbursementEmailConfig,
+    CompanySMTPConfig,
 )
 
 
 class DepartmentSerializer(serializers.ModelSerializer):
+
+    def validate_name(self, value):
+        name = value.strip()
+
+        request = self.context.get("request")
+
+        if request:
+            company = request.user.profile.company
+
+            queryset = Department.objects.filter(
+                company=company,
+                name__iexact=name
+            )
+
+            if self.instance:
+                queryset = queryset.exclude(id=self.instance.id)
+
+            if queryset.exists():
+                raise serializers.ValidationError(
+                    "Department with this name already exists."
+                )
+
+        return name
+
     class Meta:
         model = Department
         fields = [
             "id",
             "name",
             "manager",
+            "is_active",
             "created_at",
+            "updated_at",
         ]
+
         read_only_fields = [
             "id",
-            "manager",
+            "created_at",
+            "updated_at",
+        ]
+
+
+class CompanyRoleSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = CompanyRole
+        fields = [
+            "id",
+            "name",
+            "can_upload_receipt",
+            "can_submit_expense",
+            "can_approve_expense",
+            "can_mark_paid",
+            "is_active",
             "created_at",
         ]
+
+        read_only_fields = [
+            "id",
+            "created_at",
+        ]
+
+    def validate_name(self, value):
+        name = value.strip()
+
+        request = self.context.get("request")
+
+        if request:
+            company = request.user.profile.company
+
+            queryset = CompanyRole.objects.filter(
+                company=company,
+                name__iexact=name
+            )
+
+            if self.instance:
+                queryset = queryset.exclude(id=self.instance.id)
+
+            if queryset.exists():
+                raise serializers.ValidationError(
+                    "Role with this name already exists."
+                )
+
+        return name
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
@@ -42,8 +117,18 @@ class UserProfileSerializer(serializers.ModelSerializer):
         read_only=True
     )
 
+    is_active = serializers.BooleanField(
+        source="user.is_active",
+        read_only=True
+    )
+
     department_name = serializers.CharField(
         source="department.name",
+        read_only=True
+    )
+
+    company_role_name = serializers.CharField(
+        source="company_role.name",
         read_only=True
     )
 
@@ -58,75 +143,19 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "department",
             "department_name",
             "role",
+            "company_role",
+            "company_role_name",
+            "phone_number",
+            "address",
+            "profile_picture",
+            "is_active",
             "created_at",
         ]
+
         read_only_fields = [
             "id",
             "company",
             "created_at",
-        ]
-
-
-class ExternalDatabaseConfigSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ExternalDatabaseConfig
-        fields = [
-            "id",
-            "db_engine",
-            "db_host",
-            "db_port",
-            "db_name",
-            "db_user",
-            "db_password",
-            "last_synced_at",
-            "created_at",
-        ]
-        read_only_fields = [
-            "id",
-            "last_synced_at",
-            "created_at",
-        ]
-        extra_kwargs = {
-            "db_password": {
-                "write_only": True
-            }
-        }
-
-
-class PolicyCategoryRuleSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PolicyCategoryRule
-        fields = [
-            "id",
-            "policy",
-            "category_name",
-            "max_amount",
-            "category_description",
-        ]
-        read_only_fields = [
-            "id",
-            "policy",
-        ]
-
-
-class CompanyPolicySerializer(serializers.ModelSerializer):
-    category_rules = PolicyCategoryRuleSerializer(
-        many=True,
-        read_only=True
-    )
-
-    class Meta:
-        model = CompanyPolicy
-        fields = [
-            "id",
-            "company",
-            "updated_at",
-            "category_rules",
-        ]
-        read_only_fields = [
-            "id",
-            "company",
-            "updated_at",
         ]
 
 
@@ -162,17 +191,32 @@ class EmployeeCreateSerializer(serializers.Serializer):
         allow_null=True
     )
 
+    company_role_id = serializers.IntegerField(
+        required=False,
+        allow_null=True
+    )
+
     def validate_email(self, value):
-        if User.objects.filter(email=value).exists():
+        email = value.lower().strip()
+
+        if User.objects.filter(email__iexact=email).exists():
             raise serializers.ValidationError(
                 "User with this email already exists."
             )
 
-        return value
+        return email
 
     def validate(self, attrs):
+        request = self.context.get("request")
+
+        if not request:
+            return attrs
+
+        company = request.user.profile.company
+
         role = attrs.get("role")
         department_id = attrs.get("department_id")
+        company_role_id = attrs.get("company_role_id")
 
         if role in ["EMPLOYEE", "MANAGER"] and not department_id:
             raise serializers.ValidationError({
@@ -182,38 +226,249 @@ class EmployeeCreateSerializer(serializers.Serializer):
         if department_id:
             try:
                 Department.objects.get(
-                    id=department_id
+                    id=department_id,
+                    company=company,
+                    is_active=True
                 )
             except Department.DoesNotExist:
                 raise serializers.ValidationError({
-                    "department_id": "Department not found."
+                    "department_id": "Department not found for this company."
+                })
+
+        if company_role_id:
+            try:
+                CompanyRole.objects.get(
+                    id=company_role_id,
+                    company=company,
+                    is_active=True
+                )
+            except CompanyRole.DoesNotExist:
+                raise serializers.ValidationError({
+                    "company_role_id": "Company role not found for this company."
                 })
 
         return attrs
-    
-from .models import ReimbursementEmailConfig
+
+
+class CompanyUserUpdateSerializer(serializers.Serializer):
+    first_name = serializers.CharField(
+        required=False
+    )
+
+    last_name = serializers.CharField(
+        required=False
+    )
+
+    role = serializers.ChoiceField(
+        choices=["EMPLOYEE", "MANAGER", "ACCOUNTS"],
+        required=False
+    )
+
+    department_id = serializers.UUIDField(
+        required=False,
+        allow_null=True
+    )
+
+    company_role_id = serializers.IntegerField(
+        required=False,
+        allow_null=True
+    )
+
+    phone_number = serializers.CharField(
+        required=False,
+        allow_blank=True
+    )
+
+    address = serializers.CharField(
+        required=False,
+        allow_blank=True
+    )
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+
+        if not request:
+            return attrs
+
+        company = request.user.profile.company
+
+        department_id = attrs.get("department_id")
+        company_role_id = attrs.get("company_role_id")
+
+        if department_id:
+            try:
+                Department.objects.get(
+                    id=department_id,
+                    company=company,
+                    is_active=True
+                )
+            except Department.DoesNotExist:
+                raise serializers.ValidationError({
+                    "department_id": "Department not found for this company."
+                })
+
+        if company_role_id:
+            try:
+                CompanyRole.objects.get(
+                    id=company_role_id,
+                    company=company,
+                    is_active=True
+                )
+            except CompanyRole.DoesNotExist:
+                raise serializers.ValidationError({
+                    "company_role_id": "Company role not found for this company."
+                })
+
+        return attrs
+
+
+class DepartmentUpdateSerializer(serializers.Serializer):
+    name = serializers.CharField(
+        required=False
+    )
+
+    manager_id = serializers.UUIDField(
+        required=False,
+        allow_null=True
+    )
+
+
+class ExternalDatabaseConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ExternalDatabaseConfig
+        fields = [
+            "id",
+            "db_engine",
+            "db_host",
+            "db_port",
+            "db_name",
+            "db_user",
+            "db_password",
+            "last_synced_at",
+            "created_at",
+        ]
+
+        read_only_fields = [
+            "id",
+            "last_synced_at",
+            "created_at",
+        ]
+
+        extra_kwargs = {
+            "db_password": {
+                "write_only": True
+            }
+        }
+
+
+class PolicyCategoryRuleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PolicyCategoryRule
+        fields = [
+            "id",
+            "policy",
+            "category_name",
+            "max_amount",
+            "category_description",
+            "is_active",
+            "updated_at",
+        ]
+
+        read_only_fields = [
+            "id",
+            "policy",
+            "updated_at",
+        ]
+
+
+class CompanyPolicySerializer(serializers.ModelSerializer):
+    category_rules = PolicyCategoryRuleSerializer(
+        many=True,
+        read_only=True
+    )
+
+    class Meta:
+        model = CompanyPolicy
+        fields = [
+            "id",
+            "company",
+            "updated_at",
+            "category_rules",
+        ]
+
+        read_only_fields = [
+            "id",
+            "company",
+            "updated_at",
+        ]
+
+
 class ReimbursementEmailConfigSerializer(serializers.ModelSerializer):
     class Meta:
         model = ReimbursementEmailConfig
         fields = "__all__"
+
         read_only_fields = [
             "id",
             "company",
             "last_checked_at",
             "created_at",
         ]
+
         extra_kwargs = {
             "imap_password": {
                 "write_only": True
             }
-        }    
+        }
 
-from .models import CompanySMTPConfig
+
 class CompanySMTPConfigSerializer(serializers.ModelSerializer):
     class Meta:
         model = CompanySMTPConfig
         fields = "__all__"
-        read_only_fields = ["id", "company", "created_at", "updated_at"]
+
+        read_only_fields = [
+            "id",
+            "company",
+            "created_at",
+            "updated_at",
+        ]
+
         extra_kwargs = {
-            "smtp_password": {"write_only": True}
+            "smtp_password": {
+                "write_only": True
+            }
         }
+
+
+class CompanySerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Company
+
+        fields = [
+            "id",
+            "name",
+            "domain",
+            "reimbursement_email_prefix",
+            "is_verified",
+            "created_at",
+        ]
+
+
+from .models import DatabaseSyncLog
+
+
+class DatabaseSyncLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DatabaseSyncLog
+        fields = [
+            "id",
+            "company",
+            "status",
+            "records_created",
+            "records_updated",
+            "error_message",
+            "started_at",
+            "completed_at",
+        ]        

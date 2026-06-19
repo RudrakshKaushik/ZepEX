@@ -6,4 +6,8 @@ celery
 redis
 django-celery-beat
 django-cors-headers
-requests
+pillow
+psycopg2-binary
+pymysql 
+pyodbc 
+oracledb

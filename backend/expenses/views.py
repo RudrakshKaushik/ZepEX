@@ -18,9 +18,10 @@ from .models import (
     ExpenseReceipt
 )
 
-from .serializers import ExpenseReceiptSerializer
+from .serializers import ExpenseReceiptSerializer,ExpenseReportSerializer, ApprovalHistorySerializer
 from .services import extract_receipt_with_gemini
-
+from .models import ApprovalWorkflow, ApprovalWorkflowStep
+from .serializers import ApprovalWorkflowSerializer, ApprovalWorkflowStepSerializer
 from django.utils import timezone
 from .models import ApprovalHistory
 from .serializers import ExpenseReportSerializer
@@ -31,18 +32,27 @@ from .report_utils import get_or_create_current_month_report
 from audit_logs.utils import create_audit_log
 from .models import ExpenseLineItem
 from .tasks import send_report_status_email_task
-
+from tenants.permissions import IsCompanyAdmin
 
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
 def upload_receipt(request):
+
     profile = request.user.profile
 
-    if profile.role not in ["EMPLOYEE", "MANAGER"]:
+    if not profile.company_role:
         return Response(
-            {"error": "Only employees and managers can upload receipts."},
+            {
+                "error": "Your company role is not assigned. Please contact company admin."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not profile.company_role.can_upload_receipt:
+        return Response(
+            {"error": "Your role is not allowed to upload receipts."},
             status=status.HTTP_403_FORBIDDEN
         )
 
@@ -98,6 +108,8 @@ def upload_receipt(request):
             "submission_id": str(submission.id),
             "filename": receipt.receipt_file.name,
             "source": ExpenseSubmission.SOURCE_WEB,
+            "company_role": profile.company_role.name,
+            "department": profile.department.name,
         }
     )
 
@@ -155,14 +167,13 @@ def upload_receipt(request):
 
     return Response(
         {
-            "message": message,
-            "report_id": report.id,
+            "message": "Receipt uploaded successfully. AI processing started.",
+            "report_id": str(report.id),
             "receipt": serializer.data,
             "ai_result": ai_result,
         },
         status=status.HTTP_201_CREATED
     )
-
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -195,6 +206,7 @@ def email_ingest_receipt(request):
             reimbursement_email_prefix=reimbursement_email_prefix,
             is_verified=True
         )
+
     except Company.DoesNotExist:
         return Response(
             {"error": "Company not found or not verified."},
@@ -202,15 +214,31 @@ def email_ingest_receipt(request):
         )
 
     try:
-        employee = UserProfile.objects.get(
-            user__email=sender_email,
-            company=company,
-            role__in=["EMPLOYEE", "MANAGER"]
+        employee = UserProfile.objects.select_related(
+            "company_role",
+            "department",
+            "user"
+        ).get(
+            user__email__iexact=sender_email,
+            company=company
         )
+
     except UserProfile.DoesNotExist:
         return Response(
-            {"error": "Sender is not a registered employee or manager of this company."},
+            {"error": "Sender is not a registered user of this company."},
             status=status.HTTP_404_NOT_FOUND
+        )
+
+    if not employee.company_role:
+        return Response(
+            {"error": "Sender company role is not assigned."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not employee.company_role.can_upload_receipt:
+        return Response(
+            {"error": "Sender role is not allowed to upload receipts."},
+            status=status.HTTP_403_FORBIDDEN
         )
 
     if not employee.department:
@@ -260,6 +288,7 @@ def email_ingest_receipt(request):
             "submission_id": str(submission.id),
             "email_subject": email_subject,
             "source": ExpenseSubmission.SOURCE_EMAIL,
+            "company_role": employee.company_role.name,
         }
     )
 
@@ -279,7 +308,7 @@ def email_ingest_receipt(request):
     return Response(
         {
             "message": "Email receipt ingested successfully. AI processing started.",
-            "report_id": report.id,
+            "report_id": str(report.id),
             "receipt": serializer.data,
             "ai_processing": "started"
         },
@@ -292,9 +321,17 @@ def email_ingest_receipt(request):
 def submit_current_month_report(request):
     profile = request.user.profile
 
-    if profile.role not in ["EMPLOYEE", "MANAGER"]:
+    if not profile.company_role:
         return Response(
-            {"error": "Only employees and managers can submit reports."},
+            {
+                "error": "Your company role is not assigned. Please contact company admin."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not profile.company_role.can_submit_expense:
+        return Response(
+            {"error": "Your role is not allowed to submit expense reports."},
             status=status.HTTP_403_FORBIDDEN
         )
 
@@ -307,6 +344,7 @@ def submit_current_month_report(request):
             month=current_month,
             status=ExpenseReport.STATUS_DRAFT
         )
+
     except ExpenseReport.DoesNotExist:
         return Response(
             {"error": "No draft report found for current month."},
@@ -319,36 +357,92 @@ def submit_current_month_report(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    if profile.role == "MANAGER":
-        report.status = ExpenseReport.STATUS_PENDING_ACCOUNTS
-        receipt_status = ExpenseReceipt.STATUS_PENDING_ACCOUNTS
-        message = "Manager report submitted directly to accounts."
-        comments = "Manager monthly expense report submitted directly to accounts."
-    else:
-        report.status = ExpenseReport.STATUS_SUBMITTED
-        receipt_status = ExpenseReceipt.STATUS_SUBMITTED_TO_MANAGER
-        message = "Monthly report submitted successfully."
-        comments = "Monthly expense report submitted to manager."
+    try:
+        workflow = ApprovalWorkflow.objects.get(
+            company=profile.company,
+            is_active=True
+        )
 
+    except ApprovalWorkflow.DoesNotExist:
+        return Response(
+            {"error": "Approval workflow is not configured for your company."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    first_step = workflow.steps.filter(
+        is_active=True
+    ).select_related(
+        "approver_role",
+        "department"
+    ).order_by(
+        "step_order"
+    ).first()
+
+    if not first_step:
+        return Response(
+            {"error": "Approval workflow has no active steps."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    report.status = ExpenseReport.STATUS_SUBMITTED
+    report.current_workflow_step = first_step
+    report.workflow_completed = False
     report.submitted_at = timezone.now()
-    report.save(update_fields=["status", "submitted_at", "updated_at"])
+
+    report.save(update_fields=[
+        "status",
+        "current_workflow_step",
+        "workflow_completed",
+        "submitted_at",
+        "updated_at"
+    ])
 
     report.receipts.all().update(
-        status=receipt_status
+        status=ExpenseReceipt.STATUS_PENDING_APPROVAL
     )
 
     ApprovalHistory.objects.create(
         report=report,
         action_by=profile,
         action=ApprovalHistory.ACTION_REPORT_SUBMITTED,
-        comments=comments
+        comments=(
+            f"Monthly expense report submitted. "
+            f"Current approval step: {first_step.approver_role.name}"
+        )
+    )
+
+    create_audit_log(
+        company=profile.company,
+        action="REPORT_SUBMITTED",
+        action_by=profile,
+        message=f"Expense report {report.id} submitted for approval.",
+        metadata={
+            "report_id": str(report.id),
+            "employee_email": profile.user.email,
+            "current_step": first_step.step_order,
+            "approver_role": first_step.approver_role.name,
+            "routing_type": first_step.routing_type,
+            "approval_department": (
+                first_step.department.name
+                if first_step.department else None
+            ),
+        }
     )
 
     serializer = ExpenseReportSerializer(report)
 
     return Response(
         {
-            "message": message,
+            "message": "Monthly report submitted successfully.",
+            "current_approval_step": {
+                "step_order": first_step.step_order,
+                "approver_role": first_step.approver_role.name,
+                "routing_type": first_step.routing_type,
+                "department": (
+                    first_step.department.name
+                    if first_step.department else None
+                ),
+            },
             "report": serializer.data
         },
         status=status.HTTP_200_OK
@@ -356,26 +450,51 @@ def submit_current_month_report(request):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
-def manager_pending_reports(request):
+def my_pending_approval_reports(request):
     profile = request.user.profile
 
-    if profile.role != "MANAGER":
+    if not profile.company_role:
         return Response(
-            {"error": "Only managers can view pending reports."},
+            {"error": "Your company role is not assigned."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not profile.company_role.can_approve_expense:
+        return Response(
+            {"error": "Your role is not allowed to approve expense reports."},
             status=status.HTTP_403_FORBIDDEN
         )
 
     reports = ExpenseReport.objects.filter(
         company=profile.company,
-        department=profile.department,
+        current_workflow_step__approver_role=profile.company_role,
+        workflow_completed=False,
         status=ExpenseReport.STATUS_SUBMITTED
-    ).select_related(
+    )
+
+    reports = reports.filter(
+        current_workflow_step__department=profile.department
+    ) | reports.filter(
+        current_workflow_step__department__isnull=True,
+        current_workflow_step__routing_type=ApprovalWorkflowStep.ROUTING_COMPANY
+    ) | reports.filter(
+        current_workflow_step__department__isnull=True,
+        current_workflow_step__routing_type=ApprovalWorkflowStep.ROUTING_DEPARTMENT,
+        department=profile.department
+    )
+
+    reports = reports.select_related(
         "employee",
         "employee__user",
-        "department"
+        "department",
+        "current_workflow_step",
+        "current_workflow_step__approver_role",
+        "current_workflow_step__department"
     ).prefetch_related(
         "receipts",
         "receipts__line_items"
+    ).order_by(
+        "-submitted_at"
     )
 
     serializer = ExpenseReportSerializer(
@@ -383,193 +502,49 @@ def manager_pending_reports(request):
         many=True
     )
 
-    return Response(serializer.data)
-
-
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def manager_approve_report(request, report_id):
-    profile = request.user.profile
-
-    if profile.role != "MANAGER":
-        return Response(
-            {"error": "Only managers can approve reports."},
-            status=status.HTTP_403_FORBIDDEN
-        )
-
-    try:
-        report = ExpenseReport.objects.get(
-            id=report_id,
-            company=profile.company,
-            department=profile.department,
-            status=ExpenseReport.STATUS_SUBMITTED
-        )
-    except ExpenseReport.DoesNotExist:
-        return Response(
-            {"error": "Report not found or not pending for approval."},
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-    notes = request.data.get("notes", "")
-
-    report.status = ExpenseReport.STATUS_PENDING_ACCOUNTS
-    report.manager_notes = notes
-    report.manager_action_at = timezone.now()
-
-    report.save(update_fields=[
-        "status",
-        "manager_notes",
-        "manager_action_at",
-        "updated_at"
-    ])
-
-    report.receipts.all().update(
-        status=ExpenseReceipt.STATUS_PENDING_ACCOUNTS,
-        manager_notes=notes
-    )
-
-    ApprovalHistory.objects.create(
-        report=report,
-        action_by=profile,
-        action=ApprovalHistory.ACTION_MANAGER_APPROVED,
-        comments=notes
-    )
-
-    create_audit_log(
-        company=profile.company,
-        action="MANAGER_APPROVED",
-        action_by=profile,
-        message=f"Manager approved expense report {report.id}",
-        metadata={
-            "report_id": str(report.id),
-            "employee_email": report.employee.user.email,
-            "department": report.department.name if report.department else None,
-            "total_amount": str(report.total_amount),
-            "notes": notes,
-        }
-    )
-
-    send_report_status_email_task.delay(
-        str(report.id),
-        "Reimbursement Report Approved by Manager",
-        (
-            "Your reimbursement report has been approved by your manager.\n\n"
-            f"Manager Notes: {notes or 'No notes'}"
-        )
-    )
-
-    serializer = ExpenseReportSerializer(report)
-
     return Response({
-        "message": "Report approved by manager and sent to accounts.",
-        "report": serializer.data
+        "count": reports.count(),
+        "results": serializer.data
     })
 
 
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def manager_reject_report(request, report_id):
-    profile = request.user.profile
 
-    if profile.role != "MANAGER":
-        return Response(
-            {"error": "Only managers can reject reports."},
-            status=status.HTTP_403_FORBIDDEN
-        )
-
-    try:
-        report = ExpenseReport.objects.get(
-            id=report_id,
-            company=profile.company,
-            department=profile.department,
-            status=ExpenseReport.STATUS_SUBMITTED
-        )
-    except ExpenseReport.DoesNotExist:
-        return Response(
-            {"error": "Report not found or not pending for approval."},
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-    notes = request.data.get("notes", "")
-
-    if not notes:
-        return Response(
-            {"error": "Rejection notes are required."},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    report.status = ExpenseReport.STATUS_MANAGER_REJECTED
-    report.manager_notes = notes
-    report.manager_action_at = timezone.now()
-
-    report.save(update_fields=[
-        "status",
-        "manager_notes",
-        "manager_action_at",
-        "updated_at"
-    ])
-
-    report.receipts.all().update(
-        status=ExpenseReceipt.STATUS_MANAGER_REJECTED,
-        manager_notes=notes
-    )
-
-    ApprovalHistory.objects.create(
-        report=report,
-        action_by=profile,
-        action=ApprovalHistory.ACTION_MANAGER_REJECTED,
-        comments=notes
-    )
-
-    create_audit_log(
-        company=profile.company,
-        action="MANAGER_REJECTED",
-        action_by=profile,
-        message=f"Manager rejected expense report {report.id}",
-        metadata={
-            "report_id": str(report.id),
-            "employee_email": report.employee.user.email,
-            "department": report.department.name if report.department else None,
-            "total_amount": str(report.total_amount),
-            "rejection_reason": notes,
-        }
-    )
-
-    send_report_status_email_task.delay(
-        str(report.id),
-        "Reimbursement Report Rejected by Manager",
-        (
-            "Your reimbursement report has been rejected by your manager.\n\n"
-            f"Reason: {notes}"
-        )
-    )
-
-    serializer = ExpenseReportSerializer(report)
-
-    return Response({
-        "message": "Report rejected by manager.",
-        "report": serializer.data
-    })
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def current_month_report(request):
+
     profile = request.user.profile
 
-    if profile.role not in ["EMPLOYEE", "MANAGER"]:
+    if not profile.company_role:
         return Response(
-            {"error": "Only employees and managers can view their report."},
+            {"error": "Your company role is not assigned."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not profile.company_role.can_submit_expense:
+        return Response(
+            {"error": "Your role is not allowed to view expense reports."},
             status=status.HTTP_403_FORBIDDEN
         )
 
     current_month = date.today().replace(day=1)
 
     try:
-        report = ExpenseReport.objects.get(
+        report = ExpenseReport.objects.select_related(
+            "current_workflow_step",
+            "current_workflow_step__approver_role",
+            "current_workflow_step__department"
+        ).prefetch_related(
+            "receipts",
+            "receipts__line_items",
+            "approval_history"
+        ).get(
             company=profile.company,
             employee=profile,
             month=current_month
         )
+
     except ExpenseReport.DoesNotExist:
         return Response(
             {"message": "No report found for current month."},
@@ -585,261 +560,116 @@ def current_month_report(request):
     )
 
     return Response({
-        "report_id": report.id,
+
+        "report_id": str(report.id),
+
         "month": report.month,
+
         "status": report.status,
-        "total_amount": report.total_amount,
-        "manager_notes": report.manager_notes,
-        "accounts_notes": report.accounts_notes,
 
-        "no_violation_receipts": ExpenseReceiptSerializer(
-            no_violation_receipts,
-            many=True
-        ).data,
+        "total_amount": str(report.total_amount),
 
-        "violation_receipts": ExpenseReceiptSerializer(
-            violation_receipts,
-            many=True
-        ).data,
+        "submitted_at": report.submitted_at,
+
+        "paid_at": report.paid_at,
+
+        "paid_notes": report.paid_notes,
+
+        "workflow_completed": report.workflow_completed,
+
+        "current_workflow_step": {
+
+            "id": str(report.current_workflow_step.id),
+
+            "step_order":
+                report.current_workflow_step.step_order,
+
+            "approver_role":
+                report.current_workflow_step.approver_role.name,
+
+            "routing_type":
+                report.current_workflow_step.routing_type,
+
+            "department": (
+                report.current_workflow_step.department.name
+                if report.current_workflow_step.department
+                else None
+            ),
+
+        } if report.current_workflow_step else None,
+
+        "approval_history":
+            ApprovalHistorySerializer(
+                report.approval_history.all(),
+                many=True
+            ).data,
+
+        "no_violation_receipts":
+            ExpenseReceiptSerializer(
+                no_violation_receipts,
+                many=True
+            ).data,
+
+        "violation_receipts":
+            ExpenseReceiptSerializer(
+                violation_receipts,
+                many=True
+            ).data,
     })
 
 
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def accounts_pending_reports(request):
-    profile = request.user.profile
-
-    if profile.role != "ACCOUNTS":
-        return Response(
-            {"error": "Only accounts department can view pending reports."},
-            status=status.HTTP_403_FORBIDDEN
-        )
-
-    reports = ExpenseReport.objects.filter(
-        company=profile.company,
-        status=ExpenseReport.STATUS_PENDING_ACCOUNTS
-    ).select_related(
-        "employee",
-        "employee__user",
-        "department"
-    ).prefetch_related(
-        "receipts",
-        "receipts__line_items"
-    ).order_by("-submitted_at")
-
-    serializer = ExpenseReportSerializer(
-        reports,
-        many=True
-    )
-
-    return Response({
-        "total_pending_reports": reports.count(),
-        "reports": serializer.data
-    })    
-
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def accounts_approve_report(request, report_id):
-    profile = request.user.profile
-
-    if profile.role != "ACCOUNTS":
-        return Response(
-            {"error": "Only accounts department can approve reports."},
-            status=status.HTTP_403_FORBIDDEN
-        )
-
-    try:
-        report = ExpenseReport.objects.get(
-            id=report_id,
-            company=profile.company,
-            status=ExpenseReport.STATUS_PENDING_ACCOUNTS
-        )
-    except ExpenseReport.DoesNotExist:
-        return Response(
-            {"error": "Report not found."},
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-    notes = request.data.get("notes", "")
-
-    report.status = ExpenseReport.STATUS_ACCOUNTS_APPROVED
-    report.accounts_notes = notes
-    report.accounts_action_at = timezone.now()
-
-    report.save(update_fields=[
-        "status",
-        "accounts_notes",
-        "accounts_action_at",
-        "updated_at"
-    ])
-
-    report.receipts.all().update(
-        status=ExpenseReceipt.STATUS_ACCOUNTS_APPROVED,
-        accounts_notes=notes
-    )
-
-    ApprovalHistory.objects.create(
-        report=report,
-        action_by=profile,
-        action=ApprovalHistory.ACTION_ACCOUNTS_APPROVED,
-        comments=notes
-    )
-
-    create_audit_log(
-        company=profile.company,
-        action="ACCOUNTS_APPROVED",
-        action_by=profile,
-        message=f"Accounts approved expense report {report.id}",
-        metadata={
-            "report_id": str(report.id),
-            "employee_email": report.employee.user.email,
-            "department": report.department.name if report.department else None,
-            "total_amount": str(report.total_amount),
-            "notes": notes,
-        }
-    )
-
-    send_report_status_email_task.delay(
-        str(report.id),
-        "Reimbursement Report Approved by Accounts",
-        (
-            "Your reimbursement report has been approved by accounts.\n\n"
-            f"Accounts Notes: {notes or 'No notes'}"
-        )
-    )
-
-    serializer = ExpenseReportSerializer(report)
-
-    return Response({
-        "message": "Report approved by accounts.",
-        "report": serializer.data
-    })
-
-
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def accounts_reject_report(request, report_id):
-    profile = request.user.profile
-
-    if profile.role != "ACCOUNTS":
-        return Response(
-            {"error": "Only accounts department can reject reports."},
-            status=status.HTTP_403_FORBIDDEN
-        )
-
-    try:
-        report = ExpenseReport.objects.get(
-            id=report_id,
-            company=profile.company,
-            status=ExpenseReport.STATUS_PENDING_ACCOUNTS
-        )
-    except ExpenseReport.DoesNotExist:
-        return Response(
-            {"error": "Report not found."},
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-    notes = request.data.get("notes", "")
-
-    if not notes:
-        return Response(
-            {"error": "Rejection notes are required."},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    report.status = ExpenseReport.STATUS_REJECTED
-    report.accounts_notes = notes
-    report.accounts_action_at = timezone.now()
-
-    report.save(update_fields=[
-        "status",
-        "accounts_notes",
-        "accounts_action_at",
-        "updated_at"
-    ])
-
-    report.receipts.all().update(
-        status=ExpenseReceipt.STATUS_REJECTED,
-        accounts_notes=notes
-    )
-
-    ApprovalHistory.objects.create(
-        report=report,
-        action_by=profile,
-        action=ApprovalHistory.ACTION_ACCOUNTS_REJECTED,
-        comments=notes
-    )
-
-    create_audit_log(
-        company=profile.company,
-        action="ACCOUNTS_REJECTED",
-        action_by=profile,
-        message=f"Accounts rejected expense report {report.id}",
-        metadata={
-            "report_id": str(report.id),
-            "employee_email": report.employee.user.email,
-            "department": report.department.name if report.department else None,
-            "total_amount": str(report.total_amount),
-            "rejection_reason": notes,
-        }
-    )
-
-    send_report_status_email_task.delay(
-        str(report.id),
-        "Reimbursement Report Rejected by Accounts",
-        (
-            "Your reimbursement report has been rejected by accounts.\n\n"
-            f"Reason: {notes}"
-        )
-    )
-
-    serializer = ExpenseReportSerializer(report)
-
-    return Response({
-        "message": "Report rejected by accounts.",
-        "report": serializer.data
-    })
 
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def accounts_mark_paid(request, report_id):
+
     profile = request.user.profile
 
-    if profile.role != "ACCOUNTS":
+    if not profile.company_role:
         return Response(
-            {"error": "Only accounts department can mark paid."},
+            {"error": "Your company role is not assigned."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not profile.company_role.can_mark_paid:
+        return Response(
+            {"error": "Your role is not allowed to mark reports as paid."},
             status=status.HTTP_403_FORBIDDEN
         )
 
     try:
-        report = ExpenseReport.objects.get(
+        report = ExpenseReport.objects.select_related(
+            "employee__user",
+            "department"
+        ).get(
             id=report_id,
             company=profile.company,
-            status=ExpenseReport.STATUS_ACCOUNTS_APPROVED
+            status=ExpenseReport.STATUS_APPROVED
         )
+
     except ExpenseReport.DoesNotExist:
+
         return Response(
-            {"error": "Report not found or not approved by accounts."},
+            {"error": "Report not found or not approved for payment."},
             status=status.HTTP_404_NOT_FOUND
         )
 
     notes = request.data.get("notes", "")
 
     report.status = ExpenseReport.STATUS_PAID
-    report.accounts_notes = notes or report.accounts_notes
+    report.paid_notes = notes
     report.paid_at = timezone.now()
 
     report.save(update_fields=[
         "status",
-        "accounts_notes",
+        "paid_notes",
         "paid_at",
         "updated_at"
     ])
 
     report.receipts.all().update(
-        status=ExpenseReceipt.STATUS_PAID,
-        accounts_notes=report.accounts_notes
+        status=ExpenseReceipt.STATUS_PAID
     )
 
     ApprovalHistory.objects.create(
@@ -857,7 +687,10 @@ def accounts_mark_paid(request, report_id):
         metadata={
             "report_id": str(report.id),
             "employee_email": report.employee.user.email,
-            "department": report.department.name if report.department else None,
+            "department": (
+                report.department.name
+                if report.department else None
+            ),
             "total_amount": str(report.total_amount),
             "notes": notes,
         }
@@ -867,7 +700,7 @@ def accounts_mark_paid(request, report_id):
         str(report.id),
         "Reimbursement Payment Completed",
         (
-            "Your reimbursement report has been marked as paid.\n\n"
+            "Your reimbursement report has been paid successfully.\n\n"
             f"Notes: {notes or 'Payment completed successfully'}"
         )
     )
@@ -943,6 +776,7 @@ from .tasks import (
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def trigger_reimbursement_email_fetch(request):
+
     profile = request.user.profile
 
     if profile.role != "COMPANY_ADMIN":
@@ -953,6 +787,714 @@ def trigger_reimbursement_email_fetch(request):
 
     fetch_all_reimbursement_emails_task.delay()
 
+    create_audit_log(
+        company=profile.company,
+        action="EMAIL_FETCH_TRIGGERED",
+        action_by=profile,
+        message="Reimbursement email fetch started.",
+        metadata={
+            "triggered_by": profile.user.email,
+        }
+    )
+
     return Response({
         "message": "Email fetching started in background."
-    })    
+    })
+
+from tenants.permissions import IsCompanyAdmin
+
+@api_view(["GET"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin,
+])
+def admin_employee_expenses(request, employee_id):
+
+    company = request.user.profile.company
+
+    try:
+        employee = UserProfile.objects.select_related(
+            "user",
+            "department",
+            "company_role"
+        ).get(
+            id=employee_id,
+            company=company
+        )
+
+    except UserProfile.DoesNotExist:
+
+        return Response(
+            {"error": "Employee not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    reports = ExpenseReport.objects.filter(
+        company=company,
+        employee=employee
+    ).select_related(
+        "current_workflow_step",
+        "current_workflow_step__approver_role",
+        "current_workflow_step__department"
+    ).prefetch_related(
+        "receipts",
+        "receipts__line_items"
+    ).order_by(
+        "-month",
+        "-created_at"
+    )
+
+    serializer = ExpenseReportSerializer(
+        reports,
+        many=True
+    )
+
+    return Response({
+        "employee": {
+            "id": str(employee.id),
+
+            "name": (
+                f"{employee.user.first_name} "
+                f"{employee.user.last_name}"
+            ).strip(),
+
+            "email": employee.user.email,
+
+            "department": (
+                employee.department.name
+                if employee.department else None
+            ),
+
+            "system_role": employee.role,
+
+            "company_role": (
+                employee.company_role.name
+                if employee.company_role else None
+            ),
+        },
+
+        "count": reports.count(),
+
+        "results": serializer.data
+    })
+
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def create_or_update_workflow(request):
+
+    profile = request.user.profile
+
+    if profile.role != "COMPANY_ADMIN":
+        return Response(
+            {"error": "Only company admin can configure workflow."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    name = request.data.get(
+        "name",
+        "Default Workflow"
+    )
+
+    workflow, created = ApprovalWorkflow.objects.update_or_create(
+        company=profile.company,
+        defaults={
+            "name": name,
+            "is_active": True,
+        }
+    )
+
+    create_audit_log(
+        company=profile.company,
+        action="WORKFLOW_CONFIGURED",
+        action_by=profile,
+        message=(
+            f"Workflow '{workflow.name}' "
+            f"configured by company admin."
+        ),
+        metadata={
+            "workflow_id": workflow.id,
+            "workflow_name": workflow.name,
+            "created": created,
+        }
+    )
+
+    serializer = ApprovalWorkflowSerializer(workflow)
+
+    return Response({
+        "message": (
+            "Workflow created successfully."
+            if created
+            else "Workflow updated successfully."
+        ),
+        "workflow": serializer.data
+    })
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def add_workflow_step(request):
+
+    profile = request.user.profile
+
+    if profile.role != "COMPANY_ADMIN":
+        return Response(
+            {"error": "Only company admin can add workflow steps."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    try:
+        workflow = ApprovalWorkflow.objects.get(
+            company=profile.company,
+            is_active=True
+        )
+
+    except ApprovalWorkflow.DoesNotExist:
+
+        return Response(
+            {"error": "Please create workflow first."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    serializer = ApprovalWorkflowStepSerializer(
+        data=request.data
+    )
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    approver_role = serializer.validated_data[
+        "approver_role"
+    ]
+
+    if approver_role.company != profile.company:
+        return Response(
+            {
+                "error":
+                "Approver role does not belong to your company."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    department = serializer.validated_data.get(
+        "department"
+    )
+
+    if department and department.company != profile.company:
+        return Response(
+            {
+                "error":
+                "Department does not belong to your company."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    step_order = serializer.validated_data["step_order"]
+
+    if ApprovalWorkflowStep.objects.filter(
+        workflow=workflow,
+        step_order=step_order
+    ).exists():
+
+        return Response(
+            {
+                "error":
+                f"Step order {step_order} already exists."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    step = serializer.save(
+        workflow=workflow
+    )
+
+    create_audit_log(
+        company=profile.company,
+        action="WORKFLOW_STEP_CREATED",
+        action_by=profile,
+        message=(
+            f"Workflow step {step.step_order} "
+            f"added."
+        ),
+        metadata={
+            "workflow_id": workflow.id,
+            "step_order": step.step_order,
+            "role": step.approver_role.name,
+            "department": (
+                step.department.name
+                if step.department else None
+            ),
+            "routing_type": step.routing_type,
+        }
+    )
+
+    return Response({
+        "message": "Workflow step added successfully.",
+        "step": ApprovalWorkflowStepSerializer(step).data
+    }, status=status.HTTP_201_CREATED)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def view_workflow(request):
+    profile = request.user.profile
+
+    try:
+        workflow = ApprovalWorkflow.objects.get(
+            company=profile.company,
+            is_active=True
+        )
+    except ApprovalWorkflow.DoesNotExist:
+        return Response(
+            {"error": "Workflow not configured."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    serializer = ApprovalWorkflowSerializer(workflow)
+
+    return Response(serializer.data)
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def deactivate_workflow_step(request, step_id):
+    profile = request.user.profile
+
+    if profile.role != "COMPANY_ADMIN":
+        return Response(
+            {"error": "Only company admin can deactivate workflow steps."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    try:
+        step = ApprovalWorkflowStep.objects.get(
+            id=step_id,
+            workflow__company=profile.company
+        )
+
+    except ApprovalWorkflowStep.DoesNotExist:
+        return Response(
+            {"error": "Workflow step not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    step.is_active = False
+    step.save(update_fields=["is_active"])
+
+    return Response({
+        "message": "Workflow step deactivated successfully."
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def approve_report_step(request, report_id):
+
+    profile = request.user.profile
+
+    if not profile.company_role:
+        return Response(
+            {"error": "Your company role is not assigned."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        report = ExpenseReport.objects.select_related(
+            "employee__user",
+            "department",
+            "current_workflow_step",
+            "current_workflow_step__workflow",
+            "current_workflow_step__approver_role",
+            "current_workflow_step__department",
+        ).get(
+            id=report_id,
+            company=profile.company,
+            workflow_completed=False,
+            status=ExpenseReport.STATUS_SUBMITTED
+        )
+
+    except ExpenseReport.DoesNotExist:
+        return Response(
+            {"error": "Report not found or not pending approval."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    current_step = report.current_workflow_step
+
+    if not current_step:
+        return Response(
+            {"error": "Workflow step not found."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if profile.company_role != current_step.approver_role:
+        return Response(
+            {"error": "You are not allowed to approve this report."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    if current_step.department:
+
+        if profile.department != current_step.department:
+            return Response(
+                {"error": "This approval step belongs to another department."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+    elif current_step.routing_type == ApprovalWorkflowStep.ROUTING_DEPARTMENT:
+
+        if profile.department != report.department:
+            return Response(
+                {"error": "This report belongs to another department."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+    notes = request.data.get("notes", "")
+
+    ApprovalHistory.objects.create(
+        report=report,
+        action_by=profile,
+        action=ApprovalHistory.ACTION_STEP_APPROVED,
+        comments=notes
+    )
+
+    create_audit_log(
+        company=profile.company,
+        action="STEP_APPROVED",
+        action_by=profile,
+        message=f"{profile.company_role.name} approved expense report {report.id}.",
+        metadata={
+            "report_id": str(report.id),
+            "employee_email": report.employee.user.email,
+            "report_department": report.department.name if report.department else None,
+            "approval_department": (
+                current_step.department.name
+                if current_step.department else None
+            ),
+            "approved_by": profile.user.email,
+            "approver_role": profile.company_role.name,
+            "step_order": current_step.step_order,
+            "notes": notes,
+        }
+    )
+
+    next_step = ApprovalWorkflowStep.objects.filter(
+        workflow=current_step.workflow,
+        is_active=True,
+        step_order__gt=current_step.step_order
+    ).select_related(
+        "approver_role",
+        "department"
+    ).order_by("step_order").first()
+
+    if next_step:
+        report.current_workflow_step = next_step
+
+        report.save(update_fields=[
+            "current_workflow_step",
+            "updated_at"
+        ])
+
+        report.receipts.all().update(
+            status=ExpenseReceipt.STATUS_PENDING_APPROVAL
+        )
+
+        send_report_status_email_task.delay(
+            str(report.id),
+            "Reimbursement Report Moved to Next Approval Step",
+            (
+                "Your reimbursement report has moved to the next approval step.\n\n"
+                f"Next Step: {next_step.approver_role.name}\n"
+                f"Routing Type: {next_step.routing_type}\n"
+                f"Department: {next_step.department.name if next_step.department else 'Company/Auto'}\n"
+                f"Previous Approver Notes: {notes or 'No notes'}"
+            )
+        )
+
+        serializer = ExpenseReportSerializer(report)
+
+        return Response({
+            "message": "Step approved successfully. Report moved to next step.",
+            "next_step": {
+                "step_order": next_step.step_order,
+                "role": next_step.approver_role.name,
+                "routing_type": next_step.routing_type,
+                "department": (
+                    next_step.department.name
+                    if next_step.department else None
+                ),
+            },
+            "report": serializer.data
+        })
+
+    report.workflow_completed = True
+    report.status = ExpenseReport.STATUS_APPROVED
+    report.current_workflow_step = None
+
+    report.save(update_fields=[
+        "workflow_completed",
+        "status",
+        "current_workflow_step",
+        "updated_at"
+    ])
+
+    report.receipts.all().update(
+        status=ExpenseReceipt.STATUS_APPROVED
+    )
+
+    send_report_status_email_task.delay(
+        str(report.id),
+        "Reimbursement Report Fully Approved",
+        (
+            "Your reimbursement report has completed all approval steps.\n\n"
+            "It is now approved and waiting for payment processing."
+        )
+    )
+
+    serializer = ExpenseReportSerializer(report)
+
+    return Response({
+        "message": "Workflow completed successfully. Report approved.",
+        "status": report.status,
+        "report": serializer.data
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def reject_report_step(request, report_id):
+
+    profile = request.user.profile
+
+    if not profile.company_role:
+        return Response(
+            {"error": "Your company role is not assigned."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    notes = request.data.get("notes")
+
+    if not notes:
+        return Response(
+            {"error": "Rejection reason is required."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        report = ExpenseReport.objects.select_related(
+            "employee__user",
+            "department",
+            "current_workflow_step",
+            "current_workflow_step__approver_role",
+            "current_workflow_step__department",
+        ).get(
+            id=report_id,
+            company=profile.company,
+            workflow_completed=False,
+            status=ExpenseReport.STATUS_SUBMITTED
+        )
+
+    except ExpenseReport.DoesNotExist:
+        return Response(
+            {"error": "Report not found or not pending approval."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    current_step = report.current_workflow_step
+
+    if not current_step:
+        return Response(
+            {"error": "Workflow step not found."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if profile.company_role != current_step.approver_role:
+        return Response(
+            {"error": "You are not allowed to reject this report."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    if current_step.department:
+
+        if profile.department != current_step.department:
+            return Response(
+                {"error": "This approval step belongs to another department."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+    elif current_step.routing_type == ApprovalWorkflowStep.ROUTING_DEPARTMENT:
+
+        if profile.department != report.department:
+            return Response(
+                {"error": "This report belongs to another department."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+    report.status = ExpenseReport.STATUS_REJECTED
+    report.current_workflow_step = None
+    report.workflow_completed = True
+
+    report.save(update_fields=[
+        "status",
+        "current_workflow_step",
+        "workflow_completed",
+        "updated_at"
+    ])
+
+    report.receipts.all().update(
+        status=ExpenseReceipt.STATUS_REJECTED
+    )
+
+    ApprovalHistory.objects.create(
+        report=report,
+        action_by=profile,
+        action=ApprovalHistory.ACTION_STEP_REJECTED,
+        comments=notes
+    )
+
+    create_audit_log(
+        company=profile.company,
+        action="STEP_REJECTED",
+        action_by=profile,
+        message=f"{profile.company_role.name} rejected expense report {report.id}.",
+        metadata={
+            "report_id": str(report.id),
+            "employee_email": report.employee.user.email,
+            "report_department": report.department.name if report.department else None,
+            "approval_department": (
+                current_step.department.name
+                if current_step.department else None
+            ),
+            "rejected_by": profile.user.email,
+            "approver_role": profile.company_role.name,
+            "step_order": current_step.step_order,
+            "reason": notes,
+        }
+    )
+
+    send_report_status_email_task.delay(
+        str(report.id),
+        "Reimbursement Report Rejected",
+        (
+            "Your reimbursement report has been rejected.\n\n"
+            f"Rejected By Role: {profile.company_role.name}\n"
+            f"Reason: {notes}"
+        )
+    )
+
+    serializer = ExpenseReportSerializer(report)
+
+    return Response({
+        "message": "Report rejected successfully. Workflow stopped.",
+        "status": report.status,
+        "report": serializer.data
+    })
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def my_uploaded_expenses(request):
+    profile = request.user.profile
+
+    if not profile.company_role:
+        return Response(
+            {"error": "Your company role is not assigned."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not profile.company_role.can_submit_expense:
+        return Response(
+            {"error": "Your role is not allowed to view uploaded expenses."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    reports = ExpenseReport.objects.filter(
+        company=profile.company,
+        employee=profile
+    ).select_related(
+        "department",
+        "current_workflow_step",
+        "current_workflow_step__approver_role",
+        "current_workflow_step__department"
+    ).prefetch_related(
+        "receipts",
+        "receipts__line_items",
+        "approval_history"
+    ).order_by(
+        "-month",
+        "-created_at"
+    )
+
+    serializer = ExpenseReportSerializer(reports, many=True)
+
+    return Response({
+        "count": reports.count(),
+        "results": serializer.data
+    })
+
+from .models import DuplicateReceiptLog
+from .serializers import DuplicateReceiptLogSerializer
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def duplicate_receipts(request):
+
+    company = request.user.profile.company
+
+    duplicates = DuplicateReceiptLog.objects.filter(
+        original_receipt__company=company
+    ).select_related(
+        "original_receipt",
+        "duplicate_receipt"
+    ).order_by("-created_at")
+
+    serializer = DuplicateReceiptLogSerializer(
+        duplicates,
+        many=True
+    )
+
+    return Response({
+        "count": duplicates.count(),
+        "results": serializer.data
+    })
+
+from .models import DuplicateReceiptLog
+from .serializers import DuplicateReceiptLogSerializer
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def duplicate_receipts(request):
+    profile = request.user.profile
+
+    if profile.role != "COMPANY_ADMIN":
+        return Response(
+            {"error": "Only company admin can view duplicate receipts."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    duplicates = DuplicateReceiptLog.objects.filter(
+        original_receipt__company=profile.company
+    ).select_related(
+        "original_receipt",
+        "duplicate_receipt",
+        "original_receipt__employee__user",
+        "duplicate_receipt__employee__user",
+    ).order_by("-created_at")
+
+    duplicate_type = request.GET.get("type")
+
+    if duplicate_type:
+        duplicates = duplicates.filter(
+            duplicate_type=duplicate_type.upper()
+        )
+
+    serializer = DuplicateReceiptLogSerializer(
+        duplicates,
+        many=True
+    )
+
+    return Response({
+        "count": duplicates.count(),
+        "results": serializer.data
+    })

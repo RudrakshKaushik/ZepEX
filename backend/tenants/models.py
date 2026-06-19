@@ -33,6 +33,10 @@ class Company(models.Model):
 
     is_verified = models.BooleanField(default=False)
 
+    is_active = models.BooleanField(default=True)
+
+    updated_at = models.DateTimeField(auto_now=True)
+
     created_at = models.DateTimeField(
         auto_now_add=True
     )
@@ -67,11 +71,37 @@ class Department(models.Model):
     created_at = models.DateTimeField(
         auto_now_add=True
     )
+    is_active = models.BooleanField(default=True)
+
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"{self.company.name} - {self.name}"
 
+class CompanyRole(models.Model):
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="roles"
+    )
 
+    name = models.CharField(max_length=100)
+
+    can_upload_receipt = models.BooleanField(default=False)
+    can_submit_expense = models.BooleanField(default=False)
+    can_approve_expense = models.BooleanField(default=False)
+    can_mark_paid = models.BooleanField(default=False)
+
+    is_active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("company", "name")
+
+    def __str__(self):
+        return f"{self.company.name} - {self.name}"
+    
 class UserProfile(models.Model):
 
     ROLE_CHOICES = (
@@ -101,9 +131,36 @@ class UserProfile(models.Model):
         related_name="employees"
     )
 
+    # Existing system role (keep it)
     role = models.CharField(
         max_length=20,
         choices=ROLE_CHOICES
+    )
+
+    # NEW dynamic company role
+    company_role = models.ForeignKey(
+        "CompanyRole",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="users"
+    )
+
+    phone_number = models.CharField(
+        max_length=15,
+        blank=True,
+        null=True
+    )
+
+    profile_picture = models.ImageField(
+        upload_to="profile_pictures/",
+        blank=True,
+        null=True
+    )
+
+    address = models.TextField(
+        blank=True,
+        null=True
     )
 
     created_at = models.DateTimeField(
@@ -111,16 +168,23 @@ class UserProfile(models.Model):
     )
 
     def __str__(self):
-        return f"{self.user.email} - {self.role}"
+        role_name = (
+            self.company_role.name
+            if self.company_role
+            else self.role
+        )
+
+        return f"{self.user.email} - {role_name}"
 
 
 class ExternalDatabaseConfig(models.Model):
 
     DB_ENGINE_CHOICES = (
-        ('postgresql', 'PostgreSQL'),
-        ('mysql', 'MySQL'),
-        ('mssql', 'Microsoft SQL Server'),
-    )
+    ("postgresql", "PostgreSQL"),
+    ("mysql", "MySQL"),
+    ("mssql", "Microsoft SQL Server"),
+    ("oracle", "Oracle"),
+)
 
     id = models.UUIDField(
         primary_key=True,
@@ -210,6 +274,9 @@ class PolicyCategoryRule(models.Model):
         null=True,
         blank=True
     )
+    is_active = models.BooleanField(default=True)
+
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         unique_together = (
@@ -309,3 +376,42 @@ class CompanySMTPConfig(models.Model):
 
     def __str__(self):
         return f"{self.company.name} SMTP"     
+    
+
+
+class DatabaseSyncLog(models.Model):
+    STATUS_SUCCESS = "SUCCESS"
+    STATUS_FAILED = "FAILED"
+
+    STATUS_CHOICES = (
+        (STATUS_SUCCESS, "Success"),
+        (STATUS_FAILED, "Failed"),
+    )
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="database_sync_logs"
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES
+    )
+
+    records_created = models.IntegerField(default=0)
+    records_updated = models.IntegerField(default=0)
+
+    error_message = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    def __str__(self):
+        return f"{self.company.name} - {self.status}"    

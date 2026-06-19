@@ -1,18 +1,162 @@
 import base64
 import json
-import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 import requests
+from django.conf import settings
 from django.utils import timezone
 
-from .models import ExpenseLineItem, ExpenseReceipt
-from django.conf import settings
+from tenants.models import CompanyPolicy, PolicyCategoryRule
+from .models import (
+    ExpenseLineItem,
+    ExpenseReceipt,
+    DuplicateReceiptLog,
+)
+
+
+OLD_BILL_LIMIT_DAYS = 90
+
+
+def check_policy_violations(receipt):
+    violation_reasons = []
+
+    receipt.has_duplicate_violation = False
+    receipt.has_old_bill_violation = False
+    receipt.has_amount_violation = False
+    receipt.has_any_violation = False
+    receipt.policy_violation_reason = ""
+
+    line_items = receipt.line_items.all()
+
+    # 1. Duplicate check
+    if receipt.vendor_name and receipt.invoice_date and receipt.total_amount:
+
+        same_employee_duplicate = ExpenseReceipt.objects.filter(
+        company=receipt.company,
+        employee=receipt.employee,
+        vendor_name__iexact=receipt.vendor_name,
+        invoice_date=receipt.invoice_date,
+        total_amount=receipt.total_amount
+    ).exclude(
+        id=receipt.id
+    ).order_by(
+        "created_at"
+    ).first()
+
+    if same_employee_duplicate:
+        receipt.has_duplicate_violation = True
+
+        violation_reasons.append(
+            "Duplicate receipt detected. Same employee, vendor, amount and bill date already exist."
+        )
+
+        DuplicateReceiptLog.objects.get_or_create(
+            original_receipt=same_employee_duplicate,
+            duplicate_receipt=receipt,
+            defaults={
+                "duplicate_type": DuplicateReceiptLog.DUPLICATE_SAME_EMPLOYEE
+            }
+        )
+
+    cross_employee_duplicate = ExpenseReceipt.objects.filter(
+        company=receipt.company,
+        vendor_name__iexact=receipt.vendor_name,
+        invoice_date=receipt.invoice_date,
+        total_amount=receipt.total_amount
+    ).exclude(
+        employee=receipt.employee
+    ).exclude(
+        id=receipt.id
+    ).order_by(
+        "created_at"
+    ).first()
+
+    if cross_employee_duplicate:
+        receipt.has_duplicate_violation = True
+
+        violation_reasons.append(
+            "Possible cross-employee duplicate detected. Same vendor, amount and bill date already exist for another employee."
+        )
+
+        DuplicateReceiptLog.objects.get_or_create(
+            original_receipt=cross_employee_duplicate,
+            duplicate_receipt=receipt,
+            defaults={
+                "duplicate_type": DuplicateReceiptLog.DUPLICATE_CROSS_EMPLOYEE
+            }
+        )
+
+    # 2. Old bill check
+    if receipt.invoice_date:
+        limit_date = timezone.now().date() - timedelta(days=OLD_BILL_LIMIT_DAYS)
+
+        if receipt.invoice_date < limit_date:
+            receipt.has_old_bill_violation = True
+            violation_reasons.append(
+                f"Receipt is older than {OLD_BILL_LIMIT_DAYS} days."
+            )
+
+    # 3. Amount policy check
+    try:
+        policy = CompanyPolicy.objects.get(company=receipt.company)
+    except CompanyPolicy.DoesNotExist:
+        policy = None
+
+    if policy:
+        for item in line_items:
+            item.is_violating = False
+            item.violation_reason = ""
+
+            rule = PolicyCategoryRule.objects.filter(
+                policy=policy,
+                category_name__iexact=item.category,
+                is_active=True
+            ).first()
+
+            if rule and item.amount > rule.max_amount:
+                item.is_violating = True
+                item.violation_reason = (
+                    f"{item.category} amount limit exceeded. "
+                    f"Allowed: {rule.max_amount}, Found: {item.amount}"
+                )
+
+                receipt.has_amount_violation = True
+                violation_reasons.append(item.violation_reason)
+
+            item.save(update_fields=[
+                "is_violating",
+                "violation_reason"
+            ])
+
+    receipt.has_any_violation = any([
+        receipt.has_duplicate_violation,
+        receipt.has_old_bill_violation,
+        receipt.has_amount_violation,
+    ])
+
+    receipt.policy_violation_reason = "\n".join(violation_reasons)
+
+    if receipt.has_any_violation:
+        receipt.status = ExpenseReceipt.STATUS_POLICY_VIOLATION
+    else:
+        receipt.status = ExpenseReceipt.STATUS_VALID
+
+    receipt.save(update_fields=[
+        "has_duplicate_violation",
+        "has_old_bill_violation",
+        "has_amount_violation",
+        "has_any_violation",
+        "policy_violation_reason",
+        "status",
+        "updated_at"
+    ])
+
 
 def extract_receipt_with_gemini(receipt: ExpenseReceipt):
-    receipt.status = "AI_PROCESSING"
+
+    receipt.status = ExpenseReceipt.STATUS_AI_PROCESSING
     receipt.save(update_fields=["status"])
 
     prompt = """
@@ -63,7 +207,12 @@ Rules:
             "png": "image/png",
         }
 
-        mime_type = mime_map.get(ext, "application/octet-stream")
+        mime_type = mime_map.get(ext)
+
+        if not mime_type:
+            raise Exception(
+                "Unsupported file type. Please upload PDF, JPG, JPEG, or PNG."
+            )
 
         request_body = {
             "contents": [
@@ -75,16 +224,11 @@ Rules:
                                 "data": base64_data,
                             }
                         },
-                        {
-                            "text": prompt
-                        },
+                        {"text": prompt},
                     ]
                 }
             ]
         }
-
-        if not settings.GEMINI_API_KEY:
-            raise Exception("GEMINI_API_KEY is not configured.")
 
         response = requests.post(
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
@@ -109,7 +253,6 @@ Rules:
             raise Exception("No valid JSON returned by Gemini.")
 
         parsed_data = json.loads(match.group(0))
-
         bills = parsed_data.get("bills", [])
 
         created_items = []
@@ -157,19 +300,35 @@ Rules:
             except Exception:
                 receipt.invoice_date = timezone.now().date()
 
-        receipt.status = "AI_PROCESSED"
+        receipt.status = ExpenseReceipt.STATUS_AI_PROCESSED
         receipt.save()
+
+        check_policy_violations(receipt)
+
+        if receipt.report:
+            report = receipt.report
+            report.total_amount = sum(
+                r.total_amount for r in report.receipts.all()
+            )
+            report.save(update_fields=["total_amount", "updated_at"])
 
         return {
             "success": True,
             "receipt_id": str(receipt.id),
             "line_items_created": [str(item_id) for item_id in created_items],
             "total_amount": float(total_amount),
+            "has_any_violation": receipt.has_any_violation,
+            "violation_reason": receipt.policy_violation_reason,
         }
 
     except Exception as e:
-        receipt.status = ExpenseReceipt.STATUS_DRAFT
-        receipt.save(update_fields=["status"])
+        receipt.status = ExpenseReceipt.STATUS_AI_PROCESSED
+        receipt.policy_violation_reason = f"AI extraction failed: {str(e)}"
+        receipt.save(update_fields=[
+            "status",
+            "policy_violation_reason",
+            "updated_at"
+        ])
 
         return {
             "success": False,

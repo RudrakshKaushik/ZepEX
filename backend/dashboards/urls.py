@@ -2,10 +2,11 @@ from django.urls import path
 
 from .views import (
     employee_dashboard,
-    manager_dashboard,
-    accounts_dashboard,
+    approver_dashboard,
+    payment_dashboard,
     company_admin_dashboard,
     platform_owner_dashboard,
+    dashboard_router,
 )
 
 urlpatterns = [
@@ -17,16 +18,16 @@ urlpatterns = [
     ),
 
     path(
-        "manager/",
-        manager_dashboard,
-        name="manager-dashboard"
-    ),
+    "approver/",
+    approver_dashboard,
+    name="approver-dashboard"
+),
 
-    path(
-        "accounts/",
-        accounts_dashboard,
-        name="accounts-dashboard"
-    ),
+   path(
+    "payments/",
+    payment_dashboard,
+    name="payment-dashboard"
+),
 
     path(
         "company-admin/",
@@ -38,6 +39,12 @@ urlpatterns = [
     "platform-owner/",
     platform_owner_dashboard,
     name="platform-owner-dashboard"
+),
+
+    path(
+    "",
+    dashboard_router,
+    name="dashboard-router"
 ),
 
 ]

@@ -42,6 +42,7 @@ from rest_framework.permissions import (
     IsAuthenticated,
     AllowAny
 )
+from django.core.paginator import Paginator
 
 @api_view(["POST"])
 @permission_classes([
@@ -99,13 +100,26 @@ def list_departments(request):
         company=request.user.profile.company
     ).order_by("name")
 
-    serializer = DepartmentSerializer(
+    page = request.GET.get("page", 1)
+
+    paginator = Paginator(
         departments,
+        10
+    )
+
+    page_obj = paginator.get_page(page)
+
+    serializer = DepartmentSerializer(
+        page_obj,
         many=True
     )
 
-    return Response(serializer.data)
-
+    return Response({
+        "count": paginator.count,
+        "total_pages": paginator.num_pages,
+        "current_page": page_obj.number,
+        "results": serializer.data
+    })
 
 @api_view(["POST"])
 @permission_classes([
@@ -225,13 +239,26 @@ def list_employees(request):
         "user__first_name"
     )
 
-    serializer = UserProfileSerializer(
+    page = request.GET.get("page", 1)
+
+    paginator = Paginator(
         employees,
+        10
+    )
+
+    page_obj = paginator.get_page(page)
+
+    serializer = UserProfileSerializer(
+        page_obj,
         many=True
     )
 
-    return Response(serializer.data)
-
+    return Response({
+        "count": paginator.count,
+        "total_pages": paginator.num_pages,
+        "current_page": page_obj.number,
+        "results": serializer.data
+    })
 
 @api_view(["POST"])
 @permission_classes([
@@ -461,12 +488,26 @@ def list_policy_rules(request):
         policy=policy
     )
 
-    serializer = PolicyCategoryRuleSerializer(
+    page = request.GET.get("page", 1)
+
+    paginator = Paginator(
         rules,
+        10
+    )
+
+    page_obj = paginator.get_page(page)
+
+    serializer = PolicyCategoryRuleSerializer(
+        page_obj,
         many=True
     )
 
-    return Response(serializer.data)
+    return Response({
+        "count": paginator.count,
+        "total_pages": paginator.num_pages,
+        "current_page": page_obj.number,
+        "results": serializer.data
+    })
 
 from .models import ReimbursementEmailConfig
 from .serializers import ReimbursementEmailConfigSerializer
@@ -1360,13 +1401,24 @@ def company_roles(request):
         is_active=True
     ).order_by("name")
 
-    serializer = CompanyRoleSerializer(
+    page = request.GET.get("page", 1)
+
+    paginator = Paginator(
         roles,
+        10
+    )
+
+    page_obj = paginator.get_page(page)
+
+    serializer = CompanyRoleSerializer(
+        page_obj,
         many=True
     )
 
     return Response({
-        "count": roles.count(),
+        "count": paginator.count,
+        "total_pages": paginator.num_pages,
+        "current_page": page_obj.number,
         "results": serializer.data
     })
 

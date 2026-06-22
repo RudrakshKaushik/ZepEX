@@ -33,6 +33,7 @@ from audit_logs.utils import create_audit_log
 from .models import ExpenseLineItem
 from .tasks import send_report_status_email_task
 from tenants.permissions import IsCompanyAdmin
+from django.core.paginator import Paginator
 
 
 @api_view(["POST"])
@@ -447,7 +448,7 @@ def submit_current_month_report(request):
         },
         status=status.HTTP_200_OK
     )
-
+from django.db.models import Q
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def my_pending_approval_reports(request):
@@ -470,18 +471,56 @@ def my_pending_approval_reports(request):
         current_workflow_step__approver_role=profile.company_role,
         workflow_completed=False,
         status=ExpenseReport.STATUS_SUBMITTED
+    ).filter(
+        Q(
+            current_workflow_step__routing_type=
+            ApprovalWorkflowStep.ROUTING_COMPANY
+        )
+        |
+        Q(
+            current_workflow_step__routing_type=
+            ApprovalWorkflowStep.ROUTING_DEPARTMENT,
+            current_workflow_step__department=profile.department
+        )
+        |
+        Q(
+            current_workflow_step__routing_type=
+            ApprovalWorkflowStep.ROUTING_DEPARTMENT,
+            current_workflow_step__department__isnull=True,
+            department=profile.department
+        )
     )
 
-    reports = reports.filter(
-        current_workflow_step__department=profile.department
-    ) | reports.filter(
-        current_workflow_step__department__isnull=True,
-        current_workflow_step__routing_type=ApprovalWorkflowStep.ROUTING_COMPANY
-    ) | reports.filter(
-        current_workflow_step__department__isnull=True,
-        current_workflow_step__routing_type=ApprovalWorkflowStep.ROUTING_DEPARTMENT,
-        department=profile.department
-    )
+    employee_id = request.GET.get("employee_id")
+    employee_email = request.GET.get("employee_email")
+    department_id = request.GET.get("department_id")
+    start_date = request.GET.get("start_date")
+    end_date = request.GET.get("end_date")
+    min_amount = request.GET.get("min_amount")
+    max_amount = request.GET.get("max_amount")
+
+    if employee_id:
+        reports = reports.filter(employee_id=employee_id)
+
+    if employee_email:
+        reports = reports.filter(
+            employee__user__email__icontains=employee_email
+        )
+
+    if department_id:
+        reports = reports.filter(department_id=department_id)
+
+    if start_date:
+        reports = reports.filter(submitted_at__date__gte=start_date)
+
+    if end_date:
+        reports = reports.filter(submitted_at__date__lte=end_date)
+
+    if min_amount:
+        reports = reports.filter(total_amount__gte=min_amount)
+
+    if max_amount:
+        reports = reports.filter(total_amount__lte=max_amount)
 
     reports = reports.select_related(
         "employee",
@@ -492,8 +531,9 @@ def my_pending_approval_reports(request):
         "current_workflow_step__department"
     ).prefetch_related(
         "receipts",
-        "receipts__line_items"
-    ).order_by(
+        "receipts__line_items",
+        "approval_history"
+    ).distinct().order_by(
         "-submitted_at"
     )
 
@@ -504,9 +544,17 @@ def my_pending_approval_reports(request):
 
     return Response({
         "count": reports.count(),
+        "filters": {
+            "employee_id": employee_id,
+            "employee_email": employee_email,
+            "department_id": department_id,
+            "start_date": start_date,
+            "end_date": end_date,
+            "min_amount": min_amount,
+            "max_amount": max_amount,
+        },
         "results": serializer.data
     })
-
 
 
 
@@ -953,9 +1001,8 @@ def add_workflow_step(request):
         )
 
     except ApprovalWorkflow.DoesNotExist:
-
         return Response(
-            {"error": "Please create workflow first."},
+            {"error": "Please create active workflow first."},
             status=status.HTTP_400_BAD_REQUEST
         )
 
@@ -969,31 +1016,35 @@ def add_workflow_step(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    approver_role = serializer.validated_data[
-        "approver_role"
-    ]
+    approver_role = serializer.validated_data["approver_role"]
 
     if approver_role.company != profile.company:
         return Response(
-            {
-                "error":
-                "Approver role does not belong to your company."
-            },
+            {"error": "Approver role does not belong to your company."},
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    department = serializer.validated_data.get(
-        "department"
-    )
-
-    if department and department.company != profile.company:
+    if not approver_role.is_active:
         return Response(
-            {
-                "error":
-                "Department does not belong to your company."
-            },
+            {"error": "Cannot create workflow step with inactive approver role."},
             status=status.HTTP_400_BAD_REQUEST
         )
+
+    department = serializer.validated_data.get("department")
+
+    if department:
+
+        if department.company != profile.company:
+            return Response(
+                {"error": "Department does not belong to your company."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not department.is_active:
+            return Response(
+                {"error": "Cannot create workflow step with inactive department."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
     step_order = serializer.validated_data["step_order"]
 
@@ -1003,27 +1054,22 @@ def add_workflow_step(request):
     ).exists():
 
         return Response(
-            {
-                "error":
-                f"Step order {step_order} already exists."
-            },
+            {"error": f"Step order {step_order} already exists."},
             status=status.HTTP_400_BAD_REQUEST
         )
 
     step = serializer.save(
-        workflow=workflow
+        workflow=workflow,
+        is_active=True
     )
 
     create_audit_log(
         company=profile.company,
         action="WORKFLOW_STEP_CREATED",
         action_by=profile,
-        message=(
-            f"Workflow step {step.step_order} "
-            f"added."
-        ),
+        message=f"Workflow step {step.step_order} added.",
         metadata={
-            "workflow_id": workflow.id,
+            "workflow_id": str(workflow.id),
             "step_order": step.step_order,
             "role": step.approver_role.name,
             "department": (
@@ -1031,6 +1077,7 @@ def add_workflow_step(request):
                 if step.department else None
             ),
             "routing_type": step.routing_type,
+            "is_active": step.is_active,
         }
     )
 
@@ -1397,6 +1444,7 @@ def reject_report_step(request, report_id):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def my_uploaded_expenses(request):
+
     profile = request.user.profile
 
     if not profile.company_role:
@@ -1414,7 +1462,40 @@ def my_uploaded_expenses(request):
     reports = ExpenseReport.objects.filter(
         company=profile.company,
         employee=profile
-    ).select_related(
+    )
+
+    status_filter = request.GET.get("status")
+    start_date = request.GET.get("start_date")
+    end_date = request.GET.get("end_date")
+    min_amount = request.GET.get("min_amount")
+    max_amount = request.GET.get("max_amount")
+
+    if status_filter:
+        reports = reports.filter(
+            status=status_filter.upper()
+        )
+
+    if start_date:
+        reports = reports.filter(
+            submitted_at__date__gte=start_date
+        )
+
+    if end_date:
+        reports = reports.filter(
+            submitted_at__date__lte=end_date
+        )
+
+    if min_amount:
+        reports = reports.filter(
+            total_amount__gte=min_amount
+        )
+
+    if max_amount:
+        reports = reports.filter(
+            total_amount__lte=max_amount
+        )
+
+    reports = reports.select_related(
         "department",
         "current_workflow_step",
         "current_workflow_step__approver_role",
@@ -1428,10 +1509,22 @@ def my_uploaded_expenses(request):
         "-created_at"
     )
 
-    serializer = ExpenseReportSerializer(reports, many=True)
+    serializer = ExpenseReportSerializer(
+        reports,
+        many=True
+    )
 
     return Response({
         "count": reports.count(),
+
+        "filters": {
+            "status": status_filter,
+            "start_date": start_date,
+            "end_date": end_date,
+            "min_amount": min_amount,
+            "max_amount": max_amount,
+        },
+
         "results": serializer.data
     })
 
@@ -1472,5 +1565,86 @@ def duplicate_receipts(request):
 
     return Response({
         "count": duplicates.count(),
+        "results": serializer.data
+    })
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def admin_reports_list(request):
+
+    profile = request.user.profile
+
+    if profile.role != "COMPANY_ADMIN":
+        return Response(
+            {"error": "Only company admin can view reports."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    reports = ExpenseReport.objects.filter(
+        company=profile.company
+    )
+
+    status_filter = request.GET.get("status")
+    employee_id = request.GET.get("employee_id")
+    employee_email = request.GET.get("employee_email")
+    department_id = request.GET.get("department_id")
+    start_date = request.GET.get("start_date")
+    end_date = request.GET.get("end_date")
+
+    if status_filter:
+        reports = reports.filter(status=status_filter.upper())
+
+    if employee_id:
+        reports = reports.filter(employee_id=employee_id)
+
+    if employee_email:
+        reports = reports.filter(
+            employee__user__email__icontains=employee_email
+        )
+
+    if department_id:
+        reports = reports.filter(department_id=department_id)
+
+    if start_date:
+        reports = reports.filter(created_at__date__gte=start_date)
+
+    if end_date:
+        reports = reports.filter(created_at__date__lte=end_date)
+
+    reports = reports.select_related(
+        "employee",
+        "employee__user",
+        "department",
+        "current_workflow_step",
+        "current_workflow_step__approver_role",
+        "current_workflow_step__department",
+    ).prefetch_related(
+        "receipts",
+        "receipts__line_items",
+        "approval_history"
+    ).order_by("-created_at")
+
+    page = request.GET.get("page", 1)
+
+    paginator = Paginator(reports, 10)
+    page_obj = paginator.get_page(page)
+
+    serializer = ExpenseReportSerializer(
+        page_obj,
+        many=True
+    )
+
+    return Response({
+        "count": paginator.count,
+        "total_pages": paginator.num_pages,
+        "current_page": page_obj.number,
+        "filters": {
+            "status": status_filter,
+            "employee_id": employee_id,
+            "employee_email": employee_email,
+            "department_id": department_id,
+            "start_date": start_date,
+            "end_date": end_date,
+        },
         "results": serializer.data
     })

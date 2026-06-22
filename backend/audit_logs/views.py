@@ -8,7 +8,7 @@ from tenants.permissions import CanViewCompanyAuditLogs
 from .models import AuditLog
 from .serializers import AuditLogSerializer
 from django.db.models import Count
-
+from django.core.paginator import Paginator
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated, CanViewCompanyAuditLogs])
@@ -39,10 +39,24 @@ def audit_log_list(request):
     if end_date:
         logs = logs.filter(created_at__date__lte=end_date)
 
-    serializer = AuditLogSerializer(logs, many=True)
+    page = request.GET.get("page", 1)
+
+    paginator = Paginator(
+        logs,
+        10
+    )
+
+    page_obj = paginator.get_page(page)
+
+    serializer = AuditLogSerializer(
+        page_obj,
+        many=True
+    )
 
     return Response({
-        "count": logs.count(),
+        "count": paginator.count,
+        "total_pages": paginator.num_pages,
+        "current_page": page_obj.number,
         "results": serializer.data
     })
 

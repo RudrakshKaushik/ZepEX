@@ -677,17 +677,26 @@ def accounts_mark_paid(request, report_id):
 
     profile = request.user.profile
 
-    if not profile.company_role:
-        return Response(
-            {"error": "Your company role is not assigned."},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+    is_company_admin = profile.role == "COMPANY_ADMIN"
 
-    if not profile.company_role.can_mark_paid:
-        return Response(
-            {"error": "Your role is not allowed to mark reports as paid."},
-            status=status.HTTP_403_FORBIDDEN
-        )
+    if not is_company_admin:
+        if not profile.company_role:
+            return Response(
+                {"error": "Your company role is not assigned."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not profile.company_role.can_mark_paid:
+            return Response(
+                {"error": "Your role is not allowed to mark reports as paid."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+    actor_role = (
+        "COMPANY_ADMIN"
+        if is_company_admin
+        else profile.company_role.name
+    )
 
     try:
         report = ExpenseReport.objects.select_related(
@@ -700,7 +709,6 @@ def accounts_mark_paid(request, report_id):
         )
 
     except ExpenseReport.DoesNotExist:
-
         return Response(
             {"error": "Report not found or not approved for payment."},
             status=status.HTTP_404_NOT_FOUND
@@ -734,7 +742,7 @@ def accounts_mark_paid(request, report_id):
         company=profile.company,
         action="MARKED_PAID",
         action_by=profile,
-        message=f"Expense report {report.id} marked as paid.",
+        message=f"{actor_role} marked expense report {report.id} as paid.",
         metadata={
             "report_id": str(report.id),
             "employee_email": report.employee.user.email,
@@ -743,6 +751,9 @@ def accounts_mark_paid(request, report_id):
                 if report.department else None
             ),
             "total_amount": str(report.total_amount),
+            "paid_by": profile.user.email,
+            "paid_by_role": actor_role,
+            "is_company_admin_override": is_company_admin,
             "notes": notes,
         }
     )
@@ -752,6 +763,7 @@ def accounts_mark_paid(request, report_id):
         "Reimbursement Payment Completed",
         (
             "Your reimbursement report has been paid successfully.\n\n"
+            f"Paid By: {actor_role}\n"
             f"Notes: {notes or 'Payment completed successfully'}"
         )
     )
@@ -760,6 +772,8 @@ def accounts_mark_paid(request, report_id):
 
     return Response({
         "message": "Report marked as paid.",
+        "paid_by": actor_role,
+        "is_company_admin_override": is_company_admin,
         "report": serializer.data
     })
 
@@ -1158,11 +1172,14 @@ def approve_report_step(request, report_id):
 
     profile = request.user.profile
 
-    if not profile.company_role:
-        return Response(
-            {"error": "Your company role is not assigned."},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+    is_company_admin = profile.role == "COMPANY_ADMIN"
+
+    if not is_company_admin:
+        if not profile.company_role:
+            return Response(
+                {"error": "Your company role is not assigned."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
     try:
         report = ExpenseReport.objects.select_related(
@@ -1193,27 +1210,35 @@ def approve_report_step(request, report_id):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    if profile.company_role != current_step.approver_role:
-        return Response(
-            {"error": "You are not allowed to approve this report."},
-            status=status.HTTP_403_FORBIDDEN
-        )
+    actor_role = (
+        "COMPANY_ADMIN"
+        if is_company_admin
+        else profile.company_role.name
+    )
 
-    if current_step.department:
+    if not is_company_admin:
 
-        if profile.department != current_step.department:
+        if profile.company_role != current_step.approver_role:
             return Response(
-                {"error": "This approval step belongs to another department."},
+                {"error": "You are not allowed to approve this report."},
                 status=status.HTTP_403_FORBIDDEN
             )
 
-    elif current_step.routing_type == ApprovalWorkflowStep.ROUTING_DEPARTMENT:
+        if current_step.department:
 
-        if profile.department != report.department:
-            return Response(
-                {"error": "This report belongs to another department."},
-                status=status.HTTP_403_FORBIDDEN
-            )
+            if profile.department != current_step.department:
+                return Response(
+                    {"error": "This approval step belongs to another department."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        elif current_step.routing_type == ApprovalWorkflowStep.ROUTING_DEPARTMENT:
+
+            if profile.department != report.department:
+                return Response(
+                    {"error": "This report belongs to another department."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
 
     notes = request.data.get("notes", "")
 
@@ -1228,17 +1253,21 @@ def approve_report_step(request, report_id):
         company=profile.company,
         action="STEP_APPROVED",
         action_by=profile,
-        message=f"{profile.company_role.name} approved expense report {report.id}.",
+        message=f"{actor_role} approved expense report {report.id}.",
         metadata={
             "report_id": str(report.id),
             "employee_email": report.employee.user.email,
-            "report_department": report.department.name if report.department else None,
+            "report_department": (
+                report.department.name
+                if report.department else None
+            ),
             "approval_department": (
                 current_step.department.name
                 if current_step.department else None
             ),
             "approved_by": profile.user.email,
-            "approver_role": profile.company_role.name,
+            "approver_role": actor_role,
+            "is_company_admin_override": is_company_admin,
             "step_order": current_step.step_order,
             "notes": notes,
         }
@@ -1270,6 +1299,7 @@ def approve_report_step(request, report_id):
             "Reimbursement Report Moved to Next Approval Step",
             (
                 "Your reimbursement report has moved to the next approval step.\n\n"
+                f"Approved By: {actor_role}\n"
                 f"Next Step: {next_step.approver_role.name}\n"
                 f"Routing Type: {next_step.routing_type}\n"
                 f"Department: {next_step.department.name if next_step.department else 'Company/Auto'}\n"
@@ -1281,6 +1311,8 @@ def approve_report_step(request, report_id):
 
         return Response({
             "message": "Step approved successfully. Report moved to next step.",
+            "approved_by": actor_role,
+            "is_company_admin_override": is_company_admin,
             "next_step": {
                 "step_order": next_step.step_order,
                 "role": next_step.approver_role.name,
@@ -1313,6 +1345,7 @@ def approve_report_step(request, report_id):
         "Reimbursement Report Fully Approved",
         (
             "Your reimbursement report has completed all approval steps.\n\n"
+            f"Final Approved By: {actor_role}\n"
             "It is now approved and waiting for payment processing."
         )
     )
@@ -1321,10 +1354,11 @@ def approve_report_step(request, report_id):
 
     return Response({
         "message": "Workflow completed successfully. Report approved.",
+        "approved_by": actor_role,
+        "is_company_admin_override": is_company_admin,
         "status": report.status,
         "report": serializer.data
     })
-
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
@@ -1332,11 +1366,14 @@ def reject_report_step(request, report_id):
 
     profile = request.user.profile
 
-    if not profile.company_role:
-        return Response(
-            {"error": "Your company role is not assigned."},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+    is_company_admin = profile.role == "COMPANY_ADMIN"
+
+    if not is_company_admin:
+        if not profile.company_role:
+            return Response(
+                {"error": "Your company role is not assigned."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
     notes = request.data.get("notes")
 
@@ -1374,27 +1411,35 @@ def reject_report_step(request, report_id):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    if profile.company_role != current_step.approver_role:
-        return Response(
-            {"error": "You are not allowed to reject this report."},
-            status=status.HTTP_403_FORBIDDEN
-        )
+    actor_role = (
+        "COMPANY_ADMIN"
+        if is_company_admin
+        else profile.company_role.name
+    )
 
-    if current_step.department:
+    if not is_company_admin:
 
-        if profile.department != current_step.department:
+        if profile.company_role != current_step.approver_role:
             return Response(
-                {"error": "This approval step belongs to another department."},
+                {"error": "You are not allowed to reject this report."},
                 status=status.HTTP_403_FORBIDDEN
             )
 
-    elif current_step.routing_type == ApprovalWorkflowStep.ROUTING_DEPARTMENT:
+        if current_step.department:
 
-        if profile.department != report.department:
-            return Response(
-                {"error": "This report belongs to another department."},
-                status=status.HTTP_403_FORBIDDEN
-            )
+            if profile.department != current_step.department:
+                return Response(
+                    {"error": "This approval step belongs to another department."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        elif current_step.routing_type == ApprovalWorkflowStep.ROUTING_DEPARTMENT:
+
+            if profile.department != report.department:
+                return Response(
+                    {"error": "This report belongs to another department."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
 
     report.status = ExpenseReport.STATUS_REJECTED
     report.current_workflow_step = None
@@ -1422,17 +1467,21 @@ def reject_report_step(request, report_id):
         company=profile.company,
         action="STEP_REJECTED",
         action_by=profile,
-        message=f"{profile.company_role.name} rejected expense report {report.id}.",
+        message=f"{actor_role} rejected expense report {report.id}.",
         metadata={
             "report_id": str(report.id),
             "employee_email": report.employee.user.email,
-            "report_department": report.department.name if report.department else None,
+            "report_department": (
+                report.department.name
+                if report.department else None
+            ),
             "approval_department": (
                 current_step.department.name
                 if current_step.department else None
             ),
             "rejected_by": profile.user.email,
-            "approver_role": profile.company_role.name,
+            "approver_role": actor_role,
+            "is_company_admin_override": is_company_admin,
             "step_order": current_step.step_order,
             "reason": notes,
         }
@@ -1443,7 +1492,7 @@ def reject_report_step(request, report_id):
         "Reimbursement Report Rejected",
         (
             "Your reimbursement report has been rejected.\n\n"
-            f"Rejected By Role: {profile.company_role.name}\n"
+            f"Rejected By Role: {actor_role}\n"
             f"Reason: {notes}"
         )
     )
@@ -1452,6 +1501,8 @@ def reject_report_step(request, report_id):
 
     return Response({
         "message": "Report rejected successfully. Workflow stopped.",
+        "rejected_by": actor_role,
+        "is_company_admin_override": is_company_admin,
         "status": report.status,
         "report": serializer.data
     })

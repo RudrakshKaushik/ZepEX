@@ -1030,7 +1030,6 @@ def add_workflow_step(request):
     department = serializer.validated_data.get("department")
 
     if department:
-
         if department.company != profile.company:
             return Response(
                 {"error": "Department does not belong to your company."},
@@ -1047,11 +1046,11 @@ def add_workflow_step(request):
 
     if ApprovalWorkflowStep.objects.filter(
         workflow=workflow,
-        step_order=step_order
+        step_order=step_order,
+        is_active=True
     ).exists():
-
         return Response(
-            {"error": f"Step order {step_order} already exists."},
+            {"error": f"Active step order {step_order} already exists."},
             status=status.HTTP_400_BAD_REQUEST
         )
 
@@ -1078,10 +1077,13 @@ def add_workflow_step(request):
         }
     )
 
-    return Response({
-        "message": "Workflow step added successfully.",
-        "step": ApprovalWorkflowStepSerializer(step).data
-    }, status=status.HTTP_201_CREATED)
+    return Response(
+        {
+            "message": "Workflow step added successfully.",
+            "step": ApprovalWorkflowStepSerializer(step).data
+        },
+        status=status.HTTP_201_CREATED
+    )
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -1126,11 +1128,24 @@ def deactivate_workflow_step(request, step_id):
             status=status.HTTP_404_NOT_FOUND
         )
 
+    workflow = step.workflow
+
     step.is_active = False
     step.save(update_fields=["is_active"])
 
+    active_steps = ApprovalWorkflowStep.objects.filter(
+        workflow=workflow,
+        is_active=True
+    ).order_by("step_order", "created_at")
+
+    for index, active_step in enumerate(active_steps, start=1):
+        if active_step.step_order != index:
+            active_step.step_order = index
+            active_step.save(update_fields=["step_order"])
+
     return Response({
-        "message": "Workflow step deactivated successfully."
+        "message": "Workflow step deactivated successfully.",
+        "workflow_steps_reordered": True
     })
 
 

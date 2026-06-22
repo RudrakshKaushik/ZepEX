@@ -43,6 +43,11 @@ def login_api(request):
             "can_submit_expense": False,
             "can_approve_expense": False,
             "can_mark_paid": False,
+            "can_manage_users": False,
+            "can_manage_policy": False,
+            "can_manage_workflow": False,
+            "can_view_all_reports": False,
+            "can_view_audit_logs": False,
         }
 
     else:
@@ -82,24 +87,43 @@ def login_api(request):
             if profile.department else None
         )
 
-        permissions = {
-            "can_upload_receipt": (
-                profile.company_role.can_upload_receipt
-                if profile.company_role else False
-            ),
-            "can_submit_expense": (
-                profile.company_role.can_submit_expense
-                if profile.company_role else False
-            ),
-            "can_approve_expense": (
-                profile.company_role.can_approve_expense
-                if profile.company_role else False
-            ),
-            "can_mark_paid": (
-                profile.company_role.can_mark_paid
-                if profile.company_role else False
-            ),
-        }
+        if profile.role == "COMPANY_ADMIN":
+            permissions = {
+                "can_upload_receipt": True,
+                "can_submit_expense": True,
+                "can_approve_expense": True,
+                "can_mark_paid": True,
+                "can_manage_users": True,
+                "can_manage_policy": True,
+                "can_manage_workflow": True,
+                "can_view_all_reports": True,
+                "can_view_audit_logs": True,
+            }
+
+        else:
+            permissions = {
+                "can_upload_receipt": (
+                    profile.company_role.can_upload_receipt
+                    if profile.company_role else False
+                ),
+                "can_submit_expense": (
+                    profile.company_role.can_submit_expense
+                    if profile.company_role else False
+                ),
+                "can_approve_expense": (
+                    profile.company_role.can_approve_expense
+                    if profile.company_role else False
+                ),
+                "can_mark_paid": (
+                    profile.company_role.can_mark_paid
+                    if profile.company_role else False
+                ),
+                "can_manage_users": False,
+                "can_manage_policy": False,
+                "can_manage_workflow": False,
+                "can_view_all_reports": False,
+                "can_view_audit_logs": False,
+            }
 
     redirect_map = {
         "PLATFORM_OWNER": "/platform-dashboard",
@@ -130,7 +154,6 @@ def login_api(request):
         },
         "redirect_to": redirect_map.get(system_role)
     })
-
 from rest_framework.permissions import IsAuthenticated
 from .serializers import ChangePasswordSerializer
 

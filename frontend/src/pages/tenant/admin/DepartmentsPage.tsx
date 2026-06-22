@@ -26,7 +26,10 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { PageLoader } from '@/components/ui/spinner'
+import { PaginationControls } from '@/components/ui/pagination-controls'
 import type { DepartmentRecord, EmployeeRecord } from '@/types'
+import { fetchAllPages } from '@/lib/pagination'
+import { toast } from '@/lib/toast'
 import { formatDate } from '@/lib/utils'
 
 const selectClassName =
@@ -38,6 +41,9 @@ export function DepartmentsPage() {
   const { navItems } = useAdminNav()
   const [departments, setDepartments] = useState<DepartmentRecord[]>([])
   const [managers, setManagers] = useState<EmployeeRecord[]>([])
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
   const [name, setName] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -51,13 +57,18 @@ export function DepartmentsPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [deptRes, empRes] = await Promise.all([listDepartments(), listEmployees()])
-      setDepartments(deptRes.data)
-      setManagers(empRes.data.filter((e) => e.role === 'MANAGER' && e.is_active !== false))
+      const [deptRes, allEmployees] = await Promise.all([
+        listDepartments({ page }),
+        fetchAllPages((page) => listEmployees({ page })),
+      ])
+      setDepartments(deptRes.data.results)
+      setTotalPages(deptRes.data.total_pages)
+      setTotalCount(deptRes.data.count)
+      setManagers(allEmployees.filter((e) => e.role === 'MANAGER' && e.is_active !== false))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [page])
 
   useEffect(() => {
     load()
@@ -71,6 +82,7 @@ export function DepartmentsPage() {
       await createDepartment(name)
       setName('')
       setOpen(false)
+      toast.success('Department created successfully.')
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -101,6 +113,7 @@ export function DepartmentsPage() {
       })
       setEditOpen(false)
       setEditing(null)
+      toast.success('Department updated successfully.')
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -169,7 +182,7 @@ export function DepartmentsPage() {
 
       <AdminListPanel
         title="All Departments"
-        count={departments.length}
+        count={totalCount}
         description="View and manage departments across your organization."
       >
         {departments.length === 0 ? (
@@ -216,6 +229,13 @@ export function DepartmentsPage() {
             ))}
           </AdminDataTable>
         )}
+        <PaginationControls
+          currentPage={page}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          onPageChange={setPage}
+          disabled={saving}
+        />
       </AdminListPanel>
 
       <Dialog open={open} onOpenChange={setOpen}>

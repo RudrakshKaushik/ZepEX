@@ -119,6 +119,7 @@ export function ExpensesPage() {
       }
       if (errors.length) {
         setUploadError(errors[0])
+        toast.error(formatUploadError(errors[0]))
       }
       if (successCount && !errors.length) {
         toast.success('Receipt(s) uploaded and processed by AI.')
@@ -126,11 +127,16 @@ export function ExpensesPage() {
         resetUploadModal()
       } else if (successCount && errors.length) {
         toast.success(`${successCount} receipt(s) uploaded. Some AI extractions failed.`)
+        setUploadOpen(false)
         resetUploadModal()
+      } else if (!successCount && errors.length) {
+        // error toast already shown above
       }
       await load()
     } catch (err) {
-      setUploadError(getApiErrorMessage(err))
+      const message = formatUploadError(getApiErrorMessage(err))
+      setUploadError(message)
+      toast.error(message)
     } finally {
       setUploading(false)
     }
@@ -144,7 +150,9 @@ export function ExpensesPage() {
       toast.success('Monthly report submitted to your manager.')
       await load()
     } catch (err) {
-      setError(getApiErrorMessage(err))
+      const message = getApiErrorMessage(err)
+      setError(message)
+      toast.error(message)
     } finally {
       setSubmitting(false)
     }

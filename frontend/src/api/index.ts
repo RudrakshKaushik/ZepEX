@@ -62,11 +62,16 @@ export const getPlatformDashboard = () => api.get('/dashboard/platform-owner/')
 export const createDepartment = (name: string) =>
   api.post<DepartmentRecord>('/tenants/departments/', { name })
 
-export const listDepartments = () =>
-  api.get<DepartmentRecord[]>('/tenants/departments/list/')
+export const listDepartments = (params?: { page?: number }) =>
+  api.get<import('@/lib/pagination').PaginatedResponse<DepartmentRecord>>(
+    '/tenants/departments/list/',
+    { params },
+  )
 
-export const listCompanyRoles = () =>
-  api.get<{ count: number; results: CompanyRole[] }>('/tenants/roles/')
+export const listCompanyRoles = (params?: { page?: number }) =>
+  api.get<import('@/lib/pagination').PaginatedResponse<CompanyRole>>('/tenants/roles/', {
+    params,
+  })
 
 export const createEmployee = (data: {
   first_name: string
@@ -78,8 +83,11 @@ export const createEmployee = (data: {
   company_role_id?: number
 }) => api.post('/tenants/employees/', data)
 
-export const listEmployees = () =>
-  api.get<EmployeeRecord[]>('/tenants/employees/list/')
+export const listEmployees = (params?: { page?: number }) =>
+  api.get<import('@/lib/pagination').PaginatedResponse<EmployeeRecord>>(
+    '/tenants/employees/list/',
+    { params },
+  )
 
 export const assignMissingCompanyRoles = () =>
   api.post<{ message: string; updated_count: number }>(
@@ -167,8 +175,11 @@ export const createPolicyRule = (data: {
   category_description: string
 }) => api.post<PolicyRule>('/tenants/policy/rules/create/', data)
 
-export const listPolicyRules = () =>
-  api.get<PolicyRule[]>('/tenants/policy/rules/')
+export const listPolicyRules = (params?: { page?: number }) =>
+  api.get<import('@/lib/pagination').PaginatedResponse<PolicyRule>>(
+    '/tenants/policy/rules/',
+    { params },
+  )
 
 export const getReimbursementEmailConfig = () =>
   api.get<ReimbursementEmailConfig | { message: string }>('/tenants/reimbursement-email/')
@@ -203,7 +214,11 @@ export const getAuditLogs = (params?: {
   user_id?: number
   start_date?: string
   end_date?: string
-}) => api.get<{ count: number; results: AuditLogEntry[] }>('/audit-logs/', { params })
+  page?: number
+}) =>
+  api.get<import('@/lib/pagination').PaginatedResponse<AuditLogEntry>>('/audit-logs/', {
+    params,
+  })
 
 export const getAuditLogDashboard = () => api.get('/audit-logs/dashboard/')
 

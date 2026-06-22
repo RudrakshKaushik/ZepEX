@@ -24,13 +24,15 @@ function push(message: string, variant: ToastVariant = 'default') {
   const id = crypto.randomUUID()
   toasts = [...toasts, { id, message, variant }]
   notify()
-  window.setTimeout(() => dismiss(id), 4000)
+  window.setTimeout(() => dismiss(id), 5000)
   return id
 }
 
 export function subscribe(listener: Listener) {
   listeners.add(listener)
-  return () => listeners.delete(listener)
+  return () => {
+    listeners.delete(listener)
+  }
 }
 
 export function getToasts() {

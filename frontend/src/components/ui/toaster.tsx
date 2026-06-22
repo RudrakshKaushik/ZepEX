@@ -1,7 +1,7 @@
 import * as Toast from '@radix-ui/react-toast'
 import { X } from 'lucide-react'
-import { useSyncExternalStore } from 'react'
-import { getToasts, subscribe, toast, type ToastVariant } from '@/lib/toast'
+import { useEffect, useState } from 'react'
+import { getToasts, subscribe, toast, type ToastItem, type ToastVariant } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
 const variantStyles: Record<ToastVariant, string> = {
@@ -11,10 +11,16 @@ const variantStyles: Record<ToastVariant, string> = {
 }
 
 export function Toaster() {
-  const items = useSyncExternalStore(subscribe, getToasts, getToasts)
+  const [items, setItems] = useState<ToastItem[]>(getToasts)
+
+  useEffect(() => {
+    return subscribe(() => {
+      setItems([...getToasts()])
+    })
+  }, [])
 
   return (
-    <Toast.Provider swipeDirection="right" duration={4000}>
+    <Toast.Provider swipeDirection="right" duration={5000}>
       {items.map((item) => (
         <Toast.Root
           key={item.id}
@@ -23,7 +29,9 @@ export function Toaster() {
             if (!open) toast.dismiss(item.id)
           }}
           className={cn(
-            'pointer-events-auto flex w-full items-start justify-between gap-3 rounded-lg border px-4 py-3 shadow-lg',
+            'pointer-events-auto flex w-full items-start justify-between gap-3 rounded-lg border px-4 py-3 shadow-lg transition-all',
+            'data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom-4 data-[state=open]:fade-in-0',
+            'data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom-4 data-[state=closed]:fade-out-0',
             variantStyles[item.variant],
           )}
         >
@@ -36,7 +44,7 @@ export function Toaster() {
           </Toast.Close>
         </Toast.Root>
       ))}
-      <Toast.Viewport className="fixed bottom-4 right-4 z-[100] flex w-full max-w-sm flex-col gap-2 outline-none" />
+      <Toast.Viewport className="fixed bottom-4 right-4 z-[200] flex w-[min(100vw-2rem,24rem)] flex-col gap-2 outline-none" />
     </Toast.Provider>
   )
 }

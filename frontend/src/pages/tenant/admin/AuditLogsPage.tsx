@@ -6,12 +6,16 @@ import { AdminListPanel } from '@/components/admin/AdminListPanel'
 import { AuditLogCards } from '@/components/audit/AuditLogCards'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { PageLoader } from '@/components/ui/spinner'
+import { PaginationControls } from '@/components/ui/pagination-controls'
 import { useAdminNav } from '@/hooks/useAdminNav'
 import type { AuditLogEntry } from '@/types'
 
 export function AuditLogsPage() {
   const { navItems, setupComplete, ready } = useAdminNav()
   const [logs, setLogs] = useState<AuditLogEntry[]>([])
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -20,10 +24,15 @@ export function AuditLogsPage() {
       setLoading(false)
       return
     }
-    getCompanyAuditLogs()
-      .then((res) => setLogs(res.data.results))
+    setLoading(true)
+    getCompanyAuditLogs({ page })
+      .then((res) => {
+        setLogs(res.data.results)
+        setTotalPages(res.data.total_pages)
+        setTotalCount(res.data.count)
+      })
       .finally(() => setLoading(false))
-  }, [ready, setupComplete])
+  }, [ready, setupComplete, page])
 
   if (!ready || loading) return <PageLoader />
 
@@ -42,11 +51,17 @@ export function AuditLogsPage() {
       <AdminListPanel
         title="Recent Activity"
         description="Track uploads, approvals, and system events across your company."
-        count={logs.length}
+        count={totalCount}
       >
         <div className="border-0 bg-transparent p-4 sm:p-6">
           <AuditLogCards logs={logs} />
         </div>
+        <PaginationControls
+          currentPage={page}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          onPageChange={setPage}
+        />
       </AdminListPanel>
     </DashboardLayout>
   )

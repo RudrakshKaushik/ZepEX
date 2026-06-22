@@ -13,6 +13,7 @@ import {
   listEmployees,
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
+import { toast } from '@/lib/toast'
 import { AdminConfirmDialog } from '@/components/admin/AdminConfirmDialog'
 import { AdminDataTable, AdminTableCell, AdminTableRow, RolePill } from '@/components/admin/AdminDataTable'
 import { AdminListPanel } from '@/components/admin/AdminListPanel'
@@ -27,9 +28,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
 import { PageLoader } from '@/components/ui/spinner'
+import { PaginationControls } from '@/components/ui/pagination-controls'
 import type { CompanyRole, DepartmentRecord, EmployeeRecord } from '@/types'
+import { fetchAllPages } from '@/lib/pagination'
 import { formatDate } from '@/lib/utils'
 
 const roles = ['MANAGER', 'EMPLOYEE', 'ACCOUNTS'] as const
@@ -55,12 +59,15 @@ function matchCompanyRoleId(systemRole: string, companyRoles: CompanyRole[]) {
 export function EmployeesPage() {
   const { navItems } = useAdminNav()
   const [employees, setEmployees] = useState<EmployeeRecord[]>([])
+  const [allEmployees, setAllEmployees] = useState<EmployeeRecord[]>([])
   const [departments, setDepartments] = useState<DepartmentRecord[]>([])
   const [companyRoles, setCompanyRoles] = useState<CompanyRole[]>([])
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [assignOpen, setAssignOpen] = useState(false)
@@ -90,18 +97,22 @@ export function EmployeesPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [empRes, deptRes, rolesRes] = await Promise.all([
-        listEmployees(),
-        listDepartments(),
+      const [empRes, allDepts, allEmps, rolesRes] = await Promise.all([
+        listEmployees({ page }),
+        fetchAllPages((page) => listDepartments({ page })),
+        fetchAllPages((page) => listEmployees({ page })),
         listCompanyRoles(),
       ])
-      setEmployees(empRes.data)
-      setDepartments(deptRes.data.filter((d) => d.is_active !== false))
+      setEmployees(empRes.data.results)
+      setTotalPages(empRes.data.total_pages)
+      setTotalCount(empRes.data.count)
+      setAllEmployees(allEmps)
+      setDepartments(allDepts.filter((d) => d.is_active !== false))
       setCompanyRoles(rolesRes.data.results)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [page])
 
   useEffect(() => {
     load()
@@ -122,10 +133,9 @@ export function EmployeesPage() {
   const handleFixMissingRoles = async () => {
     setSaving(true)
     setError('')
-    setMessage('')
     try {
       const { data } = await assignMissingCompanyRoles()
-      setMessage(data.message)
+      toast.success(data.message)
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -158,6 +168,7 @@ export function EmployeesPage() {
       })
       resetForm()
       setCreateOpen(false)
+      toast.success('Employee created successfully.')
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -200,6 +211,7 @@ export function EmployeesPage() {
       })
       setEditOpen(false)
       setEditing(null)
+      toast.success('Employee updated successfully.')
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -257,8 +269,8 @@ export function EmployeesPage() {
     }
   }
 
-  const managers = employees.filter((e) => e.role === 'MANAGER' && e.is_active !== false)
-  const missingCompanyRoleCount = employees.filter(
+  const managers = allEmployees.filter((e) => e.role === 'MANAGER' && e.is_active !== false)
+  const missingCompanyRoleCount = allEmployees.filter(
     (e) => !e.company_role_name && ['EMPLOYEE', 'MANAGER', 'ACCOUNTS'].includes(e.role),
   ).length
 
@@ -284,11 +296,6 @@ export function EmployeesPage() {
         </>
       }
     >
-      {message && (
-        <div className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">
-          {message}
-        </div>
-      )}
       {missingCompanyRoleCount > 0 && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
           <p>
@@ -305,7 +312,7 @@ export function EmployeesPage() {
 
       <AdminListPanel
         title="All Users"
-        count={employees.length}
+        count={totalCount}
         description="View employee details, roles, and department assignments."
       >
         <AdminDataTable columns={['Name', 'Email Address', 'Role', 'Department', 'Created', '']}>
@@ -354,6 +361,13 @@ export function EmployeesPage() {
             </AdminTableRow>
           ))}
         </AdminDataTable>
+        <PaginationControls
+          currentPage={page}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          onPageChange={setPage}
+          disabled={saving}
+        />
       </AdminListPanel>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -389,8 +403,7 @@ export function EmployeesPage() {
             </div>
             <div className="space-y-2">
               <Label>Password</Label>
-              <Input
-                type="password"
+              <PasswordInput
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 required

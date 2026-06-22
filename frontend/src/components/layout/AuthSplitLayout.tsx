@@ -8,6 +8,7 @@ type AuthSplitLayoutProps = {
   description?: string
   children: ReactNode
   heroImage?: string
+  heroOverlay?: ReactNode
 }
 
 export function AuthSplitLayout({
@@ -15,6 +16,7 @@ export function AuthSplitLayout({
   description,
   children,
   heroImage,
+  heroOverlay,
 }: AuthSplitLayoutProps) {
   return (
     <div className="flex min-h-screen bg-white">
@@ -22,7 +24,7 @@ export function AuthSplitLayout({
         <div className="mx-auto w-full max-w-md">
           <Link
             to="/"
-            className="mb-8 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            className="mb-8 inline-flex items-center gap-1.5 rounded-lg border border-border px-3.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Home
@@ -37,8 +39,13 @@ export function AuthSplitLayout({
             <img
               src={heroImage}
               alt=""
-              className="absolute inset-0 h-full w-full object-center"
+              className="absolute inset-0 h-full w-full object-cover object-center"
             />
+            {heroOverlay ? (
+              <div className="relative flex h-full min-h-[420px] flex-col justify-between p-8 text-white sm:p-10 lg:min-h-0 lg:p-12">
+                {heroOverlay}
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col justify-between overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-800 p-12 text-white lg:rounded-3xl">

@@ -24,6 +24,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { PageLoader } from '@/components/ui/spinner'
+import { PaginationControls } from '@/components/ui/pagination-controls'
+import { toast } from '@/lib/toast'
 import type { CompanyRole } from '@/types'
 
 const defaultPermissions = {
@@ -77,6 +79,9 @@ const defaultRoleTemplates = [
 export function RolesPage() {
   const { navItems } = useAdminNav()
   const [roles, setRoles] = useState<CompanyRole[]>([])
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -90,12 +95,14 @@ export function RolesPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await listCompanyRoles()
+      const { data } = await listCompanyRoles({ page })
       setRoles(data.results)
+      setTotalPages(data.total_pages)
+      setTotalCount(data.count)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [page])
 
   useEffect(() => {
     load()
@@ -109,6 +116,7 @@ export function RolesPage() {
       await createCompanyRole(form)
       setForm({ name: '', ...defaultPermissions })
       setCreateOpen(false)
+      toast.success('Role created successfully.')
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -139,6 +147,7 @@ export function RolesPage() {
       await updateCompanyRole(editing.id, editForm)
       setEditOpen(false)
       setEditing(null)
+      toast.success('Role updated successfully.')
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -169,6 +178,7 @@ export function RolesPage() {
       for (const template of defaultRoleTemplates) {
         await createCompanyRole(template)
       }
+      toast.success('Default roles created successfully.')
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -215,7 +225,7 @@ export function RolesPage() {
 
       <AdminListPanel
         title="Company Roles"
-        count={roles.length}
+        count={totalCount}
         description="Custom permission profiles for upload, approve, and payment workflows."
       >
         {roles.length === 0 ? (
@@ -252,6 +262,13 @@ export function RolesPage() {
             ))}
           </AdminDataTable>
         )}
+        <PaginationControls
+          currentPage={page}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          onPageChange={setPage}
+          disabled={saving}
+        />
       </AdminListPanel>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -273,22 +290,22 @@ export function RolesPage() {
               <Label>Permissions</Label>
               <div className="space-y-2 rounded-md border border-gray-200 p-3">
                 <PermissionCheck
-                  label="Can upload receipt"
+                  label="Upload receipt"
                   checked={form.can_upload_receipt}
                   onChange={(v) => setForm({ ...form, can_upload_receipt: v })}
                 />
                 <PermissionCheck
-                  label="Can submit expense"
+                  label="Submit expense"
                   checked={form.can_submit_expense}
                   onChange={(v) => setForm({ ...form, can_submit_expense: v })}
                 />
                 <PermissionCheck
-                  label="Can approve expense"
+                  label="Approve expense"
                   checked={form.can_approve_expense}
                   onChange={(v) => setForm({ ...form, can_approve_expense: v })}
                 />
                 <PermissionCheck
-                  label="Can mark paid"
+                  label="Mark paid"
                   checked={form.can_mark_paid}
                   onChange={(v) => setForm({ ...form, can_mark_paid: v })}
                 />
@@ -322,22 +339,22 @@ export function RolesPage() {
               <Label>Permissions</Label>
               <div className="space-y-2 rounded-md border border-gray-200 p-3">
                 <PermissionCheck
-                  label="Can upload receipt"
+                  label="Upload receipt"
                   checked={editForm.can_upload_receipt}
                   onChange={(v) => setEditForm({ ...editForm, can_upload_receipt: v })}
                 />
                 <PermissionCheck
-                  label="Can submit expense"
+                  label="Submit expense"
                   checked={editForm.can_submit_expense}
                   onChange={(v) => setEditForm({ ...editForm, can_submit_expense: v })}
                 />
                 <PermissionCheck
-                  label="Can approve expense"
+                  label="Approve expense"
                   checked={editForm.can_approve_expense}
                   onChange={(v) => setEditForm({ ...editForm, can_approve_expense: v })}
                 />
                 <PermissionCheck
-                  label="Can mark paid"
+                  label="Mark paid"
                   checked={editForm.can_mark_paid}
                   onChange={(v) => setEditForm({ ...editForm, can_mark_paid: v })}
                 />

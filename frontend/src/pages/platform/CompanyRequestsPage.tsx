@@ -13,12 +13,12 @@ import { Button } from '@/components/ui/button'
 import { PageLoader } from '@/components/ui/spinner'
 import type { CompanyRegistrationRequest } from '@/types'
 import { formatDateTime } from '@/lib/utils'
+import { toast } from '@/lib/toast'
 
 export function CompanyRequestsPage() {
   const [requests, setRequests] = useState<CompanyRegistrationRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [actionId, setActionId] = useState<number | null>(null)
-  const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
@@ -38,10 +38,9 @@ export function CompanyRequestsPage() {
   const handleApprove = async (id: number) => {
     setActionId(id)
     setError('')
-    setMessage('')
     try {
       const { data } = await approveCompanyRequest(id)
-      setMessage(
+      toast.success(
         `Approved! Admin: ${data.admin_email} · Temp password: ${data.temporary_password}`,
       )
       await load()
@@ -55,10 +54,9 @@ export function CompanyRequestsPage() {
   const handleReject = async (id: number) => {
     setActionId(id)
     setError('')
-    setMessage('')
     try {
       await rejectCompanyRequest(id)
-      setMessage('Request rejected.')
+      toast.success('Request rejected.')
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -80,11 +78,6 @@ export function CompanyRequestsPage() {
       icon={ClipboardList}
       navItems={platformNavWithAudit}
     >
-      {message && (
-        <div className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">
-          {message}
-        </div>
-      )}
       {error && (
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}

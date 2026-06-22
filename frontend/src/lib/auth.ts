@@ -46,19 +46,24 @@ export function normalizeLoginUser(user: LoginUserPayload): User {
 }
 
 export function resolvePostLoginPath(user: User, redirectTo?: string | null): string {
-  if (user.permissions?.can_mark_paid) return '/accounts'
-  if (user.permissions?.can_approve_expense) return '/manager'
   if (redirectTo && redirectPathMap[redirectTo]) return redirectPathMap[redirectTo]
-  return roleHome[user.role]
+  return roleHome[user.role] ?? '/employee'
 }
 
 export function canAccessRoute(
   user: User,
-  allowedRoles: UserRole[],
+  allowedRoles: UserRole[] = [],
   permission?: keyof UserPermissions,
+  anyPermissions?: (keyof UserPermissions)[],
 ): boolean {
-  if (permission && user.permissions?.[permission]) return true
-  return allowedRoles.includes(user.role)
+  if (anyPermissions?.some((key) => user.permissions?.[key])) return true
+
+  if (allowedRoles.length > 0 && allowedRoles.includes(user.role)) {
+    if (permission) return Boolean(user.permissions?.[permission])
+    return true
+  }
+
+  return false
 }
 
 export function defaultHomeForUser(user: User): string {

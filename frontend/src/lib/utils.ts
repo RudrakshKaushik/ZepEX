@@ -35,15 +35,23 @@ export function formatDateTime(date: string | null | undefined) {
   })
 }
 
-export function formatAuditMessage(message: string) {
+export function formatAuditMessage(message: string, action?: string) {
+  const actionUpper = (action ?? '').toUpperCase()
+  const isAiFailure =
+    actionUpper.includes('FAILED') ||
+    actionUpper.includes('AI_PROCESSING_FAILED')
+
   if (
-    message.includes('generativelanguage.googleapis.com') ||
-    message.includes('Gemini API')
+    isAiFailure &&
+    (message.includes('generativelanguage.googleapis.com') ||
+      message.includes('Gemini API') ||
+      message.toLowerCase().includes('not enabled'))
   ) {
-    return 'AI extraction failed — Gemini API is not enabled or blocked for your API key.'
+    return 'AI extraction failed. Gemini API is not enabled or blocked for your API key.'
   }
-  if (message.length > 160) {
-    return `${message.slice(0, 160)}…`
+
+  if (message.length > 280) {
+    return `${message.slice(0, 280)}…`
   }
   return message
 }

@@ -1,55 +1,46 @@
 import { CheckCircle2, Clock, DollarSign, FileText } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getPaymentDashboard } from '@/api'
 import { DashboardEmptyState } from '@/components/dashboard/DashboardEmptyState'
 import { DashboardPanel } from '@/components/dashboard/DashboardPanel'
 import { DashboardReportList } from '@/components/dashboard/DashboardReportList'
 import { MetricCard } from '@/components/MetricCard'
-import { DashboardLayout, accountsNav } from '@/components/layout/DashboardLayout'
+import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
 import { PageLoader } from '@/components/ui/spinner'
+import { useAuth } from '@/context/AuthContext'
+import { buildAccountsNav } from '@/lib/rolePermissions'
+import { loadApprovedReportsForPayment } from '@/lib/accountsReports'
 import type { ExpenseReport } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 
-interface PaymentDashboardData {
-  payment_user: { name: string; email: string; company: string; company_role: string }
-  metrics: {
-    approved_reports_waiting_payment: number
-    paid_reports: number
-    rejected_reports: number
-    approved_amount: string
-    paid_amount: string
-    rejected_amount: string
-    payment_completion_rate: number
-  }
-  recent_paid_reports: ExpenseReport[]
-  approved_reports: ExpenseReport[]
-  paid_reports: ExpenseReport[]
-}
-
 export function AccountsDashboard() {
-  const [data, setData] = useState<PaymentDashboardData | null>(null)
+  const { user } = useAuth()
+  const navItems = buildAccountsNav(user)
+  const [payment, setPayment] = useState<Awaited<ReturnType<typeof loadApprovedReportsForPayment>>['payment'] | null>(null)
+  const [approvedReports, setApprovedReports] = useState<ExpenseReport[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    getPaymentDashboard()
-      .then((res) => setData(res.data))
+    loadApprovedReportsForPayment()
+      .then((data) => {
+        setPayment(data.payment)
+        setApprovedReports(data.approvedReports)
+      })
       .finally(() => setLoading(false))
   }, [])
 
   if (loading) return <PageLoader />
 
-  const metrics = data?.metrics
-  const awaitingPayment = (data?.approved_reports ?? []).filter((r) => r.status === 'APPROVED')
-  const recentPaid = data?.recent_paid_reports ?? []
+  const metrics = payment?.metrics
+  const recentPaid = payment?.recent_paid_reports ?? []
 
   return (
     <DashboardLayout
       title="Accounts Dashboard"
       breadcrumb="Accounts Dashboard"
-      subtitle={data?.payment_user.company}
-      navItems={accountsNav}
+      subtitle={payment?.payment_user.company}
+      navItems={navItems}
     >
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
@@ -87,16 +78,16 @@ export function AccountsDashboard() {
             </Button>
           }
         >
-          {awaitingPayment.length > 0 ? (
+          {approvedReports.length > 0 ? (
             <DashboardReportList
-              reports={awaitingPayment.slice(0, 5)}
+              reports={approvedReports.slice(0, 5)}
               viewTo={() => '/accounts/reports'}
             />
           ) : (
             <DashboardEmptyState
               image="folder"
-              title="No reports awaiting payment"
-              description="Approved expense reports ready for payment will appear here."
+              title="No approved reports yet"
+              description="Manager-approved expense reports will appear here ready for payment. Ensure your workflow ends with the manager step so reports are fully approved before they reach Accounts."
             />
           )}
         </DashboardPanel>

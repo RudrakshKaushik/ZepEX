@@ -4,14 +4,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from tenants.permissions import IsCompanyAdmin
+from tenants.permissions import CanViewCompanyAuditLogs
 from .models import AuditLog
 from .serializers import AuditLogSerializer
 from django.db.models import Count
 from django.core.paginator import Paginator
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated, IsCompanyAdmin])
+@permission_classes([IsAuthenticated, CanViewCompanyAuditLogs])
 def audit_log_list(request):
     company = request.user.profile.company
 
@@ -62,7 +62,7 @@ def audit_log_list(request):
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated, IsCompanyAdmin])
+@permission_classes([IsAuthenticated, CanViewCompanyAuditLogs])
 def audit_log_dashboard(request):
     company = request.user.profile.company
 

@@ -60,11 +60,14 @@ export interface UserProfile {
   first_name: string
   last_name: string
   role: UserRole
+  company_role?: string | null
+  company_role_id?: number | null
   company: string
   department: string
   phone_number: string | null
   address: string | null
   profile_picture: string | null
+  permissions?: UserPermissions
 }
 
 export interface CompanyRole {

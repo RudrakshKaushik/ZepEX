@@ -1,16 +1,23 @@
 import { Banknote } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import { accountsMarkPaid, getPaymentDashboard } from '@/api'
+import { accountsMarkPaid } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
+import { DashboardEmptyState } from '@/components/dashboard/DashboardEmptyState'
+import { DashboardPanel } from '@/components/dashboard/DashboardPanel'
 import { ReportDetail } from '@/components/ReportDetail'
-import { DashboardLayout, accountsNav } from '@/components/layout/DashboardLayout'
+import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { PageLoader } from '@/components/ui/spinner'
+import { useAuth } from '@/context/AuthContext'
+import { buildAccountsNav } from '@/lib/rolePermissions'
+import { loadApprovedReportsForPayment } from '@/lib/accountsReports'
 import type { ExpenseReport } from '@/types'
 
 export function AccountsReportsPage() {
+  const { user } = useAuth()
+  const navItems = buildAccountsNav(user)
   const [reports, setReports] = useState<ExpenseReport[]>([])
   const [loading, setLoading] = useState(true)
   const [notes, setNotes] = useState<Record<string, string>>({})
@@ -20,11 +27,8 @@ export function AccountsReportsPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await getPaymentDashboard()
-      const approved = (data.approved_reports ?? []).filter(
-        (report: ExpenseReport) => report.status === 'APPROVED',
-      )
-      setReports(approved)
+      const { approvedReports } = await loadApprovedReportsForPayment()
+      setReports(approvedReports)
     } finally {
       setLoading(false)
     }
@@ -53,19 +57,23 @@ export function AccountsReportsPage() {
   return (
     <DashboardLayout
       title="Approved Reports"
-      subtitle="Mark approved reimbursements as paid"
-      navItems={accountsNav}
+      subtitle="Mark manager-approved reimbursements as paid"
+      breadcrumb="Approved Reports"
+      navItems={navItems}
     >
       {error && (
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
 
       {reports.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            No approved reports awaiting payment.
-          </CardContent>
-        </Card>
+        <DashboardPanel title="Approved Reports">
+          <DashboardEmptyState
+            image="folder"
+            title="No approved reports awaiting payment"
+            description="Reports appear here after a manager approves them. For Manager → Accounts flow, keep only the manager as the workflow approval step so reports reach approved status before payment."
+            onRefresh={load}
+          />
+        </DashboardPanel>
       ) : (
         <div className="space-y-6">
           {reports.map((report) => (

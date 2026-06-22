@@ -1,15 +1,18 @@
-import { CheckCircle2, Clock, FileText, XCircle } from 'lucide-react'
+import { CheckCircle2, Clock, FileText, Upload, XCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getApproverDashboard } from '@/api'
+import { getApproverDashboard, getCompanyAuditLogs } from '@/api'
+import { AdminAuditFeed } from '@/components/admin/AdminAuditFeed'
 import { DashboardEmptyState } from '@/components/dashboard/DashboardEmptyState'
 import { DashboardPanel } from '@/components/dashboard/DashboardPanel'
 import { DashboardReportList } from '@/components/dashboard/DashboardReportList'
 import { MetricCard } from '@/components/MetricCard'
-import { DashboardLayout, managerNav } from '@/components/layout/DashboardLayout'
+import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
 import { PageLoader } from '@/components/ui/spinner'
-import type { ExpenseReport } from '@/types'
+import { useAuth } from '@/context/AuthContext'
+import { buildManagerNav, canManageOwnExpenses } from '@/lib/rolePermissions'
+import type { AuditLogEntry, ExpenseReport } from '@/types'
 
 interface ApproverDashboardData {
   approver: {
@@ -33,12 +36,23 @@ interface ApproverDashboardData {
 }
 
 export function ManagerDashboard() {
+  const { user } = useAuth()
+  const navItems = buildManagerNav(user)
   const [data, setData] = useState<ApproverDashboardData | null>(null)
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    getApproverDashboard()
-      .then((res) => setData(res.data))
+    Promise.all([
+      getApproverDashboard().then((res) => res.data),
+      getCompanyAuditLogs()
+        .then((res) => res.data.results.slice(0, 6))
+        .catch(() => [] as AuditLogEntry[]),
+    ])
+      .then(([dashboardData, logs]) => {
+        setData(dashboardData)
+        setAuditLogs(logs)
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -53,7 +67,7 @@ export function ManagerDashboard() {
       title="Manager Dashboard"
       breadcrumb="Manager Dashboard"
       subtitle={`${departmentLabel} · ${data?.approver.company}`}
-      navItems={managerNav}
+      navItems={navItems}
     >
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
@@ -86,6 +100,33 @@ export function ManagerDashboard() {
         />
       </div>
 
+      {canManageOwnExpenses(user) && (
+        <div className="mt-6">
+          <DashboardPanel
+            title="My Expenses"
+            action={
+              <Button asChild>
+                <Link to="/manager/expenses">
+                  <Upload className="h-4 w-4" />
+                  Upload receipt
+                </Link>
+              </Button>
+            }
+          >
+            <DashboardEmptyState
+              image="folder"
+              title="Submit your own expenses"
+              description="Upload receipts and submit your monthly expense report from My Expenses."
+              action={
+                <Button variant="outline" asChild>
+                  <Link to="/manager/expenses">Go to My Expenses</Link>
+                </Button>
+              }
+            />
+          </DashboardPanel>
+        </div>
+      )}
+
       <div className="mt-6">
         <DashboardPanel
           title="Pending Employee Reports"
@@ -104,15 +145,19 @@ export function ManagerDashboard() {
             <DashboardEmptyState
               image="folder"
               title="No pending reports"
-              description="When employees submit expense reports, they will appear here for your review."
+              description="Reports appear here after employees submit their monthly expense report. Uploaded receipts that are still in draft are not visible to managers until submitted."
               action={
                 <Button variant="outline" asChild>
-                  <Link to="/manager/reports">Refresh</Link>
+                  <Link to="/manager/reports">View all reports</Link>
                 </Button>
               }
             />
           )}
         </DashboardPanel>
+      </div>
+
+      <div className="mt-6">
+        <AdminAuditFeed logs={auditLogs} viewAllTo="/manager/audit-logs" />
       </div>
     </DashboardLayout>
   )

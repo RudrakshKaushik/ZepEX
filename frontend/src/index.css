@@ -77,6 +77,28 @@
   display: none;
 }
 
+.workflow-canvas .react-flow__node {
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.workflow-canvas .react-flow__edge-path {
+  stroke: #171717;
+  stroke-width: 1.5;
+}
+
+.workflow-canvas .react-flow__edge.selected .react-flow__edge-path {
+  stroke: #dc2626;
+  stroke-width: 2.5;
+}
+
+.workflow-canvas .react-flow__controls-button {
+  border-radius: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .stats-marquee-track {
     animation: none;

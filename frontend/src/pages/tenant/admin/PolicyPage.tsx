@@ -25,15 +25,19 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { PageLoader } from '@/components/ui/spinner'
+import { PaginationControls } from '@/components/ui/pagination-controls'
+import { toast } from '@/lib/toast'
 import type { PolicyRule } from '@/types'
 
 export function PolicyPage() {
   const { navItems } = useAdminNav()
   const [rules, setRules] = useState<PolicyRule[]>([])
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
   const [open, setOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [editing, setEditing] = useState<PolicyRule | null>(null)
@@ -50,27 +54,29 @@ export function PolicyPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await listPolicyRules()
-      setRules(data)
+      const { data } = await listPolicyRules({ page })
+      setRules(data.results)
+      setTotalPages(data.total_pages)
+      setTotalCount(data.count)
     } catch {
       setRules([])
+      setTotalPages(1)
+      setTotalCount(0)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [page])
 
   useEffect(() => {
     load()
   }, [load])
-
-  const activeRules = rules.filter((r) => r.is_active !== false)
 
   const initPolicy = async () => {
     setSaving(true)
     setError('')
     try {
       await createCompanyPolicy()
-      setMessage('Company policy created. You can now add rules.')
+      toast.success('Company policy created. You can now add rules.')
     } catch (err) {
       setError(getApiErrorMessage(err))
     } finally {
@@ -90,6 +96,7 @@ export function PolicyPage() {
       })
       setForm({ category_name: '', max_amount: '', category_description: '' })
       setOpen(false)
+      toast.success('Policy rule created successfully.')
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -120,6 +127,7 @@ export function PolicyPage() {
       })
       setEditOpen(false)
       setEditing(null)
+      toast.success('Policy rule updated successfully.')
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -166,29 +174,31 @@ export function PolicyPage() {
         </>
       }
     >
-      {message && (
-        <div className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">
-          {message}
-        </div>
-      )}
       {error && !open && !editOpen && (
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
 
       <AdminListPanel
-        title="Active Rules"
-        count={activeRules.length}
+        title="Policy Rules"
+        count={totalCount}
         description="Manage active policies, approval rules, and automation settings in one place."
       >
-        {activeRules.length === 0 ? (
+        {rules.length === 0 ? (
           <p className="px-5 py-8 text-sm text-gray-400 sm:px-6">No policy rules configured.</p>
         ) : (
           <div>
-            {activeRules.map((rule) => (
+            {rules.map((rule) => (
               <AdminPolicyRuleCard key={rule.id} rule={rule} onEdit={() => openEdit(rule)} />
             ))}
           </div>
         )}
+        <PaginationControls
+          currentPage={page}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          onPageChange={setPage}
+          disabled={saving}
+        />
       </AdminListPanel>
 
       {rules.some((r) => r.is_active === false) && (

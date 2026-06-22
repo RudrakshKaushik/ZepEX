@@ -1030,7 +1030,6 @@ def add_workflow_step(request):
     department = serializer.validated_data.get("department")
 
     if department:
-
         if department.company != profile.company:
             return Response(
                 {"error": "Department does not belong to your company."},
@@ -1047,11 +1046,11 @@ def add_workflow_step(request):
 
     if ApprovalWorkflowStep.objects.filter(
         workflow=workflow,
-        step_order=step_order
+        step_order=step_order,
+        is_active=True
     ).exists():
-
         return Response(
-            {"error": f"Step order {step_order} already exists."},
+            {"error": f"Active step order {step_order} already exists."},
             status=status.HTTP_400_BAD_REQUEST
         )
 
@@ -1078,10 +1077,13 @@ def add_workflow_step(request):
         }
     )
 
-    return Response({
-        "message": "Workflow step added successfully.",
-        "step": ApprovalWorkflowStepSerializer(step).data
-    }, status=status.HTTP_201_CREATED)
+    return Response(
+        {
+            "message": "Workflow step added successfully.",
+            "step": ApprovalWorkflowStepSerializer(step).data
+        },
+        status=status.HTTP_201_CREATED
+    )
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -1126,11 +1128,24 @@ def deactivate_workflow_step(request, step_id):
             status=status.HTTP_404_NOT_FOUND
         )
 
+    workflow = step.workflow
+
     step.is_active = False
     step.save(update_fields=["is_active"])
 
+    active_steps = ApprovalWorkflowStep.objects.filter(
+        workflow=workflow,
+        is_active=True
+    ).order_by("step_order", "created_at")
+
+    for index, active_step in enumerate(active_steps, start=1):
+        if active_step.step_order != index:
+            active_step.step_order = index
+            active_step.save(update_fields=["step_order"])
+
     return Response({
-        "message": "Workflow step deactivated successfully."
+        "message": "Workflow step deactivated successfully.",
+        "workflow_steps_reordered": True
     })
 
 
@@ -1525,6 +1540,50 @@ def my_uploaded_expenses(request):
         "results": serializer.data
     })
 
+from .models import DuplicateReceiptLog
+from .serializers import DuplicateReceiptLogSerializer
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def duplicate_receipts(request):
+
+    profile = request.user.profile
+
+    if profile.role != "COMPANY_ADMIN":
+        return Response(
+            {"error": "Only company admin can view duplicate receipts."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    duplicates = DuplicateReceiptLog.objects.filter(
+        original_receipt__company=profile.company
+    ).select_related(
+        "original_receipt",
+        "duplicate_receipt",
+        "original_receipt__employee__user",
+        "duplicate_receipt__employee__user",
+    ).order_by("-created_at")
+
+    duplicate_type = request.GET.get("type")
+
+    if duplicate_type:
+        duplicates = duplicates.filter(
+            duplicate_type=duplicate_type.upper()
+        )
+
+    serializer = DuplicateReceiptLogSerializer(
+        duplicates,
+        many=True
+    )
+
+    return Response({
+        "count": duplicates.count(),
+        "filters": {
+            "type": duplicate_type,
+        },
+        "results": serializer.data
+    })
 from .models import DuplicateReceiptLog
 from .serializers import DuplicateReceiptLogSerializer
 

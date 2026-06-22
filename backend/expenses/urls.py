@@ -21,6 +21,7 @@ from .views import (
     approve_report_step,
     reject_report_step,
     duplicate_receipts,
+    admin_reports_list
     
     
 
@@ -65,5 +66,7 @@ path(
     name="duplicate-receipts"
 ),    
 path("duplicates/", duplicate_receipts, name="duplicate-receipts"),
+path("admin/reports/",admin_reports_list,name="admin-reports-list"
+),
 
 ]

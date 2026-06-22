@@ -273,22 +273,22 @@ export function RolesPage() {
               <Label>Permissions</Label>
               <div className="space-y-2 rounded-md border border-gray-200 p-3">
                 <PermissionCheck
-                  label="Can upload receipt"
+                  label="Upload receipt"
                   checked={form.can_upload_receipt}
                   onChange={(v) => setForm({ ...form, can_upload_receipt: v })}
                 />
                 <PermissionCheck
-                  label="Can submit expense"
+                  label="Submit expense"
                   checked={form.can_submit_expense}
                   onChange={(v) => setForm({ ...form, can_submit_expense: v })}
                 />
                 <PermissionCheck
-                  label="Can approve expense"
+                  label="Approve expense"
                   checked={form.can_approve_expense}
                   onChange={(v) => setForm({ ...form, can_approve_expense: v })}
                 />
                 <PermissionCheck
-                  label="Can mark paid"
+                  label="Mark paid"
                   checked={form.can_mark_paid}
                   onChange={(v) => setForm({ ...form, can_mark_paid: v })}
                 />
@@ -322,22 +322,22 @@ export function RolesPage() {
               <Label>Permissions</Label>
               <div className="space-y-2 rounded-md border border-gray-200 p-3">
                 <PermissionCheck
-                  label="Can upload receipt"
+                  label="Upload receipt"
                   checked={editForm.can_upload_receipt}
                   onChange={(v) => setEditForm({ ...editForm, can_upload_receipt: v })}
                 />
                 <PermissionCheck
-                  label="Can submit expense"
+                  label="Submit expense"
                   checked={editForm.can_submit_expense}
                   onChange={(v) => setEditForm({ ...editForm, can_submit_expense: v })}
                 />
                 <PermissionCheck
-                  label="Can approve expense"
+                  label="Approve expense"
                   checked={editForm.can_approve_expense}
                   onChange={(v) => setEditForm({ ...editForm, can_approve_expense: v })}
                 />
                 <PermissionCheck
-                  label="Can mark paid"
+                  label="Mark paid"
                   checked={editForm.can_mark_paid}
                   onChange={(v) => setEditForm({ ...editForm, can_mark_paid: v })}
                 />

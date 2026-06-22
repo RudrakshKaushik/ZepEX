@@ -1,10 +1,11 @@
-import { Shield } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import platformLoginImg from '@/assets/platform_login.png'
 import { getApiErrorMessage, useAuth } from '@/context/AuthContext'
+import { AuthSplitLayout } from '@/components/layout/AuthSplitLayout'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
 import logo from '@/assets/logo.png'
 
@@ -13,7 +14,7 @@ export function PlatformLoginPage() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
+  const [remember, setRemember] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -30,6 +31,11 @@ export function PlatformLoginPage() {
         setError('This account is not authorized for platform access.')
         return
       }
+      if (remember) {
+        localStorage.setItem('zepex_remember_platform_email', email)
+      } else {
+        localStorage.removeItem('zepex_remember_platform_email')
+      }
       navigate('/platform')
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -39,87 +45,88 @@ export function PlatformLoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-950">
-      <div className="hidden w-1/2 flex-col justify-between bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-12 text-white lg:flex">
-        <div className="flex items-center gap-2">
-          <img src={logo} alt="ZepEX" className="h-full w-25" />
-        </div>
-        <div>
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-slate-600 bg-slate-800/50 px-3 py-1 text-sm text-slate-300">
-            <Shield className="h-4 w-4" />
-            Internal access only
-          </div>
-          <h2 className="text-4xl font-bold leading-tight">
-            Platform operations console
-          </h2>
-          <p className="mt-4 max-w-md text-slate-400">
-            Approve company registrations, monitor tenants, and review platform audit logs.
-          </p>
-        </div>
-        <p className="text-sm text-slate-500">Authorized personnel only</p>
+    <AuthSplitLayout
+      heroImage={platformLoginImg}
+    >
+      <div className="mb-8 flex items-center gap-2">
+        <img src={logo} alt="ZepEX" className="h-full w-25" />
       </div>
 
-      <div className="flex flex-1 items-center justify-center p-6">
-        <div className="w-full max-w-md">
-          <Card className="border-slate-800 bg-slate-900 text-white">
-            <CardHeader>
-              <CardTitle>Platform sign in</CardTitle>
-              <CardDescription className="text-slate-400">
-                Use your platform owner credentials.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="email" className="text-slate-200">
-                    Email
-                  </Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="platform.admin@zepex.com"
-                    className="border-slate-700 bg-slate-800 text-white placeholder:text-slate-500"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="password" className="text-slate-200">
-                      Password
-                    </Label>
-                    <button
-                      type="button"
-                      className="text-xs text-slate-400 hover:text-slate-200"
-                      onClick={() => setShowPassword((v) => !v)}
-                    >
-                      {showPassword ? 'Hide' : 'Show'}
-                    </button>
-                  </div>
-                  <Input
-                    id="password"
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    autoComplete="current-password"
-                    className="border-slate-700 bg-slate-800 text-white"
-                  />
-                </div>
-                {error && (
-                  <p className="rounded-lg bg-red-950 px-3 py-2 text-sm text-red-300">
-                    {error}
-                  </p>
-                )}
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? 'Signing in...' : 'Sign in to platform'}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">Platform Sign In</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Use your platform owner credentials.
+        </p>
       </div>
-    </div>
+
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="space-y-2">
+          <Label htmlFor="email">Email Address</Label>
+          <Input
+            id="email"
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Enter your email address"
+            className="h-11"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password">Password</Label>
+            <Link
+              to="/forgot-password"
+              className="text-sm font-medium text-primary hover:underline"
+            >
+              Forgot Password
+            </Link>
+          </div>
+          <PasswordInput
+            id="password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Enter your password here"
+            className="h-11"
+            autoComplete="current-password"
+          />
+        </div>
+
+        <label className="flex cursor-pointer items-center gap-2.5 text-sm text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(e) => setRemember(e.target.checked)}
+            className="h-4 w-4 rounded border-input accent-primary"
+          />
+          Remember this device
+        </label>
+
+        {error && (
+          <p className="rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">{error}</p>
+        )}
+
+        <Button type="submit" className="h-11 w-full text-base" disabled={loading}>
+          {loading ? 'Signing in...' : 'Sign In to platform'}
+        </Button>
+      </form>
+
+      <div className="mt-8 flex items-center gap-3">
+        <div className="h-px flex-1 bg-border" />
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Or
+        </span>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+
+      <p className="mt-6 text-center text-sm text-muted-foreground">
+        New Company?{' '}
+        <Link to="/register" className="font-semibold text-primary hover:underline">
+          Register Here
+        </Link>
+      </p>
+    </AuthSplitLayout>
   )
 }

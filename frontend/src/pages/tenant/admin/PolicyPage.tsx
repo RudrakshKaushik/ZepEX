@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { PageLoader } from '@/components/ui/spinner'
+import { toast } from '@/lib/toast'
 import type { PolicyRule } from '@/types'
 
 export function PolicyPage() {
@@ -33,7 +34,6 @@ export function PolicyPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
   const [open, setOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [editing, setEditing] = useState<PolicyRule | null>(null)
@@ -70,7 +70,7 @@ export function PolicyPage() {
     setError('')
     try {
       await createCompanyPolicy()
-      setMessage('Company policy created. You can now add rules.')
+      toast.success('Company policy created. You can now add rules.')
     } catch (err) {
       setError(getApiErrorMessage(err))
     } finally {
@@ -166,11 +166,6 @@ export function PolicyPage() {
         </>
       }
     >
-      {message && (
-        <div className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">
-          {message}
-        </div>
-      )}
       {error && !open && !editOpen && (
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}

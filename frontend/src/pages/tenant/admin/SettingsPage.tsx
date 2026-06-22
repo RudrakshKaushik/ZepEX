@@ -13,14 +13,15 @@ import { useAdminNav, invalidateAdminSetupCache } from '@/hooks/useAdminNav'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
 import { PageLoader } from '@/components/ui/spinner'
+import { toast } from '@/lib/toast'
 
 export function SettingsPage() {
   const { navItems } = useAdminNav()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [emailForm, setEmailForm] = useState({
     email_address: '',
@@ -73,13 +74,12 @@ export function SettingsPage() {
     e.preventDefault()
     setSaving(true)
     setError('')
-    setMessage('')
     try {
       await saveReimbursementEmailConfig({
         ...emailForm,
         imap_port: parseInt(emailForm.imap_port, 10),
       })
-      setMessage('Reimbursement email config saved.')
+      toast.success('Reimbursement email config saved.')
       invalidateAdminSetupCache()
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -92,13 +92,12 @@ export function SettingsPage() {
     e.preventDefault()
     setSaving(true)
     setError('')
-    setMessage('')
     try {
       await saveSmtpConfig({
         ...smtpForm,
         smtp_port: parseInt(smtpForm.smtp_port, 10),
       })
-      setMessage('SMTP config saved.')
+      toast.success('SMTP config saved.')
       invalidateAdminSetupCache()
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -112,7 +111,7 @@ export function SettingsPage() {
     setError('')
     try {
       const { data } = await triggerEmailFetch()
-      setMessage(
+      toast.success(
         `Processed ${data.processed_count} emails (${data.skipped_count} skipped).`,
       )
     } catch (err) {
@@ -132,11 +131,6 @@ export function SettingsPage() {
       icon={Settings}
       navItems={navItems}
     >
-      {message && (
-        <div className="mb-4 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          {message}
-        </div>
-      )}
       {error && (
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
@@ -182,8 +176,7 @@ export function SettingsPage() {
               </div>
               <div className="space-y-2">
                 <Label>Password / app password</Label>
-                <Input
-                  type="password"
+                <PasswordInput
                   value={emailForm.imap_password}
                   onChange={(e) => setEmailForm({ ...emailForm, imap_password: e.target.value })}
                 />
@@ -231,8 +224,7 @@ export function SettingsPage() {
               </div>
               <div className="space-y-2">
                 <Label>Password</Label>
-                <Input
-                  type="password"
+                <PasswordInput
                   value={smtpForm.smtp_password}
                   onChange={(e) => setSmtpForm({ ...smtpForm, smtp_password: e.target.value })}
                 />

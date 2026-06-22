@@ -9,9 +9,10 @@ import { DashboardReportList } from '@/components/dashboard/DashboardReportList'
 import { MetricCard } from '@/components/MetricCard'
 import { ReportDetail } from '@/components/ReportDetail'
 import { StatusBadge } from '@/components/StatusBadge'
-import { DashboardLayout, employeeNav } from '@/components/layout/DashboardLayout'
+import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
 import { PageLoader } from '@/components/ui/spinner'
+import { buildEmployeeNav } from '@/lib/rolePermissions'
 import type { ExpenseReport } from '@/types'
 
 interface EmployeeDashboardData {
@@ -28,6 +29,7 @@ interface EmployeeDashboardData {
 
 export function EmployeeDashboard() {
   const { user } = useAuth()
+  const navItems = buildEmployeeNav(user)
   const [data, setData] = useState<EmployeeDashboardData | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -53,7 +55,7 @@ export function EmployeeDashboard() {
       title="Employee Dashboard"
       breadcrumb="Employee Dashboard"
       subtitle={`${data?.user.company} · ${data?.user.department}`}
-      navItems={employeeNav}
+      navItems={navItems}
     >
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard title="Total reports" value={metrics?.total_reports ?? 0} icon={FileText} />
@@ -91,6 +93,15 @@ export function EmployeeDashboard() {
         >
           {currentReport && currentReport.receipts?.length > 0 ? (
             <div>
+              {currentReport.status === 'DRAFT' && (
+                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  Your receipts are saved as a draft. Submit the report from{' '}
+                  <Link to="/employee/expenses" className="font-medium underline">
+                    My Expenses
+                  </Link>{' '}
+                  so your manager can review them.
+                </div>
+              )}
               <div className="mb-4 flex items-center justify-end">
                 <StatusBadge status={currentReport.status} />
               </div>

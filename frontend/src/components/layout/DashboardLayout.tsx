@@ -6,7 +6,6 @@ import {
   ScrollText,
   Settings,
   Shield,
-  User,
   UserCog,
   Users,
   Wallet,
@@ -15,6 +14,7 @@ import {
 
 import { useState, type ReactNode } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
+import { SidebarUserSummary } from '@/components/layout/SidebarUserSummary'
 import { useAuth } from '@/context/AuthContext'
 import { cn } from '@/lib/utils'
 import logo from '@/assets/logo.png'
@@ -45,7 +45,7 @@ export function DashboardLayout({
   children,
   portal = 'tenant',
 }: DashboardLayoutProps) {
-  const { logout } = useAuth()
+  const { logout, user } = useAuth()
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
@@ -104,7 +104,8 @@ export function DashboardLayout({
           ))}
         </nav>
 
-        <div className="shrink-0 border-t border-[#e2e8f0] p-4">
+        <div className="shrink-0 space-y-2 border-t border-[#e2e8f0] p-4">
+          {user && <SidebarUserSummary />}
           <button
             type="button"
             onClick={handleLogout}
@@ -142,7 +143,9 @@ export function DashboardLayout({
                 {subtitle && <p className="mt-1 text-sm text-gray-500">{subtitle}</p>}
               </div>
             </div>
-            {headerAction && <div className="flex flex-wrap items-center gap-2">{headerAction}</div>}
+            {headerAction && (
+              <div className="flex flex-wrap items-center gap-2">{headerAction}</div>
+            )}
           </div>
 
           {children}
@@ -176,17 +179,15 @@ export const adminNav: NavItem[] = [
 export const employeeNav: NavItem[] = [
   { label: 'Dashboard', to: '/employee', icon: LayoutDashboard },
   { label: 'Expenses', to: '/employee/expenses', icon: Wallet },
-  { label: 'My Profile', to: '/profile', icon: User },
 ]
 
 export const managerNav: NavItem[] = [
   { label: 'Dashboard', to: '/manager', icon: LayoutDashboard },
   { label: 'Pending Reports', to: '/manager/reports', icon: Wallet },
-  { label: 'My Profile', to: '/profile', icon: User },
+  { label: 'Audit Logs', to: '/manager/audit-logs', icon: ScrollText },
 ]
 
 export const accountsNav: NavItem[] = [
   { label: 'Dashboard', to: '/accounts', icon: LayoutDashboard },
-  { label: 'Pending Reports', to: '/accounts/reports', icon: Wallet },
-  { label: 'My Profile', to: '/profile', icon: User },
+  { label: 'Approved Reports', to: '/accounts/reports', icon: Wallet },
 ]

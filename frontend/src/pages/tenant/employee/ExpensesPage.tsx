@@ -9,8 +9,16 @@ import {
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
 import { StatusBadge } from '@/components/StatusBadge'
-import { DashboardLayout, employeeNav, managerNav } from '@/components/layout/DashboardLayout'
+import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { useAuth } from '@/context/AuthContext'
+import { defaultHomeForUser } from '@/lib/auth'
+import {
+  canManageOwnExpenses,
+  canSubmitExpense,
+  canUploadReceipt,
+  expensePathForUser,
+  navItemsForUser,
+} from '@/lib/rolePermissions'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -23,6 +31,8 @@ import {
 import { PageLoader } from '@/components/ui/spinner'
 import type { ExpenseReport } from '@/types'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { normalizeCurrentMonthReport } from '@/lib/expenseReport'
+import { toast } from '@/lib/toast'
 
 function formatUploadError(message: string) {
   if (message.includes('company role is not assigned')) {
@@ -40,15 +50,16 @@ function formatUploadError(message: string) {
 export function ExpensesPage() {
   const { user } = useAuth()
   const location = useLocation()
-  const isManager = user?.permissions?.can_approve_expense ?? user?.role === 'MANAGER'
-  const navItems = isManager ? managerNav : employeeNav
+  const navItems = navItemsForUser(user)
+  const allowUpload = canUploadReceipt(user)
+  const allowSubmit = canSubmitExpense(user)
+  const expensePath = expensePathForUser(user)
 
   const [report, setReport] = useState<ExpenseReport | null>(null)
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
-  const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [uploadError, setUploadError] = useState('')
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
@@ -77,7 +88,7 @@ export function ExpensesPage() {
     setLoading(true)
     try {
       const { data } = await getCurrentMonthReport()
-      setReport(data)
+      setReport(normalizeCurrentMonthReport(data))
     } catch {
       setReport(null)
     } finally {
@@ -93,7 +104,6 @@ export function ExpensesPage() {
     if (!selectedFiles.length) return
     setUploading(true)
     setUploadError('')
-    setMessage('')
     try {
       const errors: string[] = []
       let successCount = 0
@@ -111,11 +121,11 @@ export function ExpensesPage() {
         setUploadError(errors[0])
       }
       if (successCount && !errors.length) {
-        setMessage('Receipt(s) uploaded and processed by AI.')
+        toast.success('Receipt(s) uploaded and processed by AI.')
         setUploadOpen(false)
         resetUploadModal()
       } else if (successCount && errors.length) {
-        setMessage(`${successCount} receipt(s) uploaded. Some AI extractions failed.`)
+        toast.success(`${successCount} receipt(s) uploaded. Some AI extractions failed.`)
         resetUploadModal()
       }
       await load()
@@ -129,10 +139,9 @@ export function ExpensesPage() {
   const handleSubmit = async () => {
     setSubmitting(true)
     setError('')
-    setMessage('')
     try {
       await submitMonthlyReport()
-      setMessage('Monthly report submitted to your manager.')
+      toast.success('Monthly report submitted to your manager.')
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -150,23 +159,29 @@ export function ExpensesPage() {
     }
   }
 
-  const canSubmit = report && !['SUBMITTED', 'PENDING_ACCOUNTS', 'PAID'].includes(report.status)
+  const canSubmitReport =
+    allowSubmit && report && !['SUBMITTED', 'PENDING_ACCOUNTS', 'PAID'].includes(report.status)
 
-  if (isManager && location.pathname.startsWith('/employee')) {
-    return <Navigate to="/manager/expenses" replace />
+  if (!canManageOwnExpenses(user)) {
+    return <Navigate to={defaultHomeForUser(user!)} replace />
+  }
+
+  if (location.pathname !== expensePath) {
+    return <Navigate to={expensePath} replace />
   }
 
   if (loading) return <PageLoader />
 
   return (
     <DashboardLayout title="My Expenses" subtitle="Upload receipts for this month" navItems={navItems}>
-      {message && (
-        <div className="mb-4 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          {message}
-        </div>
-      )}
       {error && (
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      )}
+      {report?.receipts?.length && canSubmitReport && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Your manager will only see this report after you click{' '}
+          <span className="font-medium">Submit report</span>.
+        </div>
       )}
 
       <Card>
@@ -176,7 +191,7 @@ export function ExpensesPage() {
             {report && <StatusBadge status={report.status} />}
           </div>
           <div className="flex flex-wrap gap-2">
-            {canSubmit && (
+            {canSubmitReport && (
               <Button
                 variant="success"
                 disabled={submitting || !report?.receipts?.length}
@@ -186,15 +201,17 @@ export function ExpensesPage() {
                 {submitting ? 'Submitting...' : 'Submit report'}
               </Button>
             )}
-            <Button
-              onClick={() => {
-                resetUploadModal()
-                setUploadOpen(true)
-              }}
-            >
-              <Plus className="h-4 w-4" />
-              Upload receipt
-            </Button>
+            {allowUpload && (
+              <Button
+                onClick={() => {
+                  resetUploadModal()
+                  setUploadOpen(true)
+                }}
+              >
+                <Plus className="h-4 w-4" />
+                Upload receipt
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -233,7 +250,7 @@ export function ExpensesPage() {
                           {formatCurrency(item.amount, receipt.currency)}
                         </p>
                       </div>
-                      {canSubmit && (
+                      {canSubmitReport && (
                         <Button
                           size="sm"
                           variant="ghost"

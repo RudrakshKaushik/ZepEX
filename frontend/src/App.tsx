@@ -19,16 +19,19 @@ import { EmployeeDashboard } from '@/pages/tenant/employee/EmployeeDashboard'
 import { ExpensesPage } from '@/pages/tenant/employee/ExpensesPage'
 import { ManagerDashboard } from '@/pages/tenant/manager/ManagerDashboard'
 import { ManagerReportsPage } from '@/pages/tenant/manager/ManagerReportsPage'
+import { ManagerAuditLogsPage } from '@/pages/tenant/manager/ManagerAuditLogsPage'
 import { AccountsDashboard } from '@/pages/tenant/accounts/AccountsDashboard'
 import { AccountsReportsPage } from '@/pages/tenant/accounts/AccountsReportsPage'
 import { RolesPage } from '@/pages/tenant/admin/RolesPage'
 import { WorkflowPage } from '@/pages/tenant/admin/WorkflowPage'
 import { ProfilePage } from '@/pages/ProfilePage'
+import { Toaster } from '@/components/ui/toaster'
 
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <Toaster />
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
@@ -79,9 +82,20 @@ export default function App() {
             />
           </Route>
 
-          <Route element={<ProtectedRoute allowedRoles={['EMPLOYEE', 'MANAGER']} />}>
-            <Route path="/employee" element={<EmployeeDashboard />} />
+          <Route
+            element={
+              <ProtectedRoute
+                anyPermissions={['can_upload_receipt', 'can_submit_expense']}
+              />
+            }
+          >
             <Route path="/employee/expenses" element={<ExpensesPage />} />
+            <Route path="/manager/expenses" element={<ExpensesPage />} />
+            <Route path="/accounts/expenses" element={<ExpensesPage />} />
+          </Route>
+
+          <Route element={<ProtectedRoute allowedRoles={['EMPLOYEE']} />}>
+            <Route path="/employee" element={<EmployeeDashboard />} />
             <Route
               path="/employee-dashboard"
               element={<Navigate to="/employee" replace />}
@@ -91,7 +105,7 @@ export default function App() {
           <Route element={<ProtectedRoute allowedRoles={['MANAGER']} requiredPermission="can_approve_expense" />}>
             <Route path="/manager" element={<ManagerDashboard />} />
             <Route path="/manager/reports" element={<ManagerReportsPage />} />
-            <Route path="/manager/expenses" element={<ExpensesPage />} />
+            <Route path="/manager/audit-logs" element={<ManagerAuditLogsPage />} />
             <Route
               path="/manager-dashboard"
               element={<Navigate to="/manager" replace />}

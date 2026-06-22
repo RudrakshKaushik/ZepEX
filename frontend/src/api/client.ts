@@ -64,7 +64,15 @@ export function clearStoredAuth() {
 export function getApiErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
     const data = error.response?.data
-    if (typeof data === 'string') return data
+    if (typeof data === 'string') {
+      if (data.startsWith('<!DOCTYPE') || data.startsWith('<html')) {
+        const status = error.response?.status
+        return status
+          ? `Request failed (${status}). Please try again or contact support.`
+          : 'Request failed. Please try again.'
+      }
+      return data
+    }
     if (data?.error) return String(data.error)
     if (data?.message) return String(data.message)
     if (data && typeof data === 'object') {

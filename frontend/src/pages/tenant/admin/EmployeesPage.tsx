@@ -13,6 +13,7 @@ import {
   listEmployees,
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
+import { toast } from '@/lib/toast'
 import { AdminConfirmDialog } from '@/components/admin/AdminConfirmDialog'
 import { AdminDataTable, AdminTableCell, AdminTableRow, RolePill } from '@/components/admin/AdminDataTable'
 import { AdminListPanel } from '@/components/admin/AdminListPanel'
@@ -27,6 +28,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
 import { PageLoader } from '@/components/ui/spinner'
 import type { CompanyRole, DepartmentRecord, EmployeeRecord } from '@/types'
@@ -60,7 +62,6 @@ export function EmployeesPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [assignOpen, setAssignOpen] = useState(false)
@@ -122,10 +123,9 @@ export function EmployeesPage() {
   const handleFixMissingRoles = async () => {
     setSaving(true)
     setError('')
-    setMessage('')
     try {
       const { data } = await assignMissingCompanyRoles()
-      setMessage(data.message)
+      toast.success(data.message)
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -284,11 +284,6 @@ export function EmployeesPage() {
         </>
       }
     >
-      {message && (
-        <div className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">
-          {message}
-        </div>
-      )}
       {missingCompanyRoleCount > 0 && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
           <p>
@@ -389,8 +384,7 @@ export function EmployeesPage() {
             </div>
             <div className="space-y-2">
               <Label>Password</Label>
-              <Input
-                type="password"
+              <PasswordInput
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 required

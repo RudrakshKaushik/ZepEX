@@ -31,6 +31,24 @@ SYSTEM_ROLE_TO_DEFAULT_ROLE_NAME = {
 }
 
 
+def permissions_for_profile(profile):
+    if not profile or not profile.company_role:
+        return {
+            "can_upload_receipt": False,
+            "can_submit_expense": False,
+            "can_approve_expense": False,
+            "can_mark_paid": False,
+        }
+
+    role = profile.company_role
+    return {
+        "can_upload_receipt": role.can_upload_receipt,
+        "can_submit_expense": role.can_submit_expense,
+        "can_approve_expense": role.can_approve_expense,
+        "can_mark_paid": role.can_mark_paid,
+    }
+
+
 def ensure_default_company_roles(company):
     for template in DEFAULT_COMPANY_ROLE_TEMPLATES:
         CompanyRole.objects.get_or_create(

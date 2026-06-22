@@ -522,7 +522,10 @@ def current_month_report(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    if not profile.company_role.can_submit_expense:
+    if not (
+        profile.company_role.can_submit_expense
+        or profile.company_role.can_upload_receipt
+    ):
         return Response(
             {"error": "Your role is not allowed to view expense reports."},
             status=status.HTTP_403_FORBIDDEN

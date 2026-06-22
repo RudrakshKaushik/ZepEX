@@ -9,14 +9,18 @@ import { getApiErrorMessage } from '@/api/client'
 import { DashboardEmptyState } from '@/components/dashboard/DashboardEmptyState'
 import { DashboardPanel } from '@/components/dashboard/DashboardPanel'
 import { ReportDetail } from '@/components/ReportDetail'
-import { DashboardLayout, managerNav } from '@/components/layout/DashboardLayout'
+import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { PageLoader } from '@/components/ui/spinner'
+import { useAuth } from '@/context/AuthContext'
+import { buildManagerNav } from '@/lib/rolePermissions'
 import type { ExpenseReport } from '@/types'
 
 export function ManagerReportsPage() {
+  const { user } = useAuth()
+  const navItems = buildManagerNav(user)
   const [reports, setReports] = useState<ExpenseReport[]>([])
   const [loading, setLoading] = useState(true)
   const [notes, setNotes] = useState<Record<string, string>>({})
@@ -74,7 +78,7 @@ export function ManagerReportsPage() {
     <DashboardLayout
       title="Pending Reports"
       breadcrumb="Pending Reports"
-      navItems={managerNav}
+      navItems={navItems}
     >
       {error && (
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>

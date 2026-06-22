@@ -1,22 +1,33 @@
 
-import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, useEffect, type FormEvent } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import loginImg from '@/assets/login_img.png'
 import { getApiErrorMessage, useAuth } from '@/context/AuthContext'
 import { AuthSplitLayout } from '@/components/layout/AuthSplitLayout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
 import logo from '@/assets/logo.png'
+import { toast } from '@/lib/toast'
 
 export function LoginPage() {
   const { login, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    const message = (location.state as { message?: string } | null)?.message
+    if (message) {
+      toast.success(message)
+      navigate(location.pathname, { replace: true, state: null })
+    }
+  }, [location.pathname, location.state, navigate])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -81,9 +92,8 @@ export function LoginPage() {
               Forgot Password
             </Link>
           </div>
-          <Input
+          <PasswordInput
             id="password"
-            type="password"
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}

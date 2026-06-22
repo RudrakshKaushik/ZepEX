@@ -9,6 +9,8 @@ from rest_framework.response import Response
 
 from .serializers import LoginSerializer
 
+from tenants.role_utils import permissions_for_profile
+
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 from django.core.mail import EmailMultiAlternatives
@@ -82,24 +84,7 @@ def login_api(request):
             if profile.department else None
         )
 
-        permissions = {
-            "can_upload_receipt": (
-                profile.company_role.can_upload_receipt
-                if profile.company_role else False
-            ),
-            "can_submit_expense": (
-                profile.company_role.can_submit_expense
-                if profile.company_role else False
-            ),
-            "can_approve_expense": (
-                profile.company_role.can_approve_expense
-                if profile.company_role else False
-            ),
-            "can_mark_paid": (
-                profile.company_role.can_mark_paid
-                if profile.company_role else False
-            ),
-        }
+        permissions = permissions_for_profile(profile)
 
     redirect_map = {
         "PLATFORM_OWNER": "/platform-dashboard",
@@ -333,11 +318,22 @@ def profile_detail_api(request):
         "first_name": request.user.first_name,
         "last_name": request.user.last_name,
         "role": profile.role,
+        "company_role": (
+            profile.company_role.name
+            if profile.company_role
+            else None
+        ),
+        "company_role_id": (
+            profile.company_role.id
+            if profile.company_role
+            else None
+        ),
         "company": profile.company.name,
         "department": profile.department.name if profile.department else None,
         "phone_number": profile.phone_number,
         "address": profile.address,
         "profile_picture": request.build_absolute_uri(profile.profile_picture.url) if profile.profile_picture else None,
+        "permissions": permissions_for_profile(profile),
     })
 
 

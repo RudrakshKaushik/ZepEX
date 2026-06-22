@@ -42,7 +42,7 @@ urlpatterns = [
     path("workflow/save/", create_or_update_workflow, name="save-workflow"),
     path("workflow/steps/add/", add_workflow_step, name="add-workflow-step"),
     path("workflow/", view_workflow, name="view-workflow"),
-    path("workflow/steps/<uuid:step_id>/deactivate/", deactivate_workflow_step, name="deactivate-workflow-step"),
+    path("workflow/steps/<int:step_id>/deactivate/", deactivate_workflow_step, name="deactivate-workflow-step"),
     path(
     "approvals/my-pending/",
     my_pending_approval_reports,

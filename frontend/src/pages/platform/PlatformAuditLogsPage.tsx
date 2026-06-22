@@ -6,14 +6,14 @@ export function PlatformAuditLogsPage() {
   return (
     <DashboardLayout
       portal="platform"
-      title="Audit Logs"
-      subtitle="Platform activity monitoring"
+      title="Platform Audit Logs"
+      subtitle="Cross-tenant activity trail"
       breadcrumb="Audit Logs"
       icon={ScrollText}
       navItems={platformNavWithAudit}
     >
       <AdminListPanel
-        title="Platform Audit Trail"
+        title="Recent Activity"
         description="Detailed audit trails are recorded per company and viewed by company administrators."
       >
         <div className="px-5 py-8 sm:px-6">

@@ -1,35 +1,30 @@
 import { useEffect, useState } from 'react'
-import { Navigate } from 'react-router-dom'
 import { ScrollText } from 'lucide-react'
 import { getCompanyAuditLogs } from '@/api'
+import { getApiErrorMessage } from '@/api/client'
 import { AdminListPanel } from '@/components/admin/AdminListPanel'
 import { AuditLogCards } from '@/components/audit/AuditLogCards'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { PageLoader } from '@/components/ui/spinner'
-import { useAdminNav } from '@/hooks/useAdminNav'
+import { useAuth } from '@/context/AuthContext'
+import { buildManagerNav } from '@/lib/rolePermissions'
 import type { AuditLogEntry } from '@/types'
 
-export function AuditLogsPage() {
-  const { navItems, setupComplete, ready } = useAdminNav()
+export function ManagerAuditLogsPage() {
+  const { user } = useAuth()
+  const navItems = buildManagerNav(user)
   const [logs, setLogs] = useState<AuditLogEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!ready) return
-    if (!setupComplete) {
-      setLoading(false)
-      return
-    }
     getCompanyAuditLogs()
       .then((res) => setLogs(res.data.results))
+      .catch((err) => setError(getApiErrorMessage(err)))
       .finally(() => setLoading(false))
-  }, [ready, setupComplete])
+  }, [])
 
-  if (!ready || loading) return <PageLoader />
-
-  if (!setupComplete) {
-    return <Navigate to="/admin" replace />
-  }
+  if (loading) return <PageLoader />
 
   return (
     <DashboardLayout
@@ -39,6 +34,10 @@ export function AuditLogsPage() {
       icon={ScrollText}
       navItems={navItems}
     >
+      {error && (
+        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      )}
+
       <AdminListPanel
         title="Recent Activity"
         description="Track uploads, approvals, and system events across your company."

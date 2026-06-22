@@ -151,10 +151,10 @@ export function LandingWorkspaces() {
             </div>
 
             <div className="relative hidden px-2 lg:block">
-              <div className="absolute left-[10%] right-[10%] top-[1.35rem] h-1 rounded-full bg-green-500" />
-              <div className="grid grid-cols-4 gap-4">
+              <div className="absolute left-[5%] right-[22%] top-[1.35rem] h-1 rounded-full bg-green-500" />
+              <div className="grid grid-cols-4 gap-4 px-8">
                 {workflowSteps.map((step, i) => (
-                  <div key={step} className="flex flex-col items-center text-center">
+                  <div key={step} className="flex flex-col">
                     <div
                       className={cn(
                         'relative z-10 flex h-11 w-11 items-center justify-center rounded-full',

@@ -15,7 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
-import { PageLoader } from '@/components/ui/spinner'
+import { FormPageShimmer } from '@/components/ui/shimmer'
 import { toast } from '@/lib/toast'
 
 export function SettingsPage() {
@@ -121,7 +121,22 @@ export function SettingsPage() {
     }
   }
 
-  if (loading) return <PageLoader />
+  if (loading) {
+    return (
+      <DashboardLayout
+        title="Settings"
+        subtitle="Email ingestion & notifications"
+        breadcrumb="Settings"
+        icon={Settings}
+        navItems={navItems}
+      >
+        <div className="grid gap-6 lg:grid-cols-2">
+          <FormPageShimmer fields={4} />
+          <FormPageShimmer fields={4} />
+        </div>
+      </DashboardLayout>
+    )
+  }
 
   return (
     <DashboardLayout

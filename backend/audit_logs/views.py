@@ -4,10 +4,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
+from platform_management.permissions import IsPlatformOwner
 from tenants.permissions import CanViewCompanyAuditLogs
 from .models import AuditLog
-from .serializers import AuditLogSerializer
-from django.db.models import Count
+from .serializers import AuditLogSerializer, PlatformAuditLogSerializer
 from django.core.paginator import Paginator
 
 @api_view(["GET"])
@@ -146,4 +146,45 @@ def audit_log_dashboard(request):
             latest_logs,
             many=True
         ).data
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsPlatformOwner])
+def platform_audit_log_list(request):
+    logs = AuditLog.objects.select_related(
+        "company",
+        "action_by",
+        "action_by__user",
+    ).order_by("-created_at")
+
+    action = request.GET.get("action")
+    company_id = request.GET.get("company_id")
+    start_date = request.GET.get("start_date")
+    end_date = request.GET.get("end_date")
+
+    if action:
+        logs = logs.filter(action=action)
+
+    if company_id:
+        logs = logs.filter(company_id=company_id)
+
+    if start_date:
+        logs = logs.filter(created_at__date__gte=start_date)
+
+    if end_date:
+        logs = logs.filter(created_at__date__lte=end_date)
+
+    page = request.GET.get("page", 1)
+
+    paginator = Paginator(logs, 10)
+    page_obj = paginator.get_page(page)
+
+    serializer = PlatformAuditLogSerializer(page_obj, many=True)
+
+    return Response({
+        "count": paginator.count,
+        "total_pages": paginator.num_pages,
+        "current_page": page_obj.number,
+        "results": serializer.data,
     })

@@ -1,6 +1,7 @@
-import { ClipboardList, LayoutDashboard, ScrollText, Wallet } from 'lucide-react'
+import { CheckCircle2, ClipboardList, LayoutDashboard, Wallet } from 'lucide-react'
 import type { NavItem } from '@/components/layout/DashboardLayout'
 import type { User, UserPermissions } from '@/types'
+import { approvedReportsPath, pendingReportsPath } from '@/lib/reportQueuePaths'
 
 export function hasPermission(user: User | null, permission: keyof UserPermissions) {
   return Boolean(user?.permissions?.[permission])
@@ -24,6 +25,21 @@ export function canApproveExpense(user: User | null) {
 
 export function canMarkPaid(user: User | null) {
   return hasPermission(user, 'can_mark_paid')
+}
+
+function appendReportQueueNav(items: NavItem[], user: User | null, baseRole: User['role']) {
+  if (!canApproveExpense(user) && !canMarkPaid(user)) return
+
+  items.push({
+    label: 'Pending Reports',
+    to: pendingReportsPath(baseRole),
+    icon: ClipboardList,
+  })
+  items.push({
+    label: 'Approved Reports',
+    to: approvedReportsPath(baseRole),
+    icon: CheckCircle2,
+  })
 }
 
 export function expensePathForUser(user: User | null) {
@@ -55,10 +71,7 @@ export function buildManagerNav(user: User | null): NavItem[] {
   if (canManageOwnExpenses(user)) {
     items.push({ label: 'My Expenses', to: '/manager/expenses', icon: Wallet })
   }
-  if (canApproveExpense(user)) {
-    items.push({ label: 'Pending Reports', to: '/manager/reports', icon: ClipboardList })
-  }
-  items.push({ label: 'Audit Logs', to: '/manager/audit-logs', icon: ScrollText })
+  appendReportQueueNav(items, user, 'MANAGER')
   return items
 }
 
@@ -69,9 +82,7 @@ export function buildAccountsNav(user: User | null): NavItem[] {
   if (canManageOwnExpenses(user)) {
     items.push({ label: 'My Expenses', to: '/accounts/expenses', icon: Wallet })
   }
-  if (canMarkPaid(user)) {
-    items.push({ label: 'Approved Reports', to: '/accounts/reports', icon: ClipboardList })
-  }
+  appendReportQueueNav(items, user, 'ACCOUNTS')
   return items
 }
 

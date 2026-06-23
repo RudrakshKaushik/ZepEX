@@ -1,18 +1,20 @@
-import { CheckCircle2, Clock, FileText, Upload, XCircle } from 'lucide-react'
+import { CheckCircle2, Clock, FileText, XCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getApproverDashboard, getCompanyAuditLogs } from '@/api'
-import { AdminAuditFeed } from '@/components/admin/AdminAuditFeed'
+import { getApproverDashboard } from '@/api'
 import { DashboardEmptyState } from '@/components/dashboard/DashboardEmptyState'
 import { DashboardPanel } from '@/components/dashboard/DashboardPanel'
 import { DashboardReportList } from '@/components/dashboard/DashboardReportList'
 import { MetricCard } from '@/components/MetricCard'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
-import { PageLoader } from '@/components/ui/spinner'
+import { DashboardPageShimmer } from '@/components/ui/shimmer'
 import { useAuth } from '@/context/AuthContext'
-import { buildManagerNav, canManageOwnExpenses } from '@/lib/rolePermissions'
-import type { AuditLogEntry, ExpenseReport } from '@/types'
+import { buildManagerNav, canApproveExpense, canManageOwnExpenses, canMarkPaid } from '@/lib/rolePermissions'
+import { approvedReportsPath, pendingReportsPath } from '@/lib/reportQueuePaths'
+import { loadApprovedQueueReports, loadPendingQueueReports } from '@/lib/reportQueue'
+import type { ExpenseReport } from '@/types'
+import UploadIcon from '@/assets/Upload.png'
 
 interface ApproverDashboardData {
   approver: {
@@ -39,27 +41,51 @@ export function ManagerDashboard() {
   const { user } = useAuth()
   const navItems = buildManagerNav(user)
   const [data, setData] = useState<ApproverDashboardData | null>(null)
-  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([])
+  const [approvedReports, setApprovedReports] = useState<ExpenseReport[]>([])
+  const [pendingReports, setPendingReports] = useState<ExpenseReport[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([
-      getApproverDashboard().then((res) => res.data),
-      getCompanyAuditLogs()
-        .then((res) => res.data.results.slice(0, 6))
-        .catch(() => [] as AuditLogEntry[]),
-    ])
-      .then(([dashboardData, logs]) => {
-        setData(dashboardData)
-        setAuditLogs(logs)
-      })
-      .finally(() => setLoading(false))
-  }, [])
+    const canApprove = canApproveExpense(user)
+    const canPay = canMarkPaid(user)
 
-  if (loading) return <PageLoader />
+    async function loadAll() {
+      setLoading(true)
+      try {
+        if (canApprove) {
+          const dashboardData = await getApproverDashboard().then((res) => res.data)
+          setData(dashboardData)
+        }
+
+        if (canApprove || canPay) {
+          const [pending, approved] = await Promise.all([
+            loadPendingQueueReports({ canApprove, canMarkPaid: canPay }),
+            loadApprovedQueueReports({ canApprove, canMarkPaid: canPay }),
+          ])
+          setPendingReports(pending.map((item) => item.report))
+          setApprovedReports(approved.map((item) => item.report))
+        }
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadAll()
+  }, [user])
+
+  if (loading) {
+    return (
+      <DashboardLayout
+        title="Manager Dashboard"
+        breadcrumb="Manager Dashboard"
+        navItems={navItems}
+      >
+        <DashboardPageShimmer />
+      </DashboardLayout>
+    )
+  }
 
   const metrics = data?.metrics
-  const pendingReports = data?.recent_pending_reports ?? []
   const departmentLabel = data?.approver.department ?? 'All departments'
 
   return (
@@ -107,8 +133,8 @@ export function ManagerDashboard() {
             action={
               <Button asChild>
                 <Link to="/manager/expenses">
-                  <Upload className="h-4 w-4" />
                   Upload receipt
+                  <img src={UploadIcon} alt="Upload" className="w-6 h-6" />
                 </Link>
               </Button>
             }
@@ -127,37 +153,59 @@ export function ManagerDashboard() {
         </div>
       )}
 
-      <div className="mt-6">
+      <div className="mt-6 space-y-6">
+        {(canApproveExpense(user) || canMarkPaid(user)) && (
         <DashboardPanel
-          title="Pending Employee Reports"
+          title="Pending Reports"
           action={
             <Button asChild>
-              <Link to="/manager/reports">View All Reports</Link>
+              <Link to={pendingReportsPath('MANAGER')}>View all</Link>
             </Button>
           }
         >
           {pendingReports.length > 0 ? (
             <DashboardReportList
               reports={pendingReports}
-              viewTo={() => '/manager/reports'}
+              viewTo={() => pendingReportsPath('MANAGER')}
             />
           ) : (
             <DashboardEmptyState
               image="folder"
               title="No pending reports"
-              description="Reports appear here after employees submit their monthly expense report. Uploaded receipts that are still in draft are not visible to managers until submitted."
+              description="Reports waiting for your approval or payment action will appear here."
               action={
                 <Button variant="outline" asChild>
-                  <Link to="/manager/reports">View all reports</Link>
+                  <Link to={pendingReportsPath('MANAGER')}>View all reports</Link>
                 </Button>
               }
             />
           )}
         </DashboardPanel>
-      </div>
+        )}
 
-      <div className="mt-6">
-        <AdminAuditFeed logs={auditLogs} viewAllTo="/manager/audit-logs" />
+        {(canApproveExpense(user) || canMarkPaid(user)) && (
+        <DashboardPanel
+          title="Approved Reports"
+          action={
+            <Button asChild variant="outline">
+              <Link to={approvedReportsPath('MANAGER')}>View all</Link>
+            </Button>
+          }
+        >
+            {approvedReports.length > 0 ? (
+              <DashboardReportList
+                reports={approvedReports.slice(0, 5)}
+                viewTo={() => approvedReportsPath('MANAGER')}
+              />
+            ) : (
+              <DashboardEmptyState
+                image="folder"
+                title="No approved reports yet"
+                description="Reports you have approved or marked as paid will appear here."
+              />
+            )}
+        </DashboardPanel>
+        )}
       </div>
     </DashboardLayout>
   )

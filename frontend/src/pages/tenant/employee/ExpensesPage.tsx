@@ -1,15 +1,20 @@
-import { AlertTriangle, FileText, Plus, Send, Trash2, Upload, X } from 'lucide-react'
+import { AlertTriangle, FileText, Send, Trash2, Upload, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import {
   deleteLineItem,
   getCurrentMonthReport,
+  getMyUploadedExpenses,
   submitMonthlyReport,
   uploadReceipt,
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
 import { StatusBadge } from '@/components/StatusBadge'
-import { WorkflowTimeline } from '@/components/reports/WorkflowTimeline'
+import { DashboardEmptyState } from '@/components/dashboard/DashboardEmptyState'
+import { DashboardPanel } from '@/components/dashboard/DashboardPanel'
+import { ExpenseReportTable } from '@/components/reports/ExpenseReportTable'
+import { ReportFiltersBar } from '@/components/reports/ReportFiltersBar'
+import { ReportDetail } from '@/components/ReportDetail'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { useAuth } from '@/context/AuthContext'
 import { defaultHomeForUser } from '@/lib/auth'
@@ -21,7 +26,6 @@ import {
   navItemsForUser,
 } from '@/lib/rolePermissions'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -29,11 +33,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { PageLoader } from '@/components/ui/spinner'
+import { TableShimmer } from '@/components/ui/shimmer'
 import type { ExpenseReport } from '@/types'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { normalizeCurrentMonthReport } from '@/lib/expenseReport'
+import {
+  hasEmployeeExpenseFilters,
+  toEmployeeExpenseApiParams,
+  type EmployeeExpenseFilters,
+} from '@/lib/reportFilters'
 import { toast } from '@/lib/toast'
+import UploadIcon from '@/assets/Upload.png'
 
 function formatUploadError(message: string) {
   if (message.includes('company role is not assigned')) {
@@ -48,6 +58,86 @@ function formatUploadError(message: string) {
   return message
 }
 
+function MyExpenseExpandedPanel({
+  report,
+  canEditReceipts,
+  canSubmitReport,
+  submitting,
+  onSubmit,
+  onDeleteLineItem,
+}: {
+  report: ExpenseReport
+  canEditReceipts: boolean
+  canSubmitReport: boolean
+  submitting: boolean
+  onSubmit: () => void
+  onDeleteLineItem: (lineItemId: string) => void
+}) {
+  return (
+    <div className="space-y-4">
+      <ReportDetail report={report} showEmployee={false} />
+
+      {canSubmitReport && (
+        <div className="flex justify-end">
+          <Button variant="success" disabled={submitting} onClick={onSubmit}>
+            <Send className="h-4 w-4" />
+            {submitting ? 'Submitting...' : 'Submit report'}
+          </Button>
+        </div>
+      )}
+
+      {!report.receipts.length ? (
+        <p className="text-sm text-muted-foreground">No receipts uploaded yet.</p>
+      ) : (
+        <div className="space-y-4">
+          {report.receipts.map((receipt) => (
+            <div key={receipt.id} className="rounded-xl border bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="font-medium">{receipt.vendor_name || 'Processing...'}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {formatCurrency(receipt.total_amount, receipt.currency)} ·{' '}
+                    {formatDate(receipt.invoice_date)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {receipt.has_any_violation && (
+                    <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  )}
+                  <StatusBadge status={receipt.status} />
+                </div>
+              </div>
+              {receipt.line_items.map((item) => (
+                <div
+                  key={item.id}
+                  className="mt-3 flex items-start justify-between gap-2 rounded-lg bg-muted/40 p-3 text-sm"
+                >
+                  <div>
+                    <p className="font-medium capitalize">
+                      {item.category.replace(/_/g, ' ')}
+                    </p>
+                    <p className="line-clamp-2 text-muted-foreground">{item.description}</p>
+                    <p className="mt-1">{formatCurrency(item.amount, receipt.currency)}</p>
+                  </div>
+                  {canEditReceipts && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => onDeleteLineItem(item.id)}
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ExpensesPage() {
   const { user } = useAuth()
   const location = useLocation()
@@ -56,27 +146,27 @@ export function ExpensesPage() {
   const allowSubmit = canSubmitExpense(user)
   const expensePath = expensePathForUser(user)
 
-  const [report, setReport] = useState<ExpenseReport | null>(null)
+  const [reports, setReports] = useState<ExpenseReport[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
-  const [error, setError] = useState('')
-  const [uploadError, setUploadError] = useState('')
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [dragOver, setDragOver] = useState(false)
+  const [draftFilters, setDraftFilters] = useState<EmployeeExpenseFilters>({})
+  const [appliedFilters, setAppliedFilters] = useState<EmployeeExpenseFilters>({})
   const fileRef = useRef<HTMLInputElement>(null)
+
+  const filtersActive = hasEmployeeExpenseFilters(appliedFilters)
 
   const resetUploadModal = () => {
     setSelectedFiles([])
-    setUploadError('')
     setDragOver(false)
     if (fileRef.current) fileRef.current.value = ''
   }
 
   const handleFileSelect = (files: FileList | null) => {
     if (!files?.length) return
-    setUploadError('')
     setSelectedFiles(Array.from(files))
   }
 
@@ -88,14 +178,35 @@ export function ExpensesPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
+      if (filtersActive) {
+        const { data } = await getMyUploadedExpenses(toEmployeeExpenseApiParams(appliedFilters))
+        setReports(
+          data.results.map((report) => ({
+            ...report,
+            employee_email: report.employee_email || user?.email || '',
+          })),
+        )
+        return
+      }
+
       const { data } = await getCurrentMonthReport()
-      setReport(normalizeCurrentMonthReport(data))
+      const current = normalizeCurrentMonthReport(data)
+      setReports(
+        current?.id
+          ? [
+              {
+                ...current,
+                employee_email: current.employee_email || user?.email || '',
+              },
+            ]
+          : [],
+      )
     } catch {
-      setReport(null)
+      setReports([])
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [appliedFilters, filtersActive, user?.email])
 
   useEffect(() => {
     load()
@@ -104,7 +215,6 @@ export function ExpensesPage() {
   const handleConfirmUpload = async () => {
     if (!selectedFiles.length) return
     setUploading(true)
-    setUploadError('')
     try {
       const errors: string[] = []
       let successCount = 0
@@ -119,7 +229,6 @@ export function ExpensesPage() {
         }
       }
       if (errors.length) {
-        setUploadError(errors[0])
         toast.error(formatUploadError(errors[0]))
       }
       if (successCount && !errors.length) {
@@ -130,14 +239,10 @@ export function ExpensesPage() {
         toast.success(`${successCount} receipt(s) uploaded. Some AI extractions failed.`)
         setUploadOpen(false)
         resetUploadModal()
-      } else if (!successCount && errors.length) {
-        // error toast already shown above
       }
       await load()
     } catch (err) {
-      const message = formatUploadError(getApiErrorMessage(err))
-      setUploadError(message)
-      toast.error(message)
+      toast.error(formatUploadError(getApiErrorMessage(err)))
     } finally {
       setUploading(false)
     }
@@ -145,15 +250,12 @@ export function ExpensesPage() {
 
   const handleSubmit = async () => {
     setSubmitting(true)
-    setError('')
     try {
       await submitMonthlyReport()
       toast.success('Monthly report submitted to your manager.')
       await load()
     } catch (err) {
-      const message = getApiErrorMessage(err)
-      setError(message)
-      toast.error(message)
+      toast.error(getApiErrorMessage(err))
     } finally {
       setSubmitting(false)
     }
@@ -164,12 +266,9 @@ export function ExpensesPage() {
       await deleteLineItem(lineItemId)
       await load()
     } catch (err) {
-      setError(getApiErrorMessage(err))
+      toast.error(getApiErrorMessage(err))
     }
   }
-
-  const canSubmitReport =
-    allowSubmit && report && !['SUBMITTED', 'PENDING_ACCOUNTS', 'PAID'].includes(report.status)
 
   if (!canManageOwnExpenses(user)) {
     return <Navigate to={defaultHomeForUser(user!)} replace />
@@ -179,117 +278,90 @@ export function ExpensesPage() {
     return <Navigate to={expensePath} replace />
   }
 
-  if (loading) return <PageLoader />
+  if (loading) {
+    return (
+      <DashboardLayout title="My Expenses" subtitle="Upload receipts for this month" navItems={navItems}>
+        <TableShimmer rows={3} />
+      </DashboardLayout>
+    )
+  }
+
+  const displayReports = reports
 
   return (
     <DashboardLayout title="My Expenses" subtitle="Upload receipts for this month" navItems={navItems}>
-      {error && (
-        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-      )}
-      {report?.receipts?.length && canSubmitReport && (
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Your manager will only see this report after you click{' '}
-          <span className="font-medium">Submit report</span>.
-        </div>
-      )}
+      <ReportFiltersBar
+        mode="employee"
+        values={draftFilters}
+        onChange={setDraftFilters}
+        onApply={() => setAppliedFilters(draftFilters)}
+        onClear={() => {
+          setDraftFilters({})
+          setAppliedFilters({})
+        }}
+        disabled={uploading || submitting}
+      />
 
-      <Card>
-        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <CardTitle>Receipts this month ({report?.receipts?.length ?? 0})</CardTitle>
-            {report && <StatusBadge status={report.status} />}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {canSubmitReport && (
-              <Button
-                variant="success"
-                disabled={submitting || !report?.receipts?.length}
-                onClick={handleSubmit}
-              >
-                <Send className="h-4 w-4" />
-                {submitting ? 'Submitting...' : 'Submit report'}
-              </Button>
-            )}
-            {allowUpload && (
-              <Button
-                onClick={() => {
-                  resetUploadModal()
-                  setUploadOpen(true)
-                }}
-              >
-                <Plus className="h-4 w-4" />
-                Upload receipt
-              </Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {!report?.receipts?.length ? (
-            <p className="text-sm text-muted-foreground">No receipts uploaded yet.</p>
-          ) : (
-            <div className="space-y-4">
-              {report.receipts.map((receipt) => (
-                <div key={receipt.id} className="rounded-xl border p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <p className="font-medium">{receipt.vendor_name || 'Processing...'}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {formatCurrency(receipt.total_amount, receipt.currency)} ·{' '}
-                        {formatDate(receipt.invoice_date)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {receipt.has_any_violation && (
-                        <AlertTriangle className="h-4 w-4 text-amber-500" />
-                      )}
-                      <StatusBadge status={receipt.status} />
-                    </div>
-                  </div>
-                  {receipt.line_items.map((item) => (
-                    <div
-                      key={item.id}
-                      className="mt-3 flex items-start justify-between gap-2 rounded-lg bg-muted/40 p-3 text-sm"
-                    >
-                      <div>
-                        <p className="font-medium capitalize">
-                          {item.category.replace(/_/g, ' ')}
-                        </p>
-                        <p className="text-muted-foreground line-clamp-2">{item.description}</p>
-                        <p className="mt-1">
-                          {formatCurrency(item.amount, receipt.currency)}
-                        </p>
-                      </div>
-                      {canSubmitReport && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleDeleteLineItem(item.id)}
-                        >
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
+        {allowUpload && (
+          <Button
+            onClick={() => {
+              resetUploadModal()
+              setUploadOpen(true)
+            }}
+          >
+            Upload receipt
+            <img src={UploadIcon} alt="Upload" className="w-6 h-6" />
+          </Button>
+        )}
+      </div>
 
-      {report?.workflow_timeline && report.workflow_timeline.length > 0 && (
-        <div className="mt-6">
-          <WorkflowTimeline timeline={report.workflow_timeline} />
-        </div>
-      )}
+      {!displayReports.length ? (
+        <DashboardPanel title="My expenses">
+          <DashboardEmptyState
+            image="folder"
+            title={filtersActive ? 'No matching reports' : 'No expense report yet'}
+            description={
+              filtersActive
+                ? 'Try adjusting your filters or clear them to view the current month report.'
+                : 'Upload a receipt to start your monthly expense report.'
+            }
+            action={
+              !filtersActive && allowUpload ? (
+                <Button
+                  onClick={() => {
+                    resetUploadModal()
+                    setUploadOpen(true)
+                  }}
+                >
+                  Upload receipt
+                  <img src={UploadIcon} alt="Upload" className="w-6 h-6" />
+                </Button>
+              ) : undefined
+            }
+          />
+        </DashboardPanel>
+      ) : (
+        <ExpenseReportTable
+          reports={displayReports}
+          renderExpanded={(expandedReport) => {
+            const isDraftReport = expandedReport.status === 'DRAFT'
+            const canSubmitReport =
+              allowSubmit && isDraftReport && (expandedReport.receipts?.length ?? 0) > 0
+            const canEditReceipts = allowSubmit && isDraftReport
 
-      {report?.latest_rejection_reason && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
-          <p className="font-medium">
-            Rejected by {report.latest_rejection_reason.rejected_by}
-          </p>
-          <p className="mt-1">{report.latest_rejection_reason.reason}</p>
-        </div>
+            return (
+              <MyExpenseExpandedPanel
+                report={expandedReport}
+                canEditReceipts={canEditReceipts}
+                canSubmitReport={canSubmitReport}
+                submitting={submitting}
+                onSubmit={handleSubmit}
+                onDeleteLineItem={handleDeleteLineItem}
+              />
+            )
+          }}
+        />
       )}
 
       <Dialog
@@ -343,10 +415,7 @@ export function ExpensesPage() {
             {selectedFiles.length > 0 && (
               <ul className="space-y-2">
                 {selectedFiles.map((file, index) => (
-                  <li
-                    key={`${file.name}-${index}`}
-                    className="flex items-center gap-2 text-sm"
-                  >
+                  <li key={`${file.name}-${index}`} className="flex items-center gap-2 text-sm">
                     <FileText className="h-4 w-4 shrink-0 text-red-500" />
                     <span className="min-w-0 flex-1 truncate text-gray-700" title={file.name}>
                       {file.name}
@@ -362,15 +431,6 @@ export function ExpensesPage() {
                   </li>
                 ))}
               </ul>
-            )}
-
-            {uploadError && (
-              <div className="min-w-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                <p className="font-medium">Upload failed</p>
-                <p className="mt-1 text-xs leading-relaxed break-words">
-                  {formatUploadError(uploadError)}
-                </p>
-              </div>
             )}
           </div>
 

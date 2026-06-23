@@ -1,4 +1,4 @@
-import { Pencil, Plus, Power, PowerOff, Trash2, UserPlus, Users } from 'lucide-react'
+import { Pencil, Power, PowerOff, Trash2, Users } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
   activateCompanyUser,
@@ -30,11 +30,13 @@ import {
 import { Input } from '@/components/ui/input'
 import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
-import { PageLoader } from '@/components/ui/spinner'
+import { AdminListPanelShimmer } from '@/components/ui/shimmer'
 import { PaginationControls } from '@/components/ui/pagination-controls'
 import type { CompanyRole, DepartmentRecord, EmployeeRecord } from '@/types'
 import { fetchAllPages } from '@/lib/pagination'
 import { formatDate } from '@/lib/utils'
+import UploadIcon from '@/assets/upload.png'
+import AssignIcon from '@/assets/assign.png'
 
 const roles = ['MANAGER', 'EMPLOYEE', 'ACCOUNTS'] as const
 
@@ -274,7 +276,19 @@ export function EmployeesPage() {
     (e) => !e.company_role_name && ['EMPLOYEE', 'MANAGER', 'ACCOUNTS'].includes(e.role),
   ).length
 
-  if (loading) return <PageLoader />
+  if (loading) {
+    return (
+      <DashboardLayout
+        title="Employees"
+        subtitle="Manage users and assign managers"
+        breadcrumb="Employees"
+        icon={Users}
+        navItems={navItems}
+      >
+        <AdminListPanelShimmer />
+      </DashboardLayout>
+    )
+  }
 
   return (
     <DashboardLayout
@@ -285,13 +299,13 @@ export function EmployeesPage() {
       navItems={navItems}
       headerAction={
         <>
-          <Button variant="outline" onClick={() => { setError(''); setAssignOpen(true) }}>
-            <UserPlus className="h-4 w-4" />
+          <Button variant="secondary" onClick={() => { setError(''); setAssignOpen(true) }}>
             Assign Manager
+            <img src={AssignIcon} alt="Assign" className="w-6 h-6" />
           </Button>
           <Button onClick={() => { setError(''); resetForm(); setCreateOpen(true) }}>
-            <Plus className="h-4 w-4" />
             Create Employee
+            <img src={UploadIcon} alt="Upload" className="w-6 h-6" />
           </Button>
         </>
       }

@@ -5,9 +5,8 @@ import { AdminAuditFeed } from '@/components/admin/AdminAuditFeed'
 import { AdminSetupChecklist } from '@/components/admin/AdminSetupChecklist'
 import { MetricCard } from '@/components/MetricCard'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
-import { PageLoader } from '@/components/ui/spinner'
+import { DashboardPageShimmer } from '@/components/ui/shimmer'
 import { useAdminNav, invalidateAdminSetupCache } from '@/hooks/useAdminNav'
-import { isSetupComplete } from '@/lib/adminSetup'
 import { formatMetricDisplay } from '@/lib/format'
 import type { AuditLogEntry } from '@/types'
 
@@ -28,20 +27,28 @@ export function AdminDashboard() {
     getCompanyAdminDashboard()
       .then(async (res) => {
         setData(res.data)
-        const complete = isSetupComplete(res.data.setup_status ?? {})
-        if (complete) {
-          const logsRes = await getCompanyAuditLogs()
+        const logsRes = await getCompanyAuditLogs().catch(() => null)
+        if (logsRes) {
           setAuditLogs(logsRes.data.results.slice(0, 6))
         }
       })
       .finally(() => setLoading(false))
   }, [])
 
-  if (loading) return <PageLoader />
+  if (loading) {
+    return (
+      <DashboardLayout
+        title="Company Admin"
+        breadcrumb="Company Admin"
+        navItems={navItems}
+      >
+        <DashboardPageShimmer />
+      </DashboardLayout>
+    )
+  }
 
   const metrics = data?.metrics ?? {}
   const setup = data?.setup_status ?? {}
-  const setupComplete = isSetupComplete(setup)
 
   return (
     <DashboardLayout
@@ -82,11 +89,9 @@ export function AdminDashboard() {
         <AdminSetupChecklist setup={setup} />
       </div>
 
-      {setupComplete && (
-        <div className="mt-6">
-          <AdminAuditFeed logs={auditLogs} />
-        </div>
-      )}
+      <div className="mt-6">
+        <AdminAuditFeed logs={auditLogs} />
+      </div>
     </DashboardLayout>
   )
 }

@@ -310,6 +310,7 @@ def approver_dashboard(request):
         ).data,
     })
 
+from expenses.report_utils import get_reports_awaiting_payment
 from expenses.models import ExpenseReport, ApprovalWorkflow
 from tenants.models import CompanyRole
 
@@ -335,15 +336,19 @@ def payment_dashboard(request):
         company=profile.company
     )
 
-    approved_reports = reports.filter(
-        status=ExpenseReport.STATUS_APPROVED
-    ).select_related(
+    approved_reports = get_reports_awaiting_payment(profile.company).select_related(
         "employee",
         "employee__user",
-        "department"
+        "department",
+        "current_workflow_step",
+        "current_workflow_step__approver_role",
     ).prefetch_related(
         "receipts",
-        "receipts__line_items"
+        "receipts__line_items",
+        "approval_history",
+        "approval_history__action_by",
+        "approval_history__action_by__user",
+        "approval_history__action_by__company_role",
     ).order_by("-updated_at")
 
     paid_reports = reports.filter(

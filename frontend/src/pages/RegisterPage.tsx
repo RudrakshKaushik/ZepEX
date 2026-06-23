@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import logo from '@/assets/logo.png'
 
 export function RegisterPage() {
   const [loading, setLoading] = useState(false)
@@ -63,6 +64,9 @@ export function RegisterPage() {
     <AuthSplitLayout heroImage={registerImg}>
       <Card>
         <CardHeader>
+          <div className="mb-8 flex items-center gap-2">
+            <img src={logo} alt="ZepEX" className="h-full w-25" />
+          </div>
           <CardTitle>Register your company</CardTitle>
           <CardDescription>
             Submit a registration request. Our team will review and approve your account.

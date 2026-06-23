@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from '@/context/AuthContext'
 import { ProtectedRoute } from '@/routes/ProtectedRoute'
+import { GuestOnlyRoute } from '@/routes/GuestOnlyRoute'
 import { LandingPage } from '@/pages/LandingPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
@@ -18,10 +19,10 @@ import { AuditLogsPage } from '@/pages/tenant/admin/AuditLogsPage'
 import { EmployeeDashboard } from '@/pages/tenant/employee/EmployeeDashboard'
 import { ExpensesPage } from '@/pages/tenant/employee/ExpensesPage'
 import { ManagerDashboard } from '@/pages/tenant/manager/ManagerDashboard'
-import { ManagerReportsPage } from '@/pages/tenant/manager/ManagerReportsPage'
-import { ManagerAuditLogsPage } from '@/pages/tenant/manager/ManagerAuditLogsPage'
 import { AccountsDashboard } from '@/pages/tenant/accounts/AccountsDashboard'
-import { AccountsReportsPage } from '@/pages/tenant/accounts/AccountsReportsPage'
+import { PendingReportsPage } from '@/pages/tenant/reports/PendingReportsPage'
+import { ApprovedReportsPage } from '@/pages/tenant/reports/ApprovedReportsPage'
+import { ReportsRedirect } from '@/pages/tenant/reports/ReportsRedirect'
 import { RolesPage } from '@/pages/tenant/admin/RolesPage'
 import { WorkflowPage } from '@/pages/tenant/admin/WorkflowPage'
 import { AdminReportsPage } from '@/pages/tenant/admin/AdminReportsPage'
@@ -35,10 +36,31 @@ export default function App() {
         <Toaster />
         <Routes>
           <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={<LoginPage />} />
+          <Route
+            path="/login"
+            element={
+              <GuestOnlyRoute>
+                <LoginPage />
+              </GuestOnlyRoute>
+            }
+          />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          <Route path="/platform/login" element={<PlatformLoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
+          <Route
+            path="/platform/login"
+            element={
+              <GuestOnlyRoute>
+                <PlatformLoginPage />
+              </GuestOnlyRoute>
+            }
+          />
+          <Route
+            path="/register"
+            element={
+              <GuestOnlyRoute>
+                <RegisterPage />
+              </GuestOnlyRoute>
+            }
+          />
 
           <Route
             element={
@@ -104,10 +126,10 @@ export default function App() {
             />
           </Route>
 
-          <Route element={<ProtectedRoute allowedRoles={['MANAGER']} requiredPermission="can_approve_expense" />}>
+          <Route element={<ProtectedRoute allowedRoles={['MANAGER']} />}>
             <Route path="/manager" element={<ManagerDashboard />} />
-            <Route path="/manager/reports" element={<ManagerReportsPage />} />
-            <Route path="/manager/audit-logs" element={<ManagerAuditLogsPage />} />
+            <Route path="/manager/audit-logs" element={<Navigate to="/manager" replace />} />
+            <Route path="/manager/reports" element={<ReportsRedirect role="manager" />} />
             <Route
               path="/manager-dashboard"
               element={<Navigate to="/manager" replace />}
@@ -118,9 +140,9 @@ export default function App() {
             />
           </Route>
 
-          <Route element={<ProtectedRoute allowedRoles={['ACCOUNTS']} requiredPermission="can_mark_paid" />}>
+          <Route element={<ProtectedRoute allowedRoles={['ACCOUNTS']} />}>
             <Route path="/accounts" element={<AccountsDashboard />} />
-            <Route path="/accounts/reports" element={<AccountsReportsPage />} />
+            <Route path="/accounts/reports" element={<ReportsRedirect role="accounts" />} />
             <Route
               path="/accounts-dashboard"
               element={<Navigate to="/accounts" replace />}
@@ -129,6 +151,13 @@ export default function App() {
               path="/payment-dashboard"
               element={<Navigate to="/accounts" replace />}
             />
+          </Route>
+
+          <Route element={<ProtectedRoute anyPermissions={['can_approve_expense', 'can_mark_paid']} />}>
+            <Route path="/manager/reports/pending" element={<PendingReportsPage />} />
+            <Route path="/accounts/reports/pending" element={<PendingReportsPage />} />
+            <Route path="/manager/reports/approved" element={<ApprovedReportsPage />} />
+            <Route path="/accounts/reports/approved" element={<ApprovedReportsPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

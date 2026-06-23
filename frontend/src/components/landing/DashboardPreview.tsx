@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
+import uploadSubmit from '@/assets/uploadSubmit.png'
 
 type PreviewTab = 'employee' | 'admin'
 
@@ -97,6 +98,7 @@ function EmployeePreview() {
         </div>
         <div className="mt-3 rounded-lg bg-indigo-600 px-3 py-2 text-center text-xs font-medium text-white sm:mt-4 sm:inline-block sm:px-4 sm:text-sm">
           Upload receipts & submit report
+          <img src={uploadSubmit} alt="Upload" className="w-4 h-4" />
         </div>
         <div className="mt-4 space-y-2">
           <p className="text-xs font-medium text-slate-700 sm:text-sm">Current month report</p>

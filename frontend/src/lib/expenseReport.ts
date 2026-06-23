@@ -15,5 +15,6 @@ export function normalizeCurrentMonthReport(data: CurrentMonthReportResponse): E
     ...data,
     id: data.id ?? data.report_id ?? '',
     receipts,
+    workflow_timeline: data.workflow_timeline ?? [],
   } as ExpenseReport
 }

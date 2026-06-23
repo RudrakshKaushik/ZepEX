@@ -7,9 +7,11 @@ import { DashboardReportList } from '@/components/dashboard/DashboardReportList'
 import { MetricCard } from '@/components/MetricCard'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
-import { PageLoader } from '@/components/ui/spinner'
+import { DashboardPageShimmer } from '@/components/ui/shimmer'
 import { useAuth } from '@/context/AuthContext'
-import { buildAccountsNav } from '@/lib/rolePermissions'
+import { buildAccountsNav, canApproveExpense, canMarkPaid } from '@/lib/rolePermissions'
+import { approvedReportsPath, pendingReportsPath } from '@/lib/reportQueuePaths'
+import { loadApprovedQueueReports, loadPendingQueueReports } from '@/lib/reportQueue'
 import { loadApprovedReportsForPayment } from '@/lib/accountsReports'
 import type { ExpenseReport } from '@/types'
 import { formatCurrency } from '@/lib/utils'
@@ -19,18 +21,48 @@ export function AccountsDashboard() {
   const navItems = buildAccountsNav(user)
   const [payment, setPayment] = useState<Awaited<ReturnType<typeof loadApprovedReportsForPayment>>['payment'] | null>(null)
   const [approvedReports, setApprovedReports] = useState<ExpenseReport[]>([])
+  const [pendingReports, setPendingReports] = useState<ExpenseReport[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    loadApprovedReportsForPayment()
-      .then((data) => {
-        setPayment(data.payment)
-        setApprovedReports(data.approvedReports)
-      })
-      .finally(() => setLoading(false))
-  }, [])
+    async function loadAll() {
+      setLoading(true)
+      try {
+        const paymentResult = await loadApprovedReportsForPayment()
+        setPayment(paymentResult.payment)
 
-  if (loading) return <PageLoader />
+        const canApprove = canApproveExpense(user)
+        const canPay = canMarkPaid(user)
+
+        if (canApprove || canPay) {
+          const [pending, approved] = await Promise.all([
+            loadPendingQueueReports({ canApprove, canMarkPaid: canPay }),
+            loadApprovedQueueReports({ canApprove, canMarkPaid: canPay }),
+          ])
+          setPendingReports(pending.map((item) => item.report))
+          setApprovedReports(approved.map((item) => item.report))
+        } else {
+          setApprovedReports(paymentResult.approvedReports)
+        }
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadAll()
+  }, [user])
+
+  if (loading) {
+    return (
+      <DashboardLayout
+        title="Accounts Dashboard"
+        breadcrumb="Accounts Dashboard"
+        navItems={navItems}
+      >
+        <DashboardPageShimmer />
+      </DashboardLayout>
+    )
+  }
 
   const metrics = payment?.metrics
   const recentPaid = payment?.recent_paid_reports ?? []
@@ -70,27 +102,53 @@ export function AccountsDashboard() {
       </div>
 
       <div className="mt-6 space-y-6">
+        {(canApproveExpense(user) || canMarkPaid(user)) && (
+          <DashboardPanel
+            title="Pending Reports"
+            action={
+              <Button asChild variant="outline">
+                <Link to={pendingReportsPath('ACCOUNTS')}>Review all</Link>
+              </Button>
+            }
+          >
+            {pendingReports.length > 0 ? (
+              <DashboardReportList
+                reports={pendingReports.slice(0, 5)}
+                viewTo={() => pendingReportsPath('ACCOUNTS')}
+              />
+            ) : (
+              <DashboardEmptyState
+                image="folder"
+                title="No pending reports"
+                description="Reports waiting for your approval or payment action will appear here."
+              />
+            )}
+          </DashboardPanel>
+        )}
+
+        {(canApproveExpense(user) || canMarkPaid(user)) && (
         <DashboardPanel
           title="Approved Reports"
           action={
             <Button asChild>
-              <Link to="/accounts/reports">Mark as paid</Link>
+              <Link to={approvedReportsPath('ACCOUNTS')}>View all</Link>
             </Button>
           }
         >
           {approvedReports.length > 0 ? (
             <DashboardReportList
               reports={approvedReports.slice(0, 5)}
-              viewTo={() => '/accounts/reports'}
+              viewTo={() => approvedReportsPath('ACCOUNTS')}
             />
           ) : (
             <DashboardEmptyState
               image="folder"
               title="No approved reports yet"
-              description="Manager-approved expense reports will appear here ready for payment. Ensure your workflow ends with the manager step so reports are fully approved before they reach Accounts."
+              description="Reports you have approved or marked as paid will appear here."
             />
           )}
         </DashboardPanel>
+        )}
 
         <DashboardPanel title="Recently Paid">
           {recentPaid.length > 0 ? (

@@ -16,7 +16,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
-import { PageLoader } from '@/components/ui/spinner'
+import { FormPageShimmer } from '@/components/ui/shimmer'
 import { Textarea } from '@/components/ui/textarea'
 import { useAuth } from '@/context/AuthContext'
 import { useAdminNav } from '@/hooks/useAdminNav'
@@ -168,7 +168,16 @@ export function ProfilePage() {
   }
 
   if (loading || (user?.role === 'COMPANY_ADMIN' && !adminNavReady)) {
-    return <PageLoader />
+    return (
+      <DashboardLayout
+        title="Profile"
+        breadcrumb="Profile"
+        icon={User}
+        navItems={getNavForUser(user)}
+      >
+        <FormPageShimmer fields={6} />
+      </DashboardLayout>
+    )
   }
 
   const email = profile?.email ?? user?.email ?? ''

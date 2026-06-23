@@ -28,9 +28,7 @@ export async function loadApprovedReportsForPayment(): Promise<{
 }> {
   const { data } = await getPaymentDashboard()
   const payment = data as AccountsDashboardData
-  const approvedReports = (payment.approved_reports ?? []).filter(
-    (report) => report.status === 'APPROVED',
-  )
+  const approvedReports = payment.approved_reports ?? []
 
   return { payment, approvedReports }
 }

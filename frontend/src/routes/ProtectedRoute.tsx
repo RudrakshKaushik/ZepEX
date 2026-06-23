@@ -1,7 +1,7 @@
 import { Navigate, Outlet } from 'react-router-dom'
 import { getStoredToken } from '@/api/client'
 import { useAuth } from '@/context/AuthContext'
-import { PageLoader } from '@/components/ui/spinner'
+import { PageLoader } from '@/components/ui/shimmer'
 import { canAccessRoute, defaultHomeForUser } from '@/lib/auth'
 import type { UserPermissions, UserRole } from '@/types'
 

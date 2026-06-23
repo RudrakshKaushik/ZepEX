@@ -1,4 +1,4 @@
-import { CheckCircle2, Clock, FileText, Upload, XCircle } from 'lucide-react'
+import { CheckCircle2, Clock, FileText, XCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
@@ -11,9 +11,10 @@ import { ReportDetail } from '@/components/ReportDetail'
 import { StatusBadge } from '@/components/StatusBadge'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
-import { PageLoader } from '@/components/ui/spinner'
+import { DashboardPageShimmer } from '@/components/ui/shimmer'
 import { buildEmployeeNav } from '@/lib/rolePermissions'
 import type { ExpenseReport } from '@/types'
+import UploadIcon from '@/assets/Upload.png'
 
 interface EmployeeDashboardData {
   user: { name: string; email: string; role: string; company: string; department: string }
@@ -44,7 +45,17 @@ export function EmployeeDashboard() {
     return <Navigate to="/manager" replace />
   }
 
-  if (loading) return <PageLoader />
+  if (loading) {
+    return (
+      <DashboardLayout
+        title="Employee Dashboard"
+        breadcrumb="Employee Dashboard"
+        navItems={navItems}
+      >
+        <DashboardPageShimmer />
+      </DashboardLayout>
+    )
+  }
 
   const metrics = data?.metrics
   const currentReport = data?.current_month_report?.report
@@ -85,8 +96,8 @@ export function EmployeeDashboard() {
           action={
             <Button asChild>
               <Link to="/employee/expenses">
-                <Upload className="h-4 w-4" />
                 Upload receipt
+                <img src={UploadIcon} alt="Upload" className="w-6 h-6" />
               </Link>
             </Button>
           }
@@ -115,8 +126,8 @@ export function EmployeeDashboard() {
               action={
                 <Button asChild>
                   <Link to="/employee/expenses">
-                    <Upload className="h-4 w-4" />
                     Upload receipt
+                    <img src={UploadIcon} alt="Upload" className="w-6 h-6" />
                   </Link>
                 </Button>
               }

@@ -6,7 +6,7 @@ const Card = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
     <div
       ref={ref}
       className={cn(
-        'rounded-lg border border-gray-200 bg-card text-card-foreground shadow-[0_1px_3px_rgba(0,0,0,0.06)]',
+        ' bg-card text-card-foreground ',
         className,
       )}
       {...props}
@@ -17,7 +17,7 @@ Card.displayName = 'Card'
 
 const CardHeader = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn('flex flex-col gap-1.5 p-6 pb-4', className)} {...props} />
+    <div ref={ref} className={cn('flex flex-col gap-1.5 pb-4', className)} {...props} />
   ),
 )
 CardHeader.displayName = 'CardHeader'
@@ -43,7 +43,7 @@ CardDescription.displayName = 'CardDescription'
 
 const CardContent = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn('p-6 pt-0', className)} {...props} />
+    <div ref={ref} className={cn('pt-0', className)} {...props} />
   ),
 )
 CardContent.displayName = 'CardContent'

@@ -31,7 +31,7 @@ export function invalidateAdminSetupCache() {
 }
 
 export function useAdminNav() {
-  const [navItems, setNavItems] = useState<NavItem[]>(() => buildAdminNav(false))
+  const [navItems, setNavItems] = useState<NavItem[]>(() => buildAdminNav())
   const [setupComplete, setSetupComplete] = useState(false)
   const [setupStatus, setSetupStatus] = useState<Record<string, boolean>>({})
   const [ready, setReady] = useState(false)
@@ -41,7 +41,7 @@ export function useAdminNav() {
       const complete = isSetupComplete(status)
       setSetupStatus(status)
       setSetupComplete(complete)
-      setNavItems(buildAdminNav(complete))
+      setNavItems(buildAdminNav())
       setReady(true)
     })
   }, [])

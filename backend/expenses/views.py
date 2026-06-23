@@ -31,7 +31,7 @@ from .serializers import ExpenseReportSerializer
 from django.conf import settings
 from django.utils import timezone
 from .tasks import process_receipt_ai_task
-from .report_utils import get_or_create_current_month_report
+from .report_utils import get_or_create_current_month_report, get_reports_awaiting_payment, is_payment_queue_role
 from audit_logs.utils import create_audit_log
 from .models import ExpenseLineItem
 from .tasks import send_report_status_email_task
@@ -472,6 +472,7 @@ def my_pending_approval_reports(request):
     reports = ExpenseReport.objects.filter(
         company=profile.company,
         current_workflow_step__approver_role=profile.company_role,
+        current_workflow_step__approver_role__can_approve_expense=True,
         workflow_completed=False,
         status=ExpenseReport.STATUS_SUBMITTED
     ).filter(
@@ -560,6 +561,95 @@ def my_pending_approval_reports(request):
     })
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def my_approved_approval_reports(request):
+    profile = request.user.profile
+
+    if not profile.company_role:
+        return Response(
+            {"error": "Your company role is not assigned."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not profile.company_role.can_approve_expense:
+        return Response(
+            {"error": "Your role is not allowed to approve expense reports."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    reports = ExpenseReport.objects.filter(
+        company=profile.company,
+        approval_history__action=ApprovalHistory.ACTION_STEP_APPROVED,
+        approval_history__action_by=profile,
+    )
+
+    employee_id = request.GET.get("employee_id")
+    employee_email = request.GET.get("employee_email")
+    department_id = request.GET.get("department_id")
+    start_date = request.GET.get("start_date")
+    end_date = request.GET.get("end_date")
+    min_amount = request.GET.get("min_amount")
+    max_amount = request.GET.get("max_amount")
+
+    if employee_id:
+        reports = reports.filter(employee_id=employee_id)
+
+    if employee_email:
+        reports = reports.filter(
+            employee__user__email__icontains=employee_email
+        )
+
+    if department_id:
+        reports = reports.filter(department_id=department_id)
+
+    if start_date:
+        reports = reports.filter(submitted_at__date__gte=start_date)
+
+    if end_date:
+        reports = reports.filter(submitted_at__date__lte=end_date)
+
+    if min_amount:
+        reports = reports.filter(total_amount__gte=min_amount)
+
+    if max_amount:
+        reports = reports.filter(total_amount__lte=max_amount)
+
+    reports = reports.select_related(
+        "employee",
+        "employee__user",
+        "department",
+        "current_workflow_step",
+        "current_workflow_step__approver_role",
+        "current_workflow_step__department"
+    ).prefetch_related(
+        "receipts",
+        "receipts__line_items",
+        "approval_history"
+    ).distinct().order_by(
+        "-updated_at"
+    )
+
+    serializer = ExpenseReportSerializer(
+        reports,
+        many=True
+    )
+
+    return Response({
+        "count": reports.count(),
+        "filters": {
+            "employee_id": employee_id,
+            "employee_email": employee_email,
+            "department_id": department_id,
+            "start_date": start_date,
+            "end_date": end_date,
+            "min_amount": min_amount,
+            "max_amount": max_amount,
+        },
+        "results": serializer.data
+    })
+
+
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -586,13 +676,20 @@ def current_month_report(request):
 
     try:
         report = ExpenseReport.objects.select_related(
+            "employee",
+            "employee__user",
+            "department",
             "current_workflow_step",
+            "current_workflow_step__workflow",
             "current_workflow_step__approver_role",
-            "current_workflow_step__department"
+            "current_workflow_step__department",
         ).prefetch_related(
             "receipts",
             "receipts__line_items",
-            "approval_history"
+            "approval_history",
+            "approval_history__action_by",
+            "approval_history__action_by__user",
+            "approval_history__action_by__company_role",
         ).get(
             company=profile.company,
             employee=profile,
@@ -605,71 +702,19 @@ def current_month_report(request):
             status=status.HTTP_404_NOT_FOUND
         )
 
-    no_violation_receipts = report.receipts.filter(
-        has_any_violation=False
-    )
+    serializer = ExpenseReportSerializer(report)
+    payload = serializer.data
+    payload["report_id"] = str(report.id)
+    payload["no_violation_receipts"] = ExpenseReceiptSerializer(
+        report.receipts.filter(has_any_violation=False),
+        many=True,
+    ).data
+    payload["violation_receipts"] = ExpenseReceiptSerializer(
+        report.receipts.filter(has_any_violation=True),
+        many=True,
+    ).data
 
-    violation_receipts = report.receipts.filter(
-        has_any_violation=True
-    )
-
-    return Response({
-
-        "report_id": str(report.id),
-
-        "month": report.month,
-
-        "status": report.status,
-
-        "total_amount": str(report.total_amount),
-
-        "submitted_at": report.submitted_at,
-
-        "paid_at": report.paid_at,
-
-        "paid_notes": report.paid_notes,
-
-        "workflow_completed": report.workflow_completed,
-
-        "current_workflow_step": {
-
-            "id": str(report.current_workflow_step.id),
-
-            "step_order":
-                report.current_workflow_step.step_order,
-
-            "approver_role":
-                report.current_workflow_step.approver_role.name,
-
-            "routing_type":
-                report.current_workflow_step.routing_type,
-
-            "department": (
-                report.current_workflow_step.department.name
-                if report.current_workflow_step.department
-                else None
-            ),
-
-        } if report.current_workflow_step else None,
-
-        "approval_history":
-            ApprovalHistorySerializer(
-                report.approval_history.all(),
-                many=True
-            ).data,
-
-        "no_violation_receipts":
-            ExpenseReceiptSerializer(
-                no_violation_receipts,
-                many=True
-            ).data,
-
-        "violation_receipts":
-            ExpenseReceiptSerializer(
-                violation_receipts,
-                many=True
-            ).data,
-    })
+    return Response(payload)
 
 
 
@@ -702,13 +747,14 @@ def accounts_mark_paid(request, report_id):
     )
 
     try:
-        report = ExpenseReport.objects.select_related(
+        report = get_reports_awaiting_payment(profile.company).select_related(
             "employee__user",
-            "department"
+            "department",
+            "current_workflow_step",
+            "current_workflow_step__approver_role",
         ).get(
             id=report_id,
             company=profile.company,
-            status=ExpenseReport.STATUS_APPROVED
         )
 
     except ExpenseReport.DoesNotExist:
@@ -722,11 +768,15 @@ def accounts_mark_paid(request, report_id):
     report.status = ExpenseReport.STATUS_PAID
     report.paid_notes = notes
     report.paid_at = timezone.now()
+    report.workflow_completed = True
+    report.current_workflow_step = None
 
     report.save(update_fields=[
         "status",
         "paid_notes",
         "paid_at",
+        "workflow_completed",
+        "current_workflow_step",
         "updated_at"
     ])
 
@@ -1432,6 +1482,45 @@ def approve_report_step(request, report_id):
     ).order_by("step_order").first()
 
     if next_step:
+        if next_step.approver_role.can_mark_paid:
+            report.workflow_completed = True
+            report.status = ExpenseReport.STATUS_APPROVED
+            report.current_workflow_step = None
+
+            report.save(update_fields=[
+                "workflow_completed",
+                "status",
+                "current_workflow_step",
+                "updated_at"
+            ])
+
+            report.receipts.all().update(
+                status=ExpenseReceipt.STATUS_APPROVED
+            )
+
+            send_report_status_email_task.delay(
+                str(report.id),
+                "Reimbursement Report Fully Approved",
+                (
+                    "Your reimbursement report has completed all approval steps.\n\n"
+                    f"Final Approved By: {actor_role}\n"
+                    "It is now approved and waiting for payment processing."
+                )
+            )
+
+            serializer = ExpenseReportSerializer(report)
+
+            return Response({
+                "message": (
+                    "Step approved successfully. "
+                    "Report is approved and ready for payment."
+                ),
+                "approved_by": actor_role,
+                "is_company_admin_override": is_company_admin,
+                "status": report.status,
+                "report": serializer.data
+            })
+
         report.current_workflow_step = next_step
 
         report.save(update_fields=[

@@ -1,4 +1,4 @@
-import { GitBranch, Plus, UserCog } from 'lucide-react'
+import { GitBranch, UserCog } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { isAxiosError } from 'axios'
@@ -21,10 +21,11 @@ import { invalidateAdminSetupCache, useAdminNav } from '@/hooks/useAdminNav'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { PageLoader } from '@/components/ui/spinner'
+import { WorkflowPageShimmer } from '@/components/ui/shimmer'
 import { fetchAllPages } from '@/lib/pagination'
 import { toast } from '@/lib/toast'
 import type { ApprovalWorkflow, ApprovalWorkflowStep, CompanyRole, DepartmentRecord } from '@/types'
+import UploadIcon from '@/assets/upload.png'
 
 function getActiveSteps(workflow: ApprovalWorkflow | null): ApprovalWorkflowStep[] {
   return (workflow?.steps ?? [])
@@ -302,7 +303,19 @@ export function WorkflowPage() {
     }
   }
 
-  if (loading) return <PageLoader />
+  if (loading) {
+    return (
+      <DashboardLayout
+        title="Approval Workflow"
+        subtitle="Define who approves expense reports and in what order"
+        breadcrumb="Approval Workflow"
+        icon={GitBranch}
+        navItems={navItems}
+      >
+        <WorkflowPageShimmer />
+      </DashboardLayout>
+    )
+  }
 
   const needsRolesFirst = approverRoles.length === 0
 
@@ -355,8 +368,8 @@ export function WorkflowPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               <Button disabled={saving} onClick={handleCreateWorkflow}>
-                <Plus className="h-4 w-4" />
                 Create Workflow
+                <img src={UploadIcon} alt="Assign" className="w-6 h-6" />
               </Button>
               <Button
                 variant="outline"

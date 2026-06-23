@@ -8,9 +8,10 @@ import { MetricCard } from '@/components/MetricCard'
 import { StatusBadge } from '@/components/StatusBadge'
 import { DashboardLayout, platformNavWithAudit } from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
-import { PageLoader } from '@/components/ui/spinner'
+import { DashboardPageShimmer } from '@/components/ui/shimmer'
 import { formatMetricDisplay } from '@/lib/format'
 import { formatDate } from '@/lib/utils'
+import uploadSubmit from '@/assets/uploadSubmit.png'
 
 interface PlatformDashboardData {
   platform_owner: { name: string; email: string }
@@ -34,7 +35,19 @@ export function PlatformDashboard() {
       .finally(() => setLoading(false))
   }, [])
 
-  if (loading) return <PageLoader />
+  if (loading) {
+    return (
+      <DashboardLayout
+        portal="platform"
+        title="Platform Dashboard"
+        breadcrumb="Platform Dashboard"
+        icon={LayoutDashboard}
+        navItems={platformNavWithAudit}
+      >
+        <DashboardPageShimmer />
+      </DashboardLayout>
+    )
+  }
 
   const metrics = data?.metrics ?? {}
   const companies = data?.recent_companies ?? []
@@ -49,7 +62,10 @@ export function PlatformDashboard() {
       navItems={platformNavWithAudit}
       headerAction={
         <Button asChild>
-          <Link to="/platform/requests">Review Company Requests</Link>
+          <Link to="/platform/requests" className="inline-flex items-center gap-2">
+            <img src={uploadSubmit} alt="" className="h-6 w-6" />
+            Review Company Requests
+          </Link>
         </Button>
       }
     >

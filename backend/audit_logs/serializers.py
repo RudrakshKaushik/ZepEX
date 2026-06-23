@@ -34,3 +34,13 @@ class AuditLogSerializer(serializers.ModelSerializer):
         ).strip()
 
         return full_name or obj.action_by.user.email
+
+
+class PlatformAuditLogSerializer(AuditLogSerializer):
+    company_name = serializers.CharField(
+        source="company.name",
+        read_only=True,
+    )
+
+    class Meta(AuditLogSerializer.Meta):
+        fields = AuditLogSerializer.Meta.fields + ["company_name"]

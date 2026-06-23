@@ -10,13 +10,13 @@ import { LandingWorkspaces } from '@/components/landing/LandingWorkspaces'
 import {
   dotGridStyle,
   LandingMarquee,
-  LandingMobileScroll,
   PrimaryButton,
   SecondaryButton,
   SectionBadge,
   ZepLogo,
 } from '@/components/landing/landing-ui'
 import { cn } from '@/lib/utils'
+import heroImg from '@/assets/heroImg.png'
 
 const stats = [
   { value: '90%', label: 'Less manual data entry' },
@@ -110,9 +110,14 @@ export function LandingPage() {
               </a>
             </nav>
             <div className="flex justify-end md:justify-end">
-              <PrimaryButton to="/register" icon="arrow">
-                Get Started
-              </PrimaryButton>
+              <div className="flex items-center gap-4">
+                <Link to="/login" className="w-full text-sm font-semibold text-gray-900 hover:text-[#0066FF] justify-center sm:w-auto hidden md:flex items-center gap-2">
+                  Sign In
+                </Link>
+                <PrimaryButton to="/register" icon="arrow">
+                  Get Started
+                </PrimaryButton>
+              </div>
             </div>
           </div>
         </header>
@@ -144,23 +149,27 @@ export function LandingPage() {
                 </SecondaryButton>
               </div>
 
-              <LandingMobileScroll
+              <LandingMarquee
                 className="mt-6 sm:mt-8"
                 desktopClassName="mt-8 flex-wrap items-start gap-8"
               >
                 {heroHighlights.map((item) => (
                   <HighlightItem key={item.text} icon={item.icon} text={item.text} />
                 ))}
-              </LandingMobileScroll>
+              </LandingMarquee>
             </div>
             <div className="mx-auto w-full max-w-sm min-w-0 sm:max-w-md lg:max-w-none">
               <div
                 className={cn(
-                  'aspect-square w-full max-h-[min(70vw,20rem)] rounded-3xl shadow-xl sm:max-h-none',
+                  'aspect-square w-full max-h-[min(80vw,20rem)] overflow-hidden rounded-3xl shadow-xl sm:max-h-none',
                   'bg-gradient-to-br from-[#0066FF] via-[#3b82f6] to-[#67e8f9]',
                 )}
               >
-                <img src="" alt="" className="h-full w-full object-cover opacity-0" aria-hidden />
+                <img
+                  src={heroImg}
+                  alt="ZepEX expense management dashboard"
+                  className="h-full w-full"
+                />
               </div>
             </div>
           </div>

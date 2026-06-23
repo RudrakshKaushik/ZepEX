@@ -1,4 +1,4 @@
-import { Plus, Power, PowerOff, Shield } from 'lucide-react'
+import { Power, PowerOff, Shield } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
   activatePolicyRule,
@@ -24,10 +24,12 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { PageLoader } from '@/components/ui/spinner'
+import { CardsGridShimmer } from '@/components/ui/shimmer'
 import { PaginationControls } from '@/components/ui/pagination-controls'
 import { toast } from '@/lib/toast'
 import type { PolicyRule } from '@/types'
+import AssignIcon from '@/assets/assign.png'
+import UploadIcon from '@/assets/upload.png'
 
 export function PolicyPage() {
   const { navItems } = useAdminNav()
@@ -153,7 +155,19 @@ export function PolicyPage() {
     }
   }
 
-  if (loading) return <PageLoader />
+  if (loading) {
+    return (
+      <DashboardLayout
+        title="Expense Policy"
+        subtitle="Set category spending limits"
+        breadcrumb="Expense Policy"
+        icon={Shield}
+        navItems={navItems}
+      >
+        <CardsGridShimmer />
+      </DashboardLayout>
+    )
+  }
 
   return (
     <DashboardLayout
@@ -164,12 +178,13 @@ export function PolicyPage() {
       navItems={navItems}
       headerAction={
         <>
-          <Button variant="outline" onClick={initPolicy} disabled={saving}>
+          <Button variant="secondary" onClick={initPolicy} disabled={saving}>
             Initialize Company Policy
+            <img src={AssignIcon} alt="Assign" className="w-6 h-6" />
           </Button>
           <Button onClick={() => { setError(''); setOpen(true) }}>
             Add Policy Rules
-            <Plus className="h-4 w-4" />
+            <img src={UploadIcon} alt="Upload" className="w-6 h-6" />
           </Button>
         </>
       }

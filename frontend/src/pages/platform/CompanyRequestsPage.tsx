@@ -1,4 +1,4 @@
-import { Building2, Check, ClipboardList, X } from 'lucide-react'
+import { ClipboardList } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import {
   approveCompanyRequest,
@@ -6,13 +6,10 @@ import {
   rejectCompanyRequest,
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
-import { AdminListPanel } from '@/components/admin/AdminListPanel'
-import { StatusBadge } from '@/components/StatusBadge'
+import { CompanyRequestCard } from '@/components/platform/CompanyRequestCard'
+import { CompanyRequestCardsShimmer } from '@/components/platform/CompanyRequestCardsShimmer'
 import { DashboardLayout, platformNavWithAudit } from '@/components/layout/DashboardLayout'
-import { Button } from '@/components/ui/button'
-import { PageLoader } from '@/components/ui/spinner'
 import type { CompanyRegistrationRequest } from '@/types'
-import { formatDateTime } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 
 export function CompanyRequestsPage() {
@@ -65,9 +62,7 @@ export function CompanyRequestsPage() {
     }
   }
 
-  if (loading) return <PageLoader />
-
-  const pendingCount = requests.filter((r) => r.status === 'PENDING').length
+  const pendingCount = requests.filter((request) => request.status === 'PENDING').length
 
   return (
     <DashboardLayout
@@ -82,60 +77,38 @@ export function CompanyRequestsPage() {
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
 
-      <AdminListPanel
-        title="Registration Requests"
-        count={requests.length}
-        description={`${pendingCount} request(s) awaiting your review.`}
-      >
-        {requests.length === 0 ? (
-          <p className="px-5 py-8 text-sm text-gray-400 sm:px-6">No registration requests.</p>
-        ) : (
-          <ul className="divide-y divide-[#e2e8f0]">
-            {requests.map((req) => (
-              <li key={req.id} className="px-5 py-4 sm:px-6">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Building2 className="h-4 w-4 shrink-0 text-primary" />
-                      <h3 className="font-semibold text-gray-900">{req.company_name}</h3>
-                      <StatusBadge status={req.status} />
-                    </div>
-                    <p className="mt-1 text-sm text-gray-500">{req.company_domain}</p>
-                    <p className="mt-1 text-sm text-gray-500">
-                      {req.admin_name} · {req.admin_email}
-                    </p>
-                    <p className="mt-1 text-xs text-gray-400">
-                      Submitted {formatDateTime(req.created_at)}
-                    </p>
-                  </div>
-                  {req.status === 'PENDING' && (
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="success"
-                        disabled={actionId === req.id}
-                        onClick={() => handleApprove(req.id)}
-                      >
-                        <Check className="h-4 w-4" />
-                        Approve
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        disabled={actionId === req.id}
-                        onClick={() => handleReject(req.id)}
-                      >
-                        <X className="h-4 w-4" />
-                        Reject
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </AdminListPanel>
+      {loading ? (
+        <CompanyRequestCardsShimmer />
+      ) : (
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Registration Requests ({requests.length})
+            </h2>
+            <p className="mt-1 text-sm text-gray-500">
+              {pendingCount} request(s) awaiting your review.
+            </p>
+          </div>
+
+          {requests.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-[#e2e8f0] bg-white px-5 py-12 text-center text-sm text-gray-400">
+              No registration requests.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {requests.map((request) => (
+                <CompanyRequestCard
+                  key={request.id}
+                  request={request}
+                  actionId={actionId}
+                  onApprove={handleApprove}
+                  onReject={handleReject}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </DashboardLayout>
   )
 }

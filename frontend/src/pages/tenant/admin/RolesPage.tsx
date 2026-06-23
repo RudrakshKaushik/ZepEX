@@ -1,4 +1,4 @@
-import { Pencil, Plus, PowerOff, UserCog } from 'lucide-react'
+import { Pencil, PowerOff, UserCog } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
   createCompanyRole,
@@ -23,10 +23,12 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { PageLoader } from '@/components/ui/spinner'
+import { CardsGridShimmer } from '@/components/ui/shimmer'
 import { PaginationControls } from '@/components/ui/pagination-controls'
 import { toast } from '@/lib/toast'
 import type { CompanyRole } from '@/types'
+import UploadIcon from '@/assets/upload.png'
+import AssignIcon from '@/assets/assign.png'
 
 const defaultPermissions = {
   can_upload_receipt: false,
@@ -196,7 +198,19 @@ export function RolesPage() {
     return parts.join(', ') || '—'
   }
 
-  if (loading) return <PageLoader />
+  if (loading) {
+    return (
+      <DashboardLayout
+        title="Roles"
+        subtitle="Manage company permission profiles"
+        breadcrumb="Roles"
+        icon={UserCog}
+        navItems={navItems}
+      >
+        <CardsGridShimmer />
+      </DashboardLayout>
+    )
+  }
 
   return (
     <DashboardLayout
@@ -208,13 +222,14 @@ export function RolesPage() {
       headerAction={
         <div className="flex flex-wrap gap-2">
           {roles.length === 0 && (
-            <Button variant="outline" disabled={saving} onClick={handleCreateDefaults}>
+            <Button variant="secondary" disabled={saving} onClick={handleCreateDefaults}>
               Create default roles
+              <img src={AssignIcon} alt="Assign" className="w-6 h-6" />
             </Button>
           )}
           <Button onClick={() => { setError(''); setCreateOpen(true) }}>
-            <Plus className="h-4 w-4" />
             Create Role
+            <img src={UploadIcon} alt="Upload" className="w-6 h-6" />
           </Button>
         </div>
       }

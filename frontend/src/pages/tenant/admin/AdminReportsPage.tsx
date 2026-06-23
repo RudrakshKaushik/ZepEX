@@ -1,25 +1,34 @@
-import { Banknote, Check, ClipboardList, X } from 'lucide-react'
+import { Banknote, Check, ClipboardList, Copy, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import {
   accountsMarkPaid,
   approveReport,
   getAdminReports,
+  getDuplicateReceipts,
+  listDepartments,
+  listEmployees,
   rejectReport,
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
 import { AdminListPanel } from '@/components/admin/AdminListPanel'
 import { DashboardEmptyState } from '@/components/dashboard/DashboardEmptyState'
 import { ReportDetail } from '@/components/ReportDetail'
+import { ExpenseReportTable } from '@/components/reports/ExpenseReportTable'
+import { ReportFiltersBar } from '@/components/reports/ReportFiltersBar'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { FilterTogglePanel } from '@/components/ui/FilterTogglePanel'
+import { Label } from '@/components/ui/label'
 import { PaginationControls } from '@/components/ui/pagination-controls'
 import { Textarea } from '@/components/ui/textarea'
-import { PageLoader } from '@/components/ui/spinner'
+import { TabbedTablePageShimmer } from '@/components/ui/shimmer'
 import { useAdminNav } from '@/hooks/useAdminNav'
 import { showReportActionToast } from '@/lib/reportActions'
+import { fetchAllPages } from '@/lib/pagination'
+import { toAdminApiParams, type AdminReportFilters } from '@/lib/reportFilters'
 import { toast } from '@/lib/toast'
-import type { ExpenseReport } from '@/types'
+import { formatDate } from '@/lib/utils'
+import type { DepartmentRecord, DuplicateReceiptLog, EmployeeRecord, ExpenseReport } from '@/types'
 
 const STATUS_TABS = [
   { label: 'Pending', value: 'SUBMITTED' },
@@ -28,33 +37,197 @@ const STATUS_TABS = [
   { label: 'Paid', value: 'PAID' },
 ] as const
 
+const DUPLICATES_TAB = 'DUPLICATES'
+
+const selectClassName =
+  'flex h-10 w-full rounded-lg border border-input bg-card px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+
+const DUPLICATE_TYPE_OPTIONS = [
+  { label: 'All types', value: '' },
+  { label: 'Same employee', value: 'SAME_EMPLOYEE' },
+  { label: 'Cross employee', value: 'CROSS_EMPLOYEE' },
+] as const
+
+function AdminReportExpandedPanel({
+  report,
+  status,
+  notes,
+  actionId,
+  onNotesChange,
+  onApprove,
+  onReject,
+  onMarkPaid,
+}: {
+  report: ExpenseReport
+  status: string
+  notes: string
+  actionId: string | null
+  onNotesChange: (value: string) => void
+  onApprove: (reportId: string) => void
+  onReject: (reportId: string) => void
+  onMarkPaid: (reportId: string) => void
+}) {
+  const showActions = status === 'SUBMITTED' || status === 'APPROVED'
+
+  return (
+    <div className="space-y-4">
+      <ReportDetail report={report} showEmployee={false} />
+      {showActions && (
+        <>
+          <Textarea
+            placeholder={
+              status === 'SUBMITTED'
+                ? 'Notes (required for rejection)'
+                : 'Payment notes (optional)'
+            }
+            value={notes}
+            onChange={(e) => onNotesChange(e.target.value)}
+          />
+          <div className="flex flex-wrap gap-2">
+            {status === 'SUBMITTED' && (
+              <>
+                <Button
+                  variant="success"
+                  disabled={actionId === report.id}
+                  onClick={() => onApprove(report.id)}
+                >
+                  <Check className="h-4 w-4" />
+                  Approve
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={actionId === report.id}
+                  onClick={() => onReject(report.id)}
+                >
+                  <X className="h-4 w-4" />
+                  Reject
+                </Button>
+              </>
+            )}
+            {status === 'APPROVED' && (
+              <Button
+                disabled={actionId === report.id}
+                onClick={() => onMarkPaid(report.id)}
+              >
+                <Banknote className="h-4 w-4" />
+                Mark as paid
+              </Button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function DuplicatesTable({ duplicates }: { duplicates: DuplicateReceiptLog[] }) {
+  if (!duplicates.length) {
+    return (
+      <DashboardEmptyState
+        image="folder"
+        title="No duplicate receipts"
+        description="Duplicate receipt detections will appear here when the system flags matching uploads."
+      />
+    )
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[720px] text-left text-sm">
+        <thead>
+          <tr className="border-b text-muted-foreground">
+            <th className="px-4 py-3 font-medium">Type</th>
+            <th className="px-4 py-3 font-medium">Original</th>
+            <th className="px-4 py-3 font-medium">Duplicate</th>
+            <th className="px-4 py-3 font-medium">Detected</th>
+          </tr>
+        </thead>
+        <tbody>
+          {duplicates.map((entry) => (
+            <tr key={entry.id} className="border-b last:border-0">
+              <td className="px-4 py-3 capitalize">
+                {entry.duplicate_type.replace(/_/g, ' ').toLowerCase()}
+              </td>
+              <td className="px-4 py-3">
+                <p className="font-medium">{entry.original_vendor || 'Unknown vendor'}</p>
+                <p className="text-muted-foreground">{entry.original_employee_email}</p>
+              </td>
+              <td className="px-4 py-3">
+                <p className="font-medium">{entry.duplicate_vendor || 'Unknown vendor'}</p>
+                <p className="text-muted-foreground">{entry.duplicate_employee_email}</p>
+              </td>
+              <td className="px-4 py-3 text-muted-foreground">{formatDate(entry.created_at)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 export function AdminReportsPage() {
   const { navItems } = useAdminNav()
   const [reports, setReports] = useState<ExpenseReport[]>([])
+  const [duplicates, setDuplicates] = useState<DuplicateReceiptLog[]>([])
   const [status, setStatus] = useState<string>('SUBMITTED')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
+  const [duplicateCount, setDuplicateCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [actionId, setActionId] = useState<string | null>(null)
-  const [error, setError] = useState('')
+  const [departments, setDepartments] = useState<DepartmentRecord[]>([])
+  const [employees, setEmployees] = useState<EmployeeRecord[]>([])
+  const [draftFilters, setDraftFilters] = useState<AdminReportFilters>({})
+  const [appliedFilters, setAppliedFilters] = useState<AdminReportFilters>({})
+  const [duplicateType, setDuplicateType] = useState('')
+  const [appliedDuplicateType, setAppliedDuplicateType] = useState('')
+
+  const isDuplicatesView = status === DUPLICATES_TAB
+
+  useEffect(() => {
+    Promise.all([
+      fetchAllPages((p) => listDepartments({ page: p })),
+      fetchAllPages((p) => listEmployees({ page: p })),
+    ])
+      .then(([deptData, employeeData]) => {
+        setDepartments(deptData)
+        setEmployees(employeeData)
+      })
+      .catch(() => {
+        setDepartments([])
+        setEmployees([])
+      })
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
-    setError('')
     try {
-      const { data } = await getAdminReports({ status, page })
+      if (isDuplicatesView) {
+        const { data } = await getDuplicateReceipts(
+          appliedDuplicateType ? { type: appliedDuplicateType } : undefined,
+        )
+        setDuplicates(data.results)
+        setDuplicateCount(data.count)
+        return
+      }
+
+      const { data } = await getAdminReports({
+        status,
+        ...toAdminApiParams(appliedFilters, page),
+      })
       setReports(data.results)
       setTotalPages(data.total_pages)
       setTotalCount(data.count)
     } catch (err) {
-      setError(getApiErrorMessage(err))
+      toast.error(getApiErrorMessage(err))
       setReports([])
+      setDuplicates([])
     } finally {
       setLoading(false)
     }
-  }, [page, status])
+  }, [appliedDuplicateType, appliedFilters, isDuplicatesView, page, status])
 
   useEffect(() => {
     load()
@@ -62,10 +235,10 @@ export function AdminReportsPage() {
 
   const handleApprove = async (reportId: string) => {
     setActionId(reportId)
-    setError('')
     try {
       const { data } = await approveReport(reportId, notes[reportId] || 'Approved by company admin.')
       showReportActionToast(data)
+      toast.success('Report approved.')
       await load()
     } catch (err) {
       toast.error(getApiErrorMessage(err))
@@ -81,10 +254,10 @@ export function AdminReportsPage() {
       return
     }
     setActionId(reportId)
-    setError('')
     try {
       const { data } = await rejectReport(reportId, reason)
       showReportActionToast(data)
+      toast.success('Report rejected.')
       await load()
     } catch (err) {
       toast.error(getApiErrorMessage(err))
@@ -95,13 +268,13 @@ export function AdminReportsPage() {
 
   const handleMarkPaid = async (reportId: string) => {
     setActionId(reportId)
-    setError('')
     try {
       const { data } = await accountsMarkPaid(
         reportId,
         notes[reportId] || 'Paid by company admin.',
       )
       showReportActionToast(data)
+      toast.success('Report marked as paid.')
       await load()
     } catch (err) {
       toast.error(getApiErrorMessage(err))
@@ -110,7 +283,43 @@ export function AdminReportsPage() {
     }
   }
 
-  if (loading && reports.length === 0) return <PageLoader />
+  const applyFilters = () => {
+    if (isDuplicatesView) {
+      setAppliedDuplicateType(duplicateType)
+      return
+    }
+    setAppliedFilters(draftFilters)
+    setPage(1)
+  }
+
+  const clearFilters = () => {
+    if (isDuplicatesView) {
+      setDuplicateType('')
+      setAppliedDuplicateType('')
+      return
+    }
+    setDraftFilters({})
+    setAppliedFilters({})
+    setPage(1)
+  }
+
+  if (loading && reports.length === 0 && duplicates.length === 0) {
+    return (
+      <DashboardLayout
+        title="Company Reports"
+        subtitle="Monitor and act on expense reports across your company"
+        breadcrumb="Reports"
+        icon={ClipboardList}
+        navItems={navItems}
+      >
+        <TabbedTablePageShimmer />
+      </DashboardLayout>
+    )
+  }
+
+  const activeTabLabel = isDuplicatesView
+    ? 'Duplicates'
+    : STATUS_TABS.find((tab) => tab.value === status)?.label ?? 'Reports'
 
   return (
     <DashboardLayout
@@ -120,10 +329,6 @@ export function AdminReportsPage() {
       icon={ClipboardList}
       navItems={navItems}
     >
-      {error && (
-        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-      )}
-
       <div className="mb-4 flex flex-wrap gap-2">
         {STATUS_TABS.map((tab) => (
           <Button
@@ -138,14 +343,76 @@ export function AdminReportsPage() {
             {tab.label}
           </Button>
         ))}
+        <Button
+          size="sm"
+          variant={isDuplicatesView ? 'default' : 'outline'}
+          onClick={() => {
+            setStatus(DUPLICATES_TAB)
+            setPage(1)
+          }}
+        >
+          <Copy className="h-4 w-4" />
+          Duplicates
+        </Button>
       </div>
 
+      {isDuplicatesView ? (
+        <FilterTogglePanel>
+          <div className="rounded-xl border bg-card p-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="duplicate-type">Duplicate type</Label>
+                <select
+                  id="duplicate-type"
+                  className={selectClassName}
+                  value={duplicateType}
+                  onChange={(e) => setDuplicateType(e.target.value)}
+                >
+                  {DUPLICATE_TYPE_OPTIONS.map((option) => (
+                    <option key={option.value || 'all'} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button size="sm" onClick={applyFilters}>
+                Apply filters
+              </Button>
+              <Button size="sm" variant="outline" onClick={clearFilters}>
+                Clear
+              </Button>
+            </div>
+          </div>
+        </FilterTogglePanel>
+      ) : (
+        <ReportFiltersBar
+          mode="admin"
+          values={draftFilters}
+          onChange={setDraftFilters}
+          departments={departments}
+          employees={employees}
+          onApply={applyFilters}
+          onClear={clearFilters}
+          disabled={actionId !== null}
+        />
+      )}
+
       <AdminListPanel
-        title={`${STATUS_TABS.find((tab) => tab.value === status)?.label ?? 'Reports'}`}
-        count={totalCount}
-        description="Company admins can approve, reject, or mark reports as paid on any workflow step."
+        title={activeTabLabel}
+        count={isDuplicatesView ? duplicateCount : totalCount}
+        description={
+          isDuplicatesView
+            ? 'Receipts flagged as potential duplicates across your company.'
+            : 'Click a row to view full report details. Company admins can approve, reject, or mark reports as paid.'
+        }
       >
-        {reports.length === 0 ? (
+        {isDuplicatesView ? (
+          <div className="p-4 sm:p-6">
+            <DuplicatesTable duplicates={duplicates} />
+          </div>
+        ) : reports.length === 0 ? (
           <DashboardEmptyState
             image="folder"
             title="No reports in this view"
@@ -153,72 +420,35 @@ export function AdminReportsPage() {
             onRefresh={load}
           />
         ) : (
-          <div className="space-y-4 p-4 sm:p-6">
-            {reports.map((report) => (
-              <Card key={report.id}>
-                <CardContent className="space-y-4 p-5 sm:p-6">
-                  <p className="font-semibold text-gray-900">
-                    {report.employee_name || report.employee_email}
-                  </p>
-                  <ReportDetail report={report} showEmployee={false} />
-                  {(status === 'SUBMITTED' || status === 'APPROVED') && (
-                    <>
-                      <Textarea
-                        placeholder={
-                          status === 'SUBMITTED'
-                            ? 'Notes (required for rejection)'
-                            : 'Payment notes (optional)'
-                        }
-                        value={notes[report.id] || ''}
-                        onChange={(e) =>
-                          setNotes({ ...notes, [report.id]: e.target.value })
-                        }
-                      />
-                      <div className="flex flex-wrap gap-2">
-                        {status === 'SUBMITTED' && (
-                          <>
-                            <Button
-                              variant="success"
-                              disabled={actionId === report.id}
-                              onClick={() => handleApprove(report.id)}
-                            >
-                              <Check className="h-4 w-4" />
-                              Approve
-                            </Button>
-                            <Button
-                              variant="destructive"
-                              disabled={actionId === report.id}
-                              onClick={() => handleReject(report.id)}
-                            >
-                              <X className="h-4 w-4" />
-                              Reject
-                            </Button>
-                          </>
-                        )}
-                        {status === 'APPROVED' && (
-                          <Button
-                            disabled={actionId === report.id}
-                            onClick={() => handleMarkPaid(report.id)}
-                          >
-                            <Banknote className="h-4 w-4" />
-                            Mark as paid
-                          </Button>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
+          <div className="p-4 sm:p-6">
+            <ExpenseReportTable
+              reports={reports}
+              renderExpanded={(report) => (
+                <AdminReportExpandedPanel
+                  report={report}
+                  status={status}
+                  notes={notes[report.id] || ''}
+                  actionId={actionId}
+                  onNotesChange={(value) =>
+                    setNotes((current) => ({ ...current, [report.id]: value }))
+                  }
+                  onApprove={handleApprove}
+                  onReject={handleReject}
+                  onMarkPaid={handleMarkPaid}
+                />
+              )}
+            />
           </div>
         )}
-        <PaginationControls
-          currentPage={page}
-          totalPages={totalPages}
-          totalCount={totalCount}
-          onPageChange={setPage}
-          disabled={actionId !== null}
-        />
+        {!isDuplicatesView && (
+          <PaginationControls
+            currentPage={page}
+            totalPages={totalPages}
+            totalCount={totalCount}
+            onPageChange={setPage}
+            disabled={actionId !== null}
+          />
+        )}
       </AdminListPanel>
     </DashboardLayout>
   )

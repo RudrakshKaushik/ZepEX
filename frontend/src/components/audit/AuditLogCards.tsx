@@ -34,7 +34,15 @@ export function AuditLogCards({
               >
                 {formatAuditActionLabel(log.action)}
               </span>
-              <p className="text-xs text-gray-500">By {log.action_by_email}</p>
+              <p className="text-xs text-gray-500">
+                {log.company_name ? (
+                  <>
+                    <span className="font-medium text-gray-700">{log.company_name}</span>
+                    {' · '}
+                  </>
+                ) : null}
+                By {log.action_by_email || 'System'}
+              </p>
             </div>
             <div className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-[#2563eb]">
               <Calendar className="h-4 w-4" aria-hidden />

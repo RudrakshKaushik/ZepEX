@@ -9,10 +9,12 @@ import type {
   CompanyRole,
   DeactivateWorkflowStepResponse,
   DepartmentRecord,
+  DuplicateReceiptsResponse,
   EmployeeRecord,
   ExpenseReport,
   LoginResponse,
   MarkPaidReportResponse,
+  MyUploadedExpensesResponse,
   PendingApprovalsResponse,
   PolicyRule,
   Receipt,
@@ -220,6 +222,7 @@ export const getCompanyAdminDashboard = () =>
 export const getAuditLogs = (params?: {
   action?: string
   user_id?: number
+  company_id?: string
   start_date?: string
   end_date?: string
   page?: number
@@ -227,6 +230,23 @@ export const getAuditLogs = (params?: {
   api.get<import('@/lib/pagination').PaginatedResponse<AuditLogEntry>>('/audit-logs/', {
     params,
   })
+
+export const getPlatformAuditLogs = (params?: {
+  action?: string
+  company_id?: string
+  start_date?: string
+  end_date?: string
+  page?: number
+}) =>
+  api.get<import('@/lib/pagination').PaginatedResponse<AuditLogEntry>>('/audit-logs/platform/', {
+    params,
+  })
+
+export const listPlatformCompanies = () =>
+  api.get<{
+    count: number
+    results: Array<{ id: string; name: string; domain: string; is_verified: boolean }>
+  }>('/platform/companies/')
 
 export const getAuditLogDashboard = () => api.get('/audit-logs/dashboard/')
 
@@ -255,6 +275,17 @@ export const submitMonthlyReport = () =>
 export const getCurrentMonthReport = () =>
   api.get<ExpenseReport>('/expenses/reports/current/')
 
+export const getMyUploadedExpenses = (params?: {
+  status?: string
+  start_date?: string
+  end_date?: string
+  min_amount?: string
+  max_amount?: string
+}) => api.get<MyUploadedExpensesResponse>('/expenses/my-uploaded-expenses/', { params })
+
+export const getDuplicateReceipts = (params?: { type?: string }) =>
+  api.get<DuplicateReceiptsResponse>('/expenses/duplicates/', { params })
+
 export const deleteLineItem = (lineItemId: string) =>
   api.delete(`/expenses/line-items/${lineItemId}/delete/`)
 
@@ -268,6 +299,17 @@ export const getMyPendingApprovals = (params?: {
   max_amount?: string
   page?: number
 }) => api.get<PendingApprovalsResponse>('/expenses/approvals/my-pending/', { params })
+
+export const getMyApprovedApprovals = (params?: {
+  employee_id?: number
+  employee_email?: string
+  department_id?: string
+  start_date?: string
+  end_date?: string
+  min_amount?: string
+  max_amount?: string
+  page?: number
+}) => api.get<PendingApprovalsResponse>('/expenses/approvals/my-approved/', { params })
 
 export const getAdminReports = (params?: {
   status?: string

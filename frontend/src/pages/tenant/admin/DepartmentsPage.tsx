@@ -1,4 +1,4 @@
-import { Building2, Pencil, Plus, Power, PowerOff, Trash2 } from 'lucide-react'
+import { Building2, Pencil, Power, PowerOff, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
   activateDepartment,
@@ -25,12 +25,13 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { PageLoader } from '@/components/ui/spinner'
+import { AdminListPanelShimmer } from '@/components/ui/shimmer'
 import { PaginationControls } from '@/components/ui/pagination-controls'
 import type { DepartmentRecord, EmployeeRecord } from '@/types'
 import { fetchAllPages } from '@/lib/pagination'
 import { toast } from '@/lib/toast'
 import { formatDate } from '@/lib/utils'
+import UploadIcon from '@/assets/Upload.png'
 
 const selectClassName =
   'flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm'
@@ -160,7 +161,19 @@ export function DepartmentsPage() {
     return m ? `${m.first_name} ${m.last_name}` : managerId
   }
 
-  if (loading) return <PageLoader />
+  if (loading) {
+    return (
+      <DashboardLayout
+        title="Departments"
+        subtitle="Organize teams and assign managers"
+        breadcrumb="Departments"
+        icon={Building2}
+        navItems={navItems}
+      >
+        <AdminListPanelShimmer />
+      </DashboardLayout>
+    )
+  }
 
   return (
     <DashboardLayout
@@ -171,8 +184,8 @@ export function DepartmentsPage() {
       navItems={navItems}
       headerAction={
         <Button onClick={() => { setError(''); setOpen(true) }}>
-          <Plus className="h-4 w-4" />
           Create Department
+          <img src={UploadIcon} alt="Upload" className="w-6 h-6" />
         </Button>
       }
     >

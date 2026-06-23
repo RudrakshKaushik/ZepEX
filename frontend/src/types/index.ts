@@ -313,11 +313,37 @@ export interface AdminReportsResponse {
 export interface AuditLogEntry {
   id: string
   company: string
+  company_name?: string
   action: string
   message: string
   metadata: Record<string, unknown>
+  action_by?: number | null
   action_by_email: string
   created_at: string
+}
+
+export interface MyUploadedExpensesResponse {
+  count: number
+  filters: Record<string, string | null>
+  results: ExpenseReport[]
+}
+
+export interface DuplicateReceiptLog {
+  id: string
+  original_receipt: string
+  duplicate_receipt: string
+  duplicate_type: 'SAME_EMPLOYEE' | 'CROSS_EMPLOYEE'
+  original_employee_email: string
+  duplicate_employee_email: string
+  original_vendor: string
+  duplicate_vendor: string
+  created_at: string
+}
+
+export interface DuplicateReceiptsResponse {
+  count: number
+  filters?: { type?: string | null }
+  results: DuplicateReceiptLog[]
 }
 
 export interface ReimbursementEmailConfig {

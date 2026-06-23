@@ -9,6 +9,7 @@ from .models import (
     ApprovalWorkflow,
     ApprovalWorkflowStep
 )
+from .report_utils import is_payment_queue_role
 
 
 
@@ -364,7 +365,15 @@ class ExpenseReportSerializer(serializers.ModelSerializer):
                     obj.current_workflow_step and
                     obj.current_workflow_step.id == step.id
                 ):
-                    status_value = "PENDING"
+                    if is_payment_queue_role(step.approver_role):
+                        status_value = "PENDING_PAYMENT"
+                    else:
+                        status_value = "PENDING"
+                elif obj.workflow_completed or obj.status in [
+                    ExpenseReport.STATUS_APPROVED,
+                    ExpenseReport.STATUS_PAID,
+                ]:
+                    status_value = "APPROVED"
                 else:
                     status_value = "WAITING"
 

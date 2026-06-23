@@ -91,13 +91,12 @@ def is_payment_queue_role(company_role):
 def get_reports_awaiting_payment(company):
     """
     Reports ready for accounts to mark as paid.
-    Includes fully approved reports and reports stuck at a payment-only workflow step.
+    Includes fully approved reports and reports at a mark-paid workflow step.
     """
     payment_step = Q(
         status=ExpenseReport.STATUS_SUBMITTED,
         workflow_completed=False,
         current_workflow_step__approver_role__can_mark_paid=True,
-        current_workflow_step__approver_role__can_approve_expense=False,
     )
 
     return ExpenseReport.objects.filter(

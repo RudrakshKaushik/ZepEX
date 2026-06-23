@@ -31,20 +31,6 @@ export function ReportDetail({
         </span>
       </div>
 
-      {report.current_step && (
-        <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">
-          Current step: {report.current_step.approver_role} (order{' '}
-          {report.current_step.step_order})
-        </div>
-      )}
-
-      {report.latest_rejection_reason && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
-          <p className="font-medium">Rejected by {report.latest_rejection_reason.rejected_by}</p>
-          <p className="mt-1">{report.latest_rejection_reason.reason}</p>
-        </div>
-      )}
-
       {report.workflow_timeline && report.workflow_timeline.length > 0 && (
         <WorkflowTimeline timeline={report.workflow_timeline} />
       )}

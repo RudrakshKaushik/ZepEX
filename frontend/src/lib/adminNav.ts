@@ -20,14 +20,9 @@ export const adminNavBase: NavItem[] = [
   { label: 'Policy', to: '/admin/policy', icon: Shield },
   { label: 'Reports', to: '/admin/reports', icon: ClipboardList },
   { label: 'Settings', to: '/admin/settings', icon: Settings },
+  { label: 'Audit Logs', to: '/admin/audit-logs', icon: ScrollText },
 ]
 
-const auditLogsNavItem: NavItem = {
-  label: 'Audit Logs',
-  to: '/admin/audit-logs',
-  icon: ScrollText,
-}
-
-export function buildAdminNav(showAuditLogs: boolean): NavItem[] {
-  return showAuditLogs ? [...adminNavBase, auditLogsNavItem] : [...adminNavBase]
+export function buildAdminNav(): NavItem[] {
+  return [...adminNavBase]
 }

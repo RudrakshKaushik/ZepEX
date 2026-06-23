@@ -184,7 +184,6 @@ export const employeeNav: NavItem[] = [
 export const managerNav: NavItem[] = [
   { label: 'Dashboard', to: '/manager', icon: LayoutDashboard },
   { label: 'Pending Reports', to: '/manager/reports', icon: Wallet },
-  { label: 'Audit Logs', to: '/manager/audit-logs', icon: ScrollText },
 ]
 
 export const accountsNav: NavItem[] = [

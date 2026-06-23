@@ -49,7 +49,7 @@ def login_api(request):
             "can_manage_policy": False,
             "can_manage_workflow": False,
             "can_view_all_reports": False,
-            "can_view_audit_logs": False,
+            "can_view_audit_logs": True,
         }
 
     else:

@@ -18,6 +18,7 @@ from .views import (
     view_workflow,
     deactivate_workflow_step,
     my_pending_approval_reports,
+    my_approved_approval_reports,
     approve_report_step,
     reject_report_step,
     duplicate_receipts,
@@ -49,6 +50,11 @@ urlpatterns = [
     "approvals/my-pending/",
     my_pending_approval_reports,
     name="my-pending-approval-reports"
+),
+    path(
+    "approvals/my-approved/",
+    my_approved_approval_reports,
+    name="my-approved-approval-reports"
 ),
     path(
     "reports/<uuid:report_id>/approve/",

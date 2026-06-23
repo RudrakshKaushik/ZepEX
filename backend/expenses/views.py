@@ -16,7 +16,9 @@ from .models import (
     ExpenseReport,
     ExpenseSubmission,
     ExpenseReceipt,
+    Department
 )
+from tenants.models import CompanyRole
 
 
 from .serializers import ExpenseReceiptSerializer,ExpenseReportSerializer, ApprovalHistorySerializer

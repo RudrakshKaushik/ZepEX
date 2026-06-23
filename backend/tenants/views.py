@@ -1815,3 +1815,10 @@ def database_sync_dashboard(request):
             for log in logs.order_by("-started_at")[:10]
         ]
     })
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def assign_missing_company_roles_view(request):
+    return Response({
+        "message": "Assign missing company roles API is not implemented yet."
+    })

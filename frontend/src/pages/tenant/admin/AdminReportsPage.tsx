@@ -75,12 +75,13 @@ function AdminReportExpandedPanel({
   onMarkPaid: (reportId: string) => void
 }) {
   const showActions = status === 'SUBMITTED' || status === 'APPROVED'
+  const employeeLabel = report.employee_name || report.employee_email
 
   return (
     <div className="space-y-4">
-      <ReportDetail report={report} showEmployee={false} />
       {showActions && (
-        <>
+        <div className="space-y-3 rounded-lg border border-[#e2e8f0] bg-white px-4 py-3">
+          <p className="text-sm font-medium text-gray-900">{employeeLabel}</p>
           <Textarea
             placeholder={
               status === 'SUBMITTED'
@@ -121,8 +122,9 @@ function AdminReportExpandedPanel({
               </Button>
             )}
           </div>
-        </>
+        </div>
       )}
+      <ReportDetail report={report} showEmployee={false} />
     </div>
   )
 }
@@ -432,6 +434,47 @@ export function AdminReportsPage() {
           <div className="p-4 sm:p-6">
             <ExpenseReportTable
               reports={reports}
+              renderRowActions={(report) => {
+                if (status === 'SUBMITTED') {
+                  return (
+                    <div className="flex flex-wrap gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="success"
+                        disabled={actionId === report.id}
+                        onClick={() => handleApprove(report.id)}
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={actionId === report.id}
+                        onClick={() => handleReject(report.id)}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Reject
+                      </Button>
+                    </div>
+                  )
+                }
+
+                if (status === 'APPROVED') {
+                  return (
+                    <Button
+                      size="sm"
+                      disabled={actionId === report.id}
+                      onClick={() => handleMarkPaid(report.id)}
+                    >
+                      <Banknote className="h-3.5 w-3.5" />
+                      Mark paid
+                    </Button>
+                  )
+                }
+
+                return null
+              }}
               renderExpanded={(report) => (
                 <AdminReportExpandedPanel
                   report={report}

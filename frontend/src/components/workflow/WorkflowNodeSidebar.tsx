@@ -194,7 +194,7 @@ function ApprovalFields({
               routingType,
               ...(routingType === 'COMPANY'
                 ? { departmentId: null, departmentName: null }
-                : {}),
+                : { departmentId: null, departmentName: null }),
             })
           }}
         >
@@ -202,29 +202,35 @@ function ApprovalFields({
           <option value="DEPARTMENT">Department based</option>
         </select>
       </div>
-      <div className="space-y-1.5">
-        <FieldLabel>Department</FieldLabel>
-        <select
-          className={selectClassName}
-          value={data.departmentId ?? ''}
-          disabled={data.routingType !== 'DEPARTMENT'}
-          onChange={(e) => {
-            const departmentId = e.target.value || null
-            const department = departments.find((d) => d.id === departmentId)
-            onChange({
-              departmentId,
-              departmentName: department?.name ?? null,
-            })
-          }}
-        >
-          <option value="">Select department</option>
-          {departments.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      {data.routingType === 'DEPARTMENT' && (
+        <div className="space-y-1.5">
+          <FieldLabel>Department (optional)</FieldLabel>
+          <select
+            className={selectClassName}
+            value={data.departmentId ?? ''}
+            onChange={(e) => {
+              const departmentId = e.target.value || null
+              const department = departments.find((d) => d.id === departmentId)
+              onChange({
+                departmentId,
+                departmentName: department?.name ?? null,
+              })
+            }}
+          >
+            <option value="">Submitter&apos;s department</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>
+                Pin to {d.name} only
+              </option>
+            ))}
+          </select>
+          <p className="text-xs leading-relaxed text-neutral-500">
+            Leave as submitter&apos;s department to send each report to that employee&apos;s
+            department manager. Pick a department only if this step should always go to one
+            specific team.
+          </p>
+        </div>
+      )}
     </>
   )
 }

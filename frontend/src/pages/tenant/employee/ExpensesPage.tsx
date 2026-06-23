@@ -61,31 +61,15 @@ function formatUploadError(message: string) {
 function MyExpenseExpandedPanel({
   report,
   canEditReceipts,
-  canSubmitReport,
-  submitting,
-  onSubmit,
   onDeleteLineItem,
 }: {
   report: ExpenseReport
   canEditReceipts: boolean
-  canSubmitReport: boolean
-  submitting: boolean
-  onSubmit: () => void
   onDeleteLineItem: (lineItemId: string) => void
 }) {
   return (
     <div className="space-y-4">
       <ReportDetail report={report} showEmployee={false} />
-
-      {canSubmitReport && (
-        <div className="flex justify-end">
-          <Button variant="success" disabled={submitting} onClick={onSubmit}>
-            <Send className="h-4 w-4" />
-            {submitting ? 'Submitting...' : 'Submit report'}
-          </Button>
-        </div>
-      )}
-
       {!report.receipts.length ? (
         <p className="text-sm text-muted-foreground">No receipts uploaded yet.</p>
       ) : (
@@ -287,6 +271,12 @@ export function ExpensesPage() {
   }
 
   const displayReports = reports
+  const draftReport = displayReports.find((report) => report.status === 'DRAFT')
+  const canSubmitDraft =
+    allowSubmit &&
+    !!draftReport &&
+    (draftReport.receipts?.length ?? 0) > 0 &&
+    !filtersActive
 
   return (
     <DashboardLayout title="My Expenses" subtitle="Upload receipts for this month" navItems={navItems}>
@@ -303,6 +293,12 @@ export function ExpensesPage() {
       />
 
       <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
+        {canSubmitDraft && (
+          <Button variant="success" disabled={submitting} onClick={handleSubmit}>
+            <Send className="h-4 w-4" />
+            {submitting ? 'Submitting...' : 'Submit report'}
+          </Button>
+        )}
         {allowUpload && (
           <Button
             onClick={() => {
@@ -346,17 +342,12 @@ export function ExpensesPage() {
           reports={displayReports}
           renderExpanded={(expandedReport) => {
             const isDraftReport = expandedReport.status === 'DRAFT'
-            const canSubmitReport =
-              allowSubmit && isDraftReport && (expandedReport.receipts?.length ?? 0) > 0
             const canEditReceipts = allowSubmit && isDraftReport
 
             return (
               <MyExpenseExpandedPanel
                 report={expandedReport}
                 canEditReceipts={canEditReceipts}
-                canSubmitReport={canSubmitReport}
-                submitting={submitting}
-                onSubmit={handleSubmit}
                 onDeleteLineItem={handleDeleteLineItem}
               />
             )

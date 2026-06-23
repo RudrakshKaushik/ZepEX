@@ -15,15 +15,18 @@ import { cn } from '@/lib/utils'
 interface ExpenseReportTableProps {
   reports: ExpenseReport[]
   renderExpanded: (report: ExpenseReport) => ReactNode
+  renderRowActions?: (report: ExpenseReport) => ReactNode
   defaultExpandedId?: string | null
 }
 
 export function ExpenseReportTable({
   reports,
   renderExpanded,
+  renderRowActions,
   defaultExpandedId = null,
 }: ExpenseReportTableProps) {
   const [expandedId, setExpandedId] = useState<string | null>(defaultExpandedId)
+  const columnCount = renderRowActions ? 6 : 5
 
   if (!reports.length) return null
 
@@ -37,6 +40,7 @@ export function ExpenseReportTable({
             <th className={tableHeadCellClass}>Department</th>
             <th className={tableHeadCellClass}>Report month</th>
             <th className={tableHeadCellClass}>Status</th>
+            {renderRowActions && <th className={tableHeadCellClass}>Actions</th>}
           </tr>
         </thead>
         <tbody>
@@ -47,8 +51,10 @@ export function ExpenseReportTable({
                 key={report.id}
                 report={report}
                 expanded={expanded}
+                columnCount={columnCount}
                 onToggle={() => setExpandedId(expanded ? null : report.id)}
                 renderExpanded={renderExpanded}
+                renderRowActions={renderRowActions}
               />
             )
           })}
@@ -61,14 +67,20 @@ export function ExpenseReportTable({
 function ExpenseReportRow({
   report,
   expanded,
+  columnCount,
   onToggle,
   renderExpanded,
+  renderRowActions,
 }: {
   report: ExpenseReport
   expanded: boolean
+  columnCount: number
   onToggle: () => void
   renderExpanded: (report: ExpenseReport) => ReactNode
+  renderRowActions?: (report: ExpenseReport) => ReactNode
 }) {
+  const rowActions = renderRowActions?.(report)
+
   return (
     <>
       <tr
@@ -96,10 +108,15 @@ function ExpenseReportRow({
         <td className={tableBodyCellClass}>
           <WorkflowStepper timeline={report.workflow_timeline ?? []} />
         </td>
+        {renderRowActions && (
+          <td className={tableBodyCellClass} onClick={(e) => e.stopPropagation()}>
+            {rowActions}
+          </td>
+        )}
       </tr>
       {expanded && (
         <tr className="bg-gray-50/60">
-          <td colSpan={5} className="border-b border-[#e2e8f0] px-4 py-5">
+          <td colSpan={columnCount} className="border-b border-[#e2e8f0] px-4 py-5">
             <div onClick={(e) => e.stopPropagation()}>{renderExpanded(report)}</div>
           </td>
         </tr>

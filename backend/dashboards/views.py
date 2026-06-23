@@ -16,6 +16,7 @@ from expenses.models import (
     ApprovalWorkflow,
 )
 from expenses.serializers import ExpenseReportSerializer, ExpenseReceiptSerializer
+from expenses.report_utils import get_pending_approval_reports_for
 
 from tenants.models import Department, UserProfile, Company
 from django.db.models import Sum
@@ -194,42 +195,7 @@ def approver_dashboard(request):
             status=status.HTTP_403_FORBIDDEN
         )
 
-    pending_reports = ExpenseReport.objects.filter(
-        company=profile.company,
-        current_workflow_step__approver_role=profile.company_role,
-        workflow_completed=False,
-        status=ExpenseReport.STATUS_SUBMITTED
-    ).filter(
-        Q(
-            current_workflow_step__routing_type=
-            ApprovalWorkflowStep.ROUTING_COMPANY
-        )
-        |
-        Q(
-            current_workflow_step__routing_type=
-            ApprovalWorkflowStep.ROUTING_DEPARTMENT,
-            current_workflow_step__department=profile.department
-        )
-        |
-        Q(
-            current_workflow_step__routing_type=
-            ApprovalWorkflowStep.ROUTING_DEPARTMENT,
-            current_workflow_step__department__isnull=True,
-            department=profile.department
-        )
-    )
-
-    pending_reports = pending_reports.select_related(
-        "employee",
-        "employee__user",
-        "department",
-        "current_workflow_step",
-        "current_workflow_step__approver_role",
-        "current_workflow_step__department",
-    ).prefetch_related(
-        "receipts",
-        "receipts__line_items"
-    ).distinct().order_by("-submitted_at")
+    pending_reports = get_pending_approval_reports_for(profile)
 
     approved_reports = ExpenseReport.objects.filter(
         company=profile.company,

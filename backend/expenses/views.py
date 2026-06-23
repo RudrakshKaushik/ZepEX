@@ -31,7 +31,13 @@ from .serializers import ExpenseReportSerializer
 from django.conf import settings
 from django.utils import timezone
 from .tasks import process_receipt_ai_task
-from .report_utils import get_or_create_current_month_report, get_reports_awaiting_payment, is_payment_queue_role
+from .report_utils import (
+    can_approve_report,
+    get_or_create_current_month_report,
+    get_pending_approval_reports_for,
+    get_reports_awaiting_payment,
+    is_payment_queue_role,
+)
 from audit_logs.utils import create_audit_log
 from .models import ExpenseLineItem
 from .tasks import send_report_status_email_task
@@ -469,31 +475,7 @@ def my_pending_approval_reports(request):
             status=status.HTTP_403_FORBIDDEN
         )
 
-    reports = ExpenseReport.objects.filter(
-        company=profile.company,
-        current_workflow_step__approver_role=profile.company_role,
-        current_workflow_step__approver_role__can_approve_expense=True,
-        workflow_completed=False,
-        status=ExpenseReport.STATUS_SUBMITTED
-    ).filter(
-        Q(
-            current_workflow_step__routing_type=
-            ApprovalWorkflowStep.ROUTING_COMPANY
-        )
-        |
-        Q(
-            current_workflow_step__routing_type=
-            ApprovalWorkflowStep.ROUTING_DEPARTMENT,
-            current_workflow_step__department=profile.department
-        )
-        |
-        Q(
-            current_workflow_step__routing_type=
-            ApprovalWorkflowStep.ROUTING_DEPARTMENT,
-            current_workflow_step__department__isnull=True,
-            department=profile.department
-        )
-    )
+    reports = get_pending_approval_reports_for(profile)
 
     employee_id = request.GET.get("employee_id")
     employee_email = request.GET.get("employee_email")
@@ -1423,21 +1405,11 @@ def approve_report_step(request, report_id):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        if current_step.department:
-
-            if profile.department != current_step.department:
-                return Response(
-                    {"error": "This approval step belongs to another department."},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-
-        elif current_step.routing_type == ApprovalWorkflowStep.ROUTING_DEPARTMENT:
-
-            if profile.department != report.department:
-                return Response(
-                    {"error": "This report belongs to another department."},
-                    status=status.HTTP_403_FORBIDDEN
-                )
+        if not can_approve_report(profile, report, current_step):
+            return Response(
+                {"error": "You are not allowed to approve this report."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
     notes = request.data.get("notes", "")
 
@@ -1663,21 +1635,11 @@ def reject_report_step(request, report_id):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        if current_step.department:
-
-            if profile.department != current_step.department:
-                return Response(
-                    {"error": "This approval step belongs to another department."},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-
-        elif current_step.routing_type == ApprovalWorkflowStep.ROUTING_DEPARTMENT:
-
-            if profile.department != report.department:
-                return Response(
-                    {"error": "This report belongs to another department."},
-                    status=status.HTTP_403_FORBIDDEN
-                )
+        if not can_approve_report(profile, report, current_step):
+            return Response(
+                {"error": "You are not allowed to reject this report."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
     report.status = ExpenseReport.STATUS_REJECTED
     report.current_workflow_step = None

@@ -247,7 +247,7 @@ export function WorkflowPage() {
             step_order: nextOrder,
             approver_role: data.roleId!,
             routing_type: data.routingType,
-            department: data.routingType === 'DEPARTMENT' ? data.departmentId : null,
+            department: data.routingType === 'DEPARTMENT' ? data.departmentId || null : null,
           })
           nextOrder += 1
         }
@@ -267,7 +267,8 @@ export function WorkflowPage() {
         if (!step) continue
 
         const targetOrder = index + 1
-        const targetDepartment = data.routingType === 'DEPARTMENT' ? data.departmentId : null
+        const targetDepartment =
+          data.routingType === 'DEPARTMENT' ? data.departmentId || null : null
         const orderChanged = step.step_order !== targetOrder
         const fieldsChanged =
           step.approver_role !== data.roleId ||

@@ -2,7 +2,7 @@ import { memo } from 'react'
 import type { NodeProps } from '@xyflow/react'
 import { UserCheck } from 'lucide-react'
 import type { ApprovalNodeData } from '@/components/workflow/types'
-import { routingLabel } from '@/components/workflow/types'
+import { departmentRoutingLabel, routingLabel } from '@/components/workflow/types'
 import { WireframeHandle, Position } from '@/components/workflow/nodes/WireframeHandle'
 
 function ApprovalNodeComponent({ data, selected }: NodeProps) {
@@ -29,7 +29,10 @@ function ApprovalNodeComponent({ data, selected }: NodeProps) {
         <p>Routing: {routingLabel(nodeData.routingType)}</p>
         {nodeData.routingType === 'DEPARTMENT' && (
           <p>
-            Dept: <span className="font-medium">{nodeData.departmentName || '—'}</span>
+            Dept:{' '}
+            <span className="font-medium">
+              {departmentRoutingLabel(nodeData.routingType, nodeData.departmentName)}
+            </span>
           </p>
         )}
         {nodeData.stepOrder != null && (

@@ -28,6 +28,50 @@ export function ReportQueueTable({
   return (
     <ExpenseReportTable
       reports={items.map((item) => item.report)}
+      renderRowActions={(report) => {
+        const item = items.find((entry) => entry.report.id === report.id)
+        if (!item) return null
+
+        if (item.queueKind === 'approval_pending' && onApprove && onReject) {
+          return (
+            <div className="flex flex-wrap gap-1.5">
+              <Button
+                size="sm"
+                variant="success"
+                disabled={actionId === report.id}
+                onClick={() => onApprove(report.id)}
+              >
+                <Check className="h-3.5 w-3.5" />
+                Approve
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={actionId === report.id}
+                onClick={() => onReject(report.id)}
+              >
+                <X className="h-3.5 w-3.5" />
+                Reject
+              </Button>
+            </div>
+          )
+        }
+
+        if (item.queueKind === 'payment_pending' && onMarkPaid) {
+          return (
+            <Button
+              size="sm"
+              disabled={actionId === report.id}
+              onClick={() => onMarkPaid(report.id)}
+            >
+              <Banknote className="h-3.5 w-3.5" />
+              Mark paid
+            </Button>
+          )
+        }
+
+        return null
+      }}
       renderExpanded={(report) => {
         const item = items.find((entry) => entry.report.id === report.id)
         if (!item) return null
@@ -39,6 +83,7 @@ export function ReportQueueTable({
         return (
           <ExpandedReportPanel
             report={report}
+            employeeLabel={report.employee_name || report.employee_email}
             notes={notes[report.id] || ''}
             onNotesChange={(value) => onNotesChange(report.id, value)}
             showApprovalActions={Boolean(showApprovalActions)}
@@ -56,6 +101,7 @@ export function ReportQueueTable({
 
 function ExpandedReportPanel({
   report,
+  employeeLabel,
   notes,
   onNotesChange,
   showApprovalActions,
@@ -66,6 +112,7 @@ function ExpandedReportPanel({
   onMarkPaid,
 }: {
   report: QueuedReport['report']
+  employeeLabel: string
   notes: string
   onNotesChange: (value: string) => void
   showApprovalActions: boolean
@@ -79,14 +126,15 @@ function ExpandedReportPanel({
 
   if (showApprovalActions) {
     actions = (
-      <div className="space-y-3">
+      <div className="space-y-3 rounded-lg border border-[#e2e8f0] bg-white px-4 py-3">
+        <p className="text-sm font-medium text-gray-900">{employeeLabel}</p>
         <Textarea
           placeholder="Notes (required for rejection)"
           value={notes}
           onClick={(e) => e.stopPropagation()}
           onChange={(e) => onNotesChange(e.target.value)}
         />
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             variant="success"
             disabled={actionId === report.id}
@@ -114,7 +162,8 @@ function ExpandedReportPanel({
     )
   } else if (showPaymentActions) {
     actions = (
-      <div className="space-y-3">
+      <div className="space-y-3 rounded-lg border border-[#e2e8f0] bg-white px-4 py-3">
+        <p className="text-sm font-medium text-gray-900">{employeeLabel}</p>
         <Textarea
           placeholder="Payment notes (optional)"
           value={notes}
@@ -137,8 +186,8 @@ function ExpandedReportPanel({
 
   return (
     <div className="space-y-4">
-      <ReportDetail report={report} showEmployee={false} />
       {actions}
+      <ReportDetail report={report} showEmployee={false} />
     </div>
   )
 }

@@ -46,3 +46,11 @@ export const CONDITION_OPERATORS = [
 export function routingLabel(routingType: ApprovalNodeData['routingType']) {
   return routingType === 'COMPANY' ? 'Company wide' : 'Department based'
 }
+
+export function departmentRoutingLabel(
+  routingType: ApprovalNodeData['routingType'],
+  departmentName?: string | null,
+) {
+  if (routingType !== 'DEPARTMENT') return null
+  return departmentName?.trim() || "Submitter's department"
+}

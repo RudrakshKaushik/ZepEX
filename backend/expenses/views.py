@@ -1159,7 +1159,7 @@ def update_workflow_step(request, step_id):
     if new_routing_type:
         if new_routing_type not in [
             ApprovalWorkflowStep.ROUTING_DEPARTMENT,
-            ApprovalWorkflowStep.ROUTING_COMPANY
+            ApprovalWorkflowStep.ROUTING_COMPANY,
         ]:
             return Response(
                 {"error": "Invalid routing_type."},
@@ -1193,11 +1193,15 @@ def update_workflow_step(request, step_id):
             ApprovalWorkflowStep.objects.filter(
                 workflow=workflow,
                 is_active=True
-            ).order_by("step_order", "created_at")
+            ).order_by(
+                "step_order",
+                "created_at"
+            )
         )
 
         active_steps = [
-            active_step for active_step in active_steps
+            active_step
+            for active_step in active_steps
             if active_step.id != step.id
         ]
 
@@ -1215,14 +1219,20 @@ def update_workflow_step(request, step_id):
         )
 
         for index, active_step in enumerate(active_steps, start=1):
+            active_step.step_order = index + 1000
+            active_step.save(update_fields=["step_order"])
+
+        for index, active_step in enumerate(active_steps, start=1):
             active_step.step_order = index
             active_step.save(update_fields=["step_order"])
+
+        step.refresh_from_db()
 
     create_audit_log(
         company=profile.company,
         action="WORKFLOW_STEP_UPDATED",
         action_by=profile,
-        message=f"Workflow step updated.",
+        message="Workflow step updated.",
         metadata={
             "workflow_id": str(workflow.id),
             "step_id": str(step.id),
@@ -1239,7 +1249,7 @@ def update_workflow_step(request, step_id):
     return Response({
         "message": "Workflow step updated successfully.",
         "step": ApprovalWorkflowStepSerializer(step).data
-    })    
+    })
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])

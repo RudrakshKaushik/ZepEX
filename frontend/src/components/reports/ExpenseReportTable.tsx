@@ -2,8 +2,15 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { WorkflowStepper } from '@/components/reports/WorkflowStepper'
 import { UserAvatar } from '@/components/ui/user-avatar'
+import {
+  tableBodyCellClass,
+  tableGridClass,
+  tableHeadCellClass,
+  tableHeadRowClass,
+} from '@/lib/tableStyles'
 import { formatDate } from '@/lib/utils'
 import type { ExpenseReport } from '@/types'
+import { cn } from '@/lib/utils'
 
 interface ExpenseReportTableProps {
   reports: ExpenseReport[]
@@ -22,17 +29,17 @@ export function ExpenseReportTable({
 
   return (
     <div className="overflow-x-auto rounded-lg border bg-white">
-      <table className="w-full min-w-[48rem] text-sm">
+      <table className={cn(tableGridClass, 'min-w-[48rem]')}>
         <thead>
-          <tr className="bg-[#edf2f7] text-left text-sm font-semibold text-gray-700">
-            <th className="w-10 px-3 py-3" aria-label="Expand" />
-            <th className="px-4 py-3">Employee</th>
-            <th className="px-4 py-3">Department</th>
-            <th className="px-4 py-3">Report month</th>
-            <th className="px-4 py-3">Status</th>
+          <tr className={tableHeadRowClass}>
+            <th className={cn(tableHeadCellClass, 'w-10 px-3')} aria-label="Expand" />
+            <th className={tableHeadCellClass}>Employee</th>
+            <th className={tableHeadCellClass}>Department</th>
+            <th className={tableHeadCellClass}>Report month</th>
+            <th className={tableHeadCellClass}>Status</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-[#e2e8f0]">
+        <tbody>
           {reports.map((report) => {
             const expanded = expandedId === report.id
             return (
@@ -68,10 +75,10 @@ function ExpenseReportRow({
         className="cursor-pointer text-gray-700 transition-colors hover:bg-gray-50/80"
         onClick={onToggle}
       >
-        <td className="px-3 py-3 text-muted-foreground">
+        <td className={cn(tableBodyCellClass, 'px-3 py-3 text-muted-foreground')}>
           {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </td>
-        <td className="px-4 py-3 font-medium text-gray-900">
+        <td className={cn(tableBodyCellClass, 'font-medium text-gray-900')}>
           <div className="flex items-center gap-3">
             <UserAvatar
               src={report.employee_profile_picture}
@@ -84,15 +91,15 @@ function ExpenseReportRow({
             </div>
           </div>
         </td>
-        <td className="px-4 py-3">{report.department_name}</td>
-        <td className="px-4 py-3">{formatDate(report.month)}</td>
-        <td className="px-4 py-3">
+        <td className={tableBodyCellClass}>{report.department_name}</td>
+        <td className={tableBodyCellClass}>{formatDate(report.month)}</td>
+        <td className={tableBodyCellClass}>
           <WorkflowStepper timeline={report.workflow_timeline ?? []} />
         </td>
       </tr>
       {expanded && (
         <tr className="bg-gray-50/60">
-          <td colSpan={5} className="px-4 py-5">
+          <td colSpan={5} className="border-b border-[#e2e8f0] px-4 py-5">
             <div onClick={(e) => e.stopPropagation()}>{renderExpanded(report)}</div>
           </td>
         </tr>

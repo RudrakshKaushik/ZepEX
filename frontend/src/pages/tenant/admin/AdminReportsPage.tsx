@@ -10,6 +10,12 @@ import {
   rejectReport,
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
+import {
+  tableBodyCellClass,
+  tableGridClass,
+  tableHeadCellClass,
+  tableHeadRowClass,
+} from '@/lib/tableStyles'
 import { AdminListPanel } from '@/components/admin/AdminListPanel'
 import { DashboardEmptyState } from '@/components/dashboard/DashboardEmptyState'
 import { ReportDetail } from '@/components/ReportDetail'
@@ -28,6 +34,7 @@ import { fetchAllPages } from '@/lib/pagination'
 import { toAdminApiParams, type AdminReportFilters } from '@/lib/reportFilters'
 import { toast } from '@/lib/toast'
 import { formatDate } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import type { DepartmentRecord, DuplicateReceiptLog, EmployeeRecord, ExpenseReport } from '@/types'
 
 const STATUS_TABS = [
@@ -133,30 +140,32 @@ function DuplicatesTable({ duplicates }: { duplicates: DuplicateReceiptLog[] }) 
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[720px] text-left text-sm">
+      <table className={cn(tableGridClass, 'min-w-[720px] text-left')}>
         <thead>
-          <tr className="border-b text-muted-foreground">
-            <th className="px-4 py-3 font-medium">Type</th>
-            <th className="px-4 py-3 font-medium">Original</th>
-            <th className="px-4 py-3 font-medium">Duplicate</th>
-            <th className="px-4 py-3 font-medium">Detected</th>
+          <tr className={tableHeadRowClass}>
+            <th className={tableHeadCellClass}>Type</th>
+            <th className={tableHeadCellClass}>Original</th>
+            <th className={tableHeadCellClass}>Duplicate</th>
+            <th className={tableHeadCellClass}>Detected</th>
           </tr>
         </thead>
         <tbody>
           {duplicates.map((entry) => (
-            <tr key={entry.id} className="border-b last:border-0">
-              <td className="px-4 py-3 capitalize">
+            <tr key={entry.id}>
+              <td className={cn(tableBodyCellClass, 'capitalize')}>
                 {entry.duplicate_type.replace(/_/g, ' ').toLowerCase()}
               </td>
-              <td className="px-4 py-3">
+              <td className={tableBodyCellClass}>
                 <p className="font-medium">{entry.original_vendor || 'Unknown vendor'}</p>
                 <p className="text-muted-foreground">{entry.original_employee_email}</p>
               </td>
-              <td className="px-4 py-3">
+              <td className={tableBodyCellClass}>
                 <p className="font-medium">{entry.duplicate_vendor || 'Unknown vendor'}</p>
                 <p className="text-muted-foreground">{entry.duplicate_employee_email}</p>
               </td>
-              <td className="px-4 py-3 text-muted-foreground">{formatDate(entry.created_at)}</td>
+              <td className={cn(tableBodyCellClass, 'text-muted-foreground')}>
+                {formatDate(entry.created_at)}
+              </td>
             </tr>
           ))}
         </tbody>

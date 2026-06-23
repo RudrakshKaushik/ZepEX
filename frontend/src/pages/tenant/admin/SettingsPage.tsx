@@ -130,9 +130,9 @@ export function SettingsPage() {
         icon={Settings}
         navItems={navItems}
       >
-        <div className="grid gap-6 lg:grid-cols-2">
-          <FormPageShimmer fields={4} />
-          <FormPageShimmer fields={4} />
+        <div className="grid gap-6 xl:grid-cols-2">
+          <FormPageShimmer fields={5} />
+          <FormPageShimmer fields={5} />
         </div>
       </DashboardLayout>
     )
@@ -150,112 +150,137 @@ export function SettingsPage() {
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
+      <div className="grid gap-6 xl:grid-cols-2">
+        <Card className="flex h-full flex-col rounded-xl border border-[#e2e8f0] bg-white shadow-sm">
+          <CardHeader className="border-b border-[#e2e8f0] px-5 py-5 sm:px-6">
             <CardTitle>Reimbursement email (IMAP)</CardTitle>
             <CardDescription>Fetch expense receipts from a shared inbox.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <form onSubmit={saveEmail} className="space-y-3">
-              <div className="space-y-2">
-                <Label>Email address</Label>
-                <Input
-                  value={emailForm.email_address}
-                  onChange={(e) => setEmailForm({ ...emailForm, email_address: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
+          <CardContent className="flex flex-1 flex-col px-5 py-5 sm:px-6 sm:py-6">
+            <form onSubmit={saveEmail} className="flex flex-1 flex-col gap-4">
+              <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label>IMAP host</Label>
+                  <Label htmlFor="imap-email">Email address</Label>
                   <Input
-                    value={emailForm.imap_host}
-                    onChange={(e) => setEmailForm({ ...emailForm, imap_host: e.target.value })}
+                    id="imap-email"
+                    type="email"
+                    value={emailForm.email_address}
+                    onChange={(e) => setEmailForm({ ...emailForm, email_address: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-[1fr_7rem]">
+                  <div className="space-y-2">
+                    <Label htmlFor="imap-host">IMAP host</Label>
+                    <Input
+                      id="imap-host"
+                      value={emailForm.imap_host}
+                      onChange={(e) => setEmailForm({ ...emailForm, imap_host: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="imap-port">Port</Label>
+                    <Input
+                      id="imap-port"
+                      inputMode="numeric"
+                      value={emailForm.imap_port}
+                      onChange={(e) => setEmailForm({ ...emailForm, imap_port: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="imap-username">Username</Label>
+                  <Input
+                    id="imap-username"
+                    value={emailForm.imap_username}
+                    onChange={(e) => setEmailForm({ ...emailForm, imap_username: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Port</Label>
-                  <Input
-                    value={emailForm.imap_port}
-                    onChange={(e) => setEmailForm({ ...emailForm, imap_port: e.target.value })}
+                  <Label htmlFor="imap-password">Password / app password</Label>
+                  <PasswordInput
+                    id="imap-password"
+                    value={emailForm.imap_password}
+                    onChange={(e) => setEmailForm({ ...emailForm, imap_password: e.target.value })}
+                    placeholder="Enter app password"
                   />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label>Username</Label>
-                <Input
-                  value={emailForm.imap_username}
-                  onChange={(e) => setEmailForm({ ...emailForm, imap_username: e.target.value })}
-                />
+
+              <div className="mt-auto flex flex-wrap gap-3 border-t border-[#e2e8f0] pt-5">
+                <Button type="submit" disabled={saving}>
+                  Save email config
+                </Button>
+                <Button type="button" variant="outline" onClick={fetchEmails} disabled={saving}>
+                  Trigger email fetch
+                </Button>
               </div>
-              <div className="space-y-2">
-                <Label>Password / app password</Label>
-                <PasswordInput
-                  value={emailForm.imap_password}
-                  onChange={(e) => setEmailForm({ ...emailForm, imap_password: e.target.value })}
-                />
-              </div>
-              <Button type="submit" disabled={saving}>
-                Save email config
-              </Button>
             </form>
-            <Button variant="outline" className="mt-3" onClick={fetchEmails} disabled={saving}>
-              Trigger email fetch
-            </Button>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
+        <Card className="flex h-full flex-col rounded-xl border border-[#e2e8f0] bg-white shadow-sm">
+          <CardHeader className="border-b border-[#e2e8f0] px-5 py-5 sm:px-6">
             <CardTitle>SMTP notifications</CardTitle>
             <CardDescription>Outgoing email for status updates.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <form onSubmit={saveSmtp} className="space-y-3">
-              <div className="grid gap-3 sm:grid-cols-2">
+          <CardContent className="flex flex-1 flex-col px-5 py-5 sm:px-6 sm:py-6">
+            <form onSubmit={saveSmtp} className="flex flex-1 flex-col gap-4">
+              <div className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-[1fr_7rem]">
+                  <div className="space-y-2">
+                    <Label htmlFor="smtp-host">SMTP host</Label>
+                    <Input
+                      id="smtp-host"
+                      value={smtpForm.smtp_host}
+                      onChange={(e) => setSmtpForm({ ...smtpForm, smtp_host: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="smtp-port">Port</Label>
+                    <Input
+                      id="smtp-port"
+                      inputMode="numeric"
+                      value={smtpForm.smtp_port}
+                      onChange={(e) => setSmtpForm({ ...smtpForm, smtp_port: e.target.value })}
+                    />
+                  </div>
+                </div>
                 <div className="space-y-2">
-                  <Label>SMTP host</Label>
+                  <Label htmlFor="smtp-email">SMTP email</Label>
                   <Input
-                    value={smtpForm.smtp_host}
-                    onChange={(e) => setSmtpForm({ ...smtpForm, smtp_host: e.target.value })}
+                    id="smtp-email"
+                    type="email"
+                    value={smtpForm.smtp_email}
+                    onChange={(e) => setSmtpForm({ ...smtpForm, smtp_email: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Port</Label>
+                  <Label htmlFor="smtp-password">Password</Label>
+                  <PasswordInput
+                    id="smtp-password"
+                    value={smtpForm.smtp_password}
+                    onChange={(e) => setSmtpForm({ ...smtpForm, smtp_password: e.target.value })}
+                    placeholder="Enter SMTP password"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="smtp-from-name">From name</Label>
                   <Input
-                    value={smtpForm.smtp_port}
-                    onChange={(e) => setSmtpForm({ ...smtpForm, smtp_port: e.target.value })}
+                    id="smtp-from-name"
+                    value={smtpForm.from_email_name}
+                    onChange={(e) =>
+                      setSmtpForm({ ...smtpForm, from_email_name: e.target.value })
+                    }
                   />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label>SMTP email</Label>
-                <Input
-                  type="email"
-                  value={smtpForm.smtp_email}
-                  onChange={(e) => setSmtpForm({ ...smtpForm, smtp_email: e.target.value })}
-                />
+
+              <div className="mt-auto border-t border-[#e2e8f0] pt-5">
+                <Button type="submit" disabled={saving}>
+                  Save SMTP config
+                </Button>
               </div>
-              <div className="space-y-2">
-                <Label>Password</Label>
-                <PasswordInput
-                  value={smtpForm.smtp_password}
-                  onChange={(e) => setSmtpForm({ ...smtpForm, smtp_password: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>From name</Label>
-                <Input
-                  value={smtpForm.from_email_name}
-                  onChange={(e) =>
-                    setSmtpForm({ ...smtpForm, from_email_name: e.target.value })
-                  }
-                />
-              </div>
-              <Button type="submit" disabled={saving}>
-                Save SMTP config
-              </Button>
             </form>
           </CardContent>
         </Card>

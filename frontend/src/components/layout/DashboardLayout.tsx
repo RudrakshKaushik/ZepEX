@@ -29,6 +29,7 @@ interface DashboardLayoutProps {
   subtitle?: string
   breadcrumb?: string
   icon?: React.ComponentType<{ className?: string }>
+  headerLeading?: ReactNode
   headerAction?: ReactNode
   navItems: NavItem[]
   children: ReactNode
@@ -40,6 +41,7 @@ export function DashboardLayout({
   subtitle,
   breadcrumb,
   icon: PageIcon,
+  headerLeading,
   headerAction,
   navItems,
   children,
@@ -133,7 +135,8 @@ export function DashboardLayout({
 
           <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
             <div className="flex min-w-0 items-start gap-4">
-              {PageIcon && (
+              {headerLeading}
+              {!headerLeading && PageIcon && (
                 <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-sm">
                   <PageIcon className="h-7 w-7" />
                 </div>

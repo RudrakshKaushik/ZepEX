@@ -1,6 +1,6 @@
-import { FileText } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { ExpenseReport } from '@/types'
+import { UserAvatar } from '@/components/ui/user-avatar'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
 interface DashboardReportListProps {
@@ -30,17 +30,27 @@ export function DashboardReportList({
             <tr key={report.id} className="text-gray-700">
               <td className="py-4 pr-4">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50">
-                    <FileText className="h-4 w-4 text-red-500" />
-                  </div>
+                  {showEmployee ? (
+                    <UserAvatar
+                      src={report.employee_profile_picture}
+                      name={report.employee_name}
+                      email={report.employee_email}
+                    />
+                  ) : (
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-sm font-semibold text-red-500">
+                      {report.month.slice(5, 7)}
+                    </div>
+                  )}
                   <div className="min-w-0">
                     <p className="truncate font-medium text-gray-900">
                       {showEmployee
-                        ? report.employee_email
+                        ? report.employee_name || report.employee_email
                         : `Report ${report.month.slice(0, 7)}`}
                     </p>
                     <p className="truncate text-xs text-gray-500">
-                      {report.department_name || 'No department'}
+                      {showEmployee
+                        ? report.employee_email
+                        : report.department_name || 'No department'}
                     </p>
                   </div>
                 </div>

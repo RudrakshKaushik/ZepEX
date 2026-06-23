@@ -217,7 +217,7 @@ def create_employee(request):
     return Response(
         {
             "message": "Employee created successfully.",
-            "employee": UserProfileSerializer(profile).data
+            "employee": UserProfileSerializer(profile, context={"request": request}).data
         },
         status=status.HTTP_201_CREATED
     )
@@ -250,7 +250,8 @@ def list_employees(request):
 
     serializer = UserProfileSerializer(
         page_obj,
-        many=True
+        many=True,
+        context={"request": request},
     )
 
     return Response({

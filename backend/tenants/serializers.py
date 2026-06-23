@@ -1,6 +1,7 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
+from .media_utils import profile_picture_url
 from .models import (
     Company,
     Department,
@@ -131,6 +132,11 @@ class UserProfileSerializer(serializers.ModelSerializer):
         source="company_role.name",
         read_only=True
     )
+
+    profile_picture = serializers.SerializerMethodField()
+
+    def get_profile_picture(self, obj):
+        return profile_picture_url(obj, self.context.get("request"))
 
     class Meta:
         model = UserProfile

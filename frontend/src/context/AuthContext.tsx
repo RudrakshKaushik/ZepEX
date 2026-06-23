@@ -46,6 +46,7 @@ function mergeProfileIntoUser(user: User, profile: Awaited<ReturnType<typeof get
     ...user,
     first_name: profile.first_name,
     last_name: profile.last_name,
+    profile_picture: profile.profile_picture ?? null,
     company_role: profile.company_role ?? user.company_role ?? null,
     company_role_id: profile.company_role_id ?? user.company_role_id ?? null,
     permissions: resolveUserPermissions(profile.role, profile.permissions),

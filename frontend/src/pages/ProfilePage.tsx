@@ -1,5 +1,5 @@
 import { Key, Pencil, Save, Trash2, Upload, User } from 'lucide-react'
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { changePassword, editProfile, getProfile } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
@@ -18,6 +18,7 @@ import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
 import { FormPageShimmer } from '@/components/ui/shimmer'
 import { Textarea } from '@/components/ui/textarea'
+import { UserAvatar } from '@/components/ui/user-avatar'
 import { useAuth } from '@/context/AuthContext'
 import { useAdminNav } from '@/hooks/useAdminNav'
 import { getNavForUser, userRoleLabel } from '@/lib/dashboardNav'
@@ -51,7 +52,7 @@ function ProfileField({ label, value }: { label: string; value: string }) {
 }
 
 export function ProfilePage() {
-  const { user, logout } = useAuth()
+  const { user, logout, refreshPermissions } = useAuth()
   const navigate = useNavigate()
   const { navItems: adminNavItems, ready: adminNavReady } = useAdminNav()
   const [profile, setProfile] = useState<UserProfile | null>(null)
@@ -137,6 +138,7 @@ export function ProfilePage() {
         phone_number: updated.phone_number || '',
         address: updated.address || '',
       })
+      await refreshPermissions()
     } catch (err) {
       setError(getApiErrorMessage(err))
     } finally {
@@ -167,6 +169,17 @@ export function ProfilePage() {
     setPictureFile(file)
   }
 
+  const picturePreviewUrl = useMemo(
+    () => (pictureFile ? URL.createObjectURL(pictureFile) : null),
+    [pictureFile],
+  )
+
+  useEffect(() => {
+    return () => {
+      if (picturePreviewUrl) URL.revokeObjectURL(picturePreviewUrl)
+    }
+  }, [picturePreviewUrl])
+
   if (loading || (user?.role === 'COMPANY_ADMIN' && !adminNavReady)) {
     return (
       <DashboardLayout
@@ -189,9 +202,18 @@ export function ProfilePage() {
 
   return (
     <DashboardLayout
-      title="Profile"
+      title={fullName || 'Profile'}
       breadcrumb="Profile"
-      icon={User}
+      headerLeading={
+        <UserAvatar
+          src={profile?.profile_picture ?? user?.profile_picture}
+          firstName={profile?.first_name ?? user?.first_name}
+          lastName={profile?.last_name ?? user?.last_name}
+          email={email}
+          size="lg"
+          className="shadow-sm"
+        />
+      }
       subtitle={`${email} · ${role}`}
       navItems={navItems}
     >
@@ -324,6 +346,18 @@ export function ProfilePage() {
 
               <div className="space-y-2">
                 <Label>Profile picture</Label>
+                <div className="flex items-center gap-4">
+                  <UserAvatar
+                    src={picturePreviewUrl ?? profile?.profile_picture}
+                    firstName={profile?.first_name ?? user?.first_name}
+                    lastName={profile?.last_name ?? user?.last_name}
+                    email={email}
+                    size="lg"
+                  />
+                  <p className="text-sm text-gray-500">
+                    Upload a new photo or keep your current picture.
+                  </p>
+                </div>
                 <div
                   className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center transition ${
                     dragOver

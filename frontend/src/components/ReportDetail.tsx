@@ -4,6 +4,7 @@ import { CompanyAdminOverrideBadge } from '@/components/reports/CompanyAdminOver
 import { WorkflowTimeline } from '@/components/reports/WorkflowTimeline'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { UserAvatar } from '@/components/ui/user-avatar'
 import type { ExpenseReport } from '@/types'
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 
@@ -24,7 +25,15 @@ export function ReportDetail({
         <StatusBadge status={report.status} />
         {showAdminOverride && <CompanyAdminOverrideBadge />}
         {showEmployee && (
-          <span className="text-sm text-muted-foreground">{report.employee_email}</span>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <UserAvatar
+              src={report.employee_profile_picture}
+              name={report.employee_name}
+              email={report.employee_email}
+              size="sm"
+            />
+            <span>{report.employee_name || report.employee_email}</span>
+          </div>
         )}
         <span className="text-sm text-muted-foreground">
           {report.department_name} · {formatDate(report.month)}

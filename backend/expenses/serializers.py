@@ -10,6 +10,7 @@ from .models import (
     ApprovalWorkflowStep
 )
 from .report_utils import is_payment_queue_role
+from tenants.media_utils import profile_picture_url
 
 
 
@@ -175,6 +176,8 @@ class ExpenseReportSerializer(serializers.ModelSerializer):
 
     employee_name = serializers.SerializerMethodField()
 
+    employee_profile_picture = serializers.SerializerMethodField()
+
     department_name = serializers.CharField(
         source="department.name",
         read_only=True
@@ -194,6 +197,7 @@ class ExpenseReportSerializer(serializers.ModelSerializer):
             "company",
             "employee",
             "employee_name",
+            "employee_profile_picture",
             "employee_email",
             "department",
             "department_name",
@@ -237,6 +241,9 @@ class ExpenseReportSerializer(serializers.ModelSerializer):
         ).strip()
 
         return full_name or obj.employee.user.email
+
+    def get_employee_profile_picture(self, obj):
+        return profile_picture_url(obj.employee, self.context.get("request"))
 
     def get_current_step(self, obj):
         step = obj.current_workflow_step

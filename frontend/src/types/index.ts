@@ -39,6 +39,7 @@ export interface User {
   permissions?: UserPermissions
   company: Company | null
   department: Department | null
+  profile_picture?: string | null
 }
 
 export interface LoginResponse {
@@ -119,6 +120,7 @@ export interface EmployeeRecord {
   address?: string | null
   is_active?: boolean
   created_at: string
+  profile_picture?: string | null
 }
 
 export interface PolicyRule {
@@ -223,6 +225,7 @@ export interface ExpenseReport {
   employee: number
   employee_email: string
   employee_name?: string
+  employee_profile_picture?: string | null
   department: string
   department_name: string
   month: string

@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { WorkflowStepper } from '@/components/reports/WorkflowStepper'
+import { UserAvatar } from '@/components/ui/user-avatar'
 import { formatDate } from '@/lib/utils'
 import type { ExpenseReport } from '@/types'
 
@@ -25,7 +26,7 @@ export function ExpenseReportTable({
         <thead>
           <tr className="bg-[#edf2f7] text-left text-sm font-semibold text-gray-700">
             <th className="w-10 px-3 py-3" aria-label="Expand" />
-            <th className="px-4 py-3">Email</th>
+            <th className="px-4 py-3">Employee</th>
             <th className="px-4 py-3">Department</th>
             <th className="px-4 py-3">Report month</th>
             <th className="px-4 py-3">Status</th>
@@ -70,7 +71,19 @@ function ExpenseReportRow({
         <td className="px-3 py-3 text-muted-foreground">
           {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </td>
-        <td className="px-4 py-3 font-medium text-gray-900">{report.employee_email}</td>
+        <td className="px-4 py-3 font-medium text-gray-900">
+          <div className="flex items-center gap-3">
+            <UserAvatar
+              src={report.employee_profile_picture}
+              name={report.employee_name}
+              email={report.employee_email}
+            />
+            <div className="min-w-0">
+              <p className="truncate">{report.employee_name || report.employee_email}</p>
+              <p className="truncate text-xs font-normal text-gray-500">{report.employee_email}</p>
+            </div>
+          </div>
+        </td>
         <td className="px-4 py-3">{report.department_name}</td>
         <td className="px-4 py-3">{formatDate(report.month)}</td>
         <td className="px-4 py-3">

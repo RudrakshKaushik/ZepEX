@@ -16,6 +16,7 @@ import { getApiErrorMessage } from '@/api/client'
 import { toast } from '@/lib/toast'
 import { AdminConfirmDialog } from '@/components/admin/AdminConfirmDialog'
 import { AdminDataTable, AdminTableCell, AdminTableRow, RolePill } from '@/components/admin/AdminDataTable'
+import { UserAvatar } from '@/components/ui/user-avatar'
 import { AdminListPanel } from '@/components/admin/AdminListPanel'
 import { AdminModalFooter } from '@/components/admin/AdminModalFooter'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
@@ -333,7 +334,17 @@ export function EmployeesPage() {
           {employees.map((emp) => (
             <AdminTableRow key={emp.id}>
               <AdminTableCell className="font-medium text-gray-900">
-                {emp.first_name} {emp.last_name}
+                <div className="flex items-center gap-3">
+                  <UserAvatar
+                    src={emp.profile_picture}
+                    firstName={emp.first_name}
+                    lastName={emp.last_name}
+                    email={emp.email}
+                  />
+                  <span>
+                    {emp.first_name} {emp.last_name}
+                  </span>
+                </div>
               </AdminTableCell>
               <AdminTableCell>{emp.email}</AdminTableCell>
               <AdminTableCell>

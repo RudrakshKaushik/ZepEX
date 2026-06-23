@@ -15,8 +15,11 @@ from tenants.models import Company, UserProfile
 from .models import (
     ExpenseReport,
     ExpenseSubmission,
-    ExpenseReceipt
+    ExpenseReceipt,
+    CompanyRole,
+    Department
 )
+
 
 from .serializers import ExpenseReceiptSerializer,ExpenseReportSerializer, ApprovalHistorySerializer
 from .services import extract_receipt_with_gemini
@@ -1101,6 +1104,142 @@ def add_workflow_step(request):
         },
         status=status.HTTP_201_CREATED
     )
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def update_workflow_step(request, step_id):
+
+    profile = request.user.profile
+
+    if profile.role != "COMPANY_ADMIN":
+        return Response(
+            {"error": "Only company admin can update workflow steps."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    try:
+        step = ApprovalWorkflowStep.objects.select_related(
+            "workflow",
+            "approver_role",
+            "department"
+        ).get(
+            id=step_id,
+            workflow__company=profile.company,
+            is_active=True
+        )
+
+    except ApprovalWorkflowStep.DoesNotExist:
+        return Response(
+            {"error": "Active workflow step not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    workflow = step.workflow
+
+    new_step_order = request.data.get("step_order")
+    new_approver_role_id = request.data.get("approver_role")
+    new_routing_type = request.data.get("routing_type")
+    new_department_id = request.data.get("department")
+
+    if new_approver_role_id:
+        try:
+            approver_role = CompanyRole.objects.get(
+                id=new_approver_role_id,
+                company=profile.company,
+                is_active=True
+            )
+            step.approver_role = approver_role
+
+        except CompanyRole.DoesNotExist:
+            return Response(
+                {"error": "Active approver role not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    if new_routing_type:
+        if new_routing_type not in [
+            ApprovalWorkflowStep.ROUTING_DEPARTMENT,
+            ApprovalWorkflowStep.ROUTING_COMPANY
+        ]:
+            return Response(
+                {"error": "Invalid routing_type."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        step.routing_type = new_routing_type
+
+    if "department" in request.data:
+        if new_department_id in [None, "", "null"]:
+            step.department = None
+        else:
+            try:
+                department = Department.objects.get(
+                    id=new_department_id,
+                    company=profile.company,
+                    is_active=True
+                )
+                step.department = department
+
+            except Department.DoesNotExist:
+                return Response(
+                    {"error": "Active department not found."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+    step.save()
+
+    if new_step_order:
+        active_steps = list(
+            ApprovalWorkflowStep.objects.filter(
+                workflow=workflow,
+                is_active=True
+            ).order_by("step_order", "created_at")
+        )
+
+        active_steps = [
+            active_step for active_step in active_steps
+            if active_step.id != step.id
+        ]
+
+        new_step_order = int(new_step_order)
+
+        if new_step_order < 1:
+            new_step_order = 1
+
+        if new_step_order > len(active_steps) + 1:
+            new_step_order = len(active_steps) + 1
+
+        active_steps.insert(
+            new_step_order - 1,
+            step
+        )
+
+        for index, active_step in enumerate(active_steps, start=1):
+            active_step.step_order = index
+            active_step.save(update_fields=["step_order"])
+
+    create_audit_log(
+        company=profile.company,
+        action="WORKFLOW_STEP_UPDATED",
+        action_by=profile,
+        message=f"Workflow step updated.",
+        metadata={
+            "workflow_id": str(workflow.id),
+            "step_id": str(step.id),
+            "step_order": step.step_order,
+            "role": step.approver_role.name,
+            "department": (
+                step.department.name
+                if step.department else None
+            ),
+            "routing_type": step.routing_type,
+        }
+    )
+
+    return Response({
+        "message": "Workflow step updated successfully.",
+        "step": ApprovalWorkflowStepSerializer(step).data
+    })    
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])

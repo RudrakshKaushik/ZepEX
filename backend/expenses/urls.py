@@ -21,7 +21,8 @@ from .views import (
     approve_report_step,
     reject_report_step,
     duplicate_receipts,
-    admin_reports_list
+    admin_reports_list,
+    update_workflow_step
     
     
 
@@ -68,5 +69,6 @@ path(
 path("duplicates/", duplicate_receipts, name="duplicate-receipts"),
 path("admin/reports/",admin_reports_list,name="admin-reports-list"
 ),
+path("workflow/steps/<uuid:step_id>/update/",update_workflow_step,name="update-workflow-step"),
 
 ]

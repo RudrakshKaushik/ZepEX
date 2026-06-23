@@ -2,6 +2,8 @@ import { Banknote } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { accountsMarkPaid } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
+import { showReportActionToast } from '@/lib/reportActions'
+import { toast } from '@/lib/toast'
 import { DashboardEmptyState } from '@/components/dashboard/DashboardEmptyState'
 import { DashboardPanel } from '@/components/dashboard/DashboardPanel'
 import { ReportDetail } from '@/components/ReportDetail'
@@ -43,10 +45,11 @@ export function AccountsReportsPage() {
     setError('')
     const note = notes[reportId] || ''
     try {
-      await accountsMarkPaid(reportId, note || 'Payment completed successfully')
+      const { data } = await accountsMarkPaid(reportId, note || 'Payment completed successfully')
+      showReportActionToast(data)
       await load()
     } catch (err) {
-      setError(getApiErrorMessage(err))
+      toast.error(getApiErrorMessage(err))
     } finally {
       setActionId(null)
     }

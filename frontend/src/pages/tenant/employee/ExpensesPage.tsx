@@ -9,6 +9,7 @@ import {
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
 import { StatusBadge } from '@/components/StatusBadge'
+import { WorkflowTimeline } from '@/components/reports/WorkflowTimeline'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { useAuth } from '@/context/AuthContext'
 import { defaultHomeForUser } from '@/lib/auth'
@@ -275,6 +276,21 @@ export function ExpensesPage() {
           )}
         </CardContent>
       </Card>
+
+      {report?.workflow_timeline && report.workflow_timeline.length > 0 && (
+        <div className="mt-6">
+          <WorkflowTimeline timeline={report.workflow_timeline} />
+        </div>
+      )}
+
+      {report?.latest_rejection_reason && (
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+          <p className="font-medium">
+            Rejected by {report.latest_rejection_reason.rejected_by}
+          </p>
+          <p className="mt-1">{report.latest_rejection_reason.reason}</p>
+        </div>
+      )}
 
       <Dialog
         open={uploadOpen}

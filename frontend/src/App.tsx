@@ -24,6 +24,7 @@ import { AccountsDashboard } from '@/pages/tenant/accounts/AccountsDashboard'
 import { AccountsReportsPage } from '@/pages/tenant/accounts/AccountsReportsPage'
 import { RolesPage } from '@/pages/tenant/admin/RolesPage'
 import { WorkflowPage } from '@/pages/tenant/admin/WorkflowPage'
+import { AdminReportsPage } from '@/pages/tenant/admin/AdminReportsPage'
 import { ProfilePage } from '@/pages/ProfilePage'
 import { Toaster } from '@/components/ui/toaster'
 
@@ -73,6 +74,7 @@ export default function App() {
             <Route path="/admin/employees" element={<EmployeesPage />} />
             <Route path="/admin/roles" element={<RolesPage />} />
             <Route path="/admin/workflow" element={<WorkflowPage />} />
+            <Route path="/admin/reports" element={<AdminReportsPage />} />
             <Route path="/admin/policy" element={<PolicyPage />} />
             <Route path="/admin/settings" element={<SettingsPage />} />
             <Route path="/admin/audit-logs" element={<AuditLogsPage />} />

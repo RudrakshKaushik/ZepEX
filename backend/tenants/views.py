@@ -260,6 +260,24 @@ def list_employees(request):
         "results": serializer.data
     })
 
+
+@api_view(["POST"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin
+])
+def assign_missing_company_roles_view(request):
+    from tenants.role_utils import assign_missing_company_roles
+
+    company = request.user.profile.company
+    updated_count = assign_missing_company_roles(company)
+
+    return Response({
+        "message": f"Assigned default company roles to {updated_count} user(s).",
+        "updated_count": updated_count,
+    })
+
+
 @api_view(["POST"])
 @permission_classes([
     IsAuthenticated,

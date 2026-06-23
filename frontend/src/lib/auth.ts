@@ -1,4 +1,5 @@
 import type { User, UserPermissions, UserRole } from '@/types'
+import { resolveUserPermissions } from '@/lib/permissions'
 
 export const roleHome: Record<UserRole, string> = {
   PLATFORM_OWNER: '/platform',
@@ -39,7 +40,7 @@ export function normalizeLoginUser(user: LoginUserPayload): User {
     system_role: user.system_role,
     company_role: user.company_role ?? null,
     company_role_id: user.company_role_id ?? null,
-    permissions: user.permissions,
+    permissions: resolveUserPermissions(user.system_role, user.permissions),
     company: user.company,
     department: user.department,
   }

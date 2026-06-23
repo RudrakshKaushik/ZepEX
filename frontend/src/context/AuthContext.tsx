@@ -10,6 +10,7 @@ import {
 import { getProfile, login as loginApi } from '@/api'
 import { clearStoredAuth, getApiErrorMessage, getStoredToken, setStoredToken } from '@/api/client'
 import { normalizeLoginUser, resolvePostLoginPath, roleHome } from '@/lib/auth'
+import { resolveUserPermissions } from '@/lib/permissions'
 import type { User, UserRole } from '@/types'
 
 const USER_KEY = 'zepex_user'
@@ -47,7 +48,7 @@ function mergeProfileIntoUser(user: User, profile: Awaited<ReturnType<typeof get
     last_name: profile.last_name,
     company_role: profile.company_role ?? user.company_role ?? null,
     company_role_id: profile.company_role_id ?? user.company_role_id ?? null,
-    permissions: profile.permissions ?? user.permissions,
+    permissions: resolveUserPermissions(profile.role, profile.permissions),
   }
 }
 

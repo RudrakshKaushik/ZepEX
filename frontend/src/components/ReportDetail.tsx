@@ -1,5 +1,7 @@
 import { AlertTriangle, FileText } from 'lucide-react'
 import { StatusBadge } from '@/components/StatusBadge'
+import { CompanyAdminOverrideBadge } from '@/components/reports/CompanyAdminOverrideBadge'
+import { WorkflowTimeline } from '@/components/reports/WorkflowTimeline'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { ExpenseReport } from '@/types'
@@ -8,13 +10,19 @@ import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 interface ReportDetailProps {
   report: ExpenseReport
   showEmployee?: boolean
+  showAdminOverride?: boolean
 }
 
-export function ReportDetail({ report, showEmployee = true }: ReportDetailProps) {
+export function ReportDetail({
+  report,
+  showEmployee = true,
+  showAdminOverride = false,
+}: ReportDetailProps) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <StatusBadge status={report.status} />
+        {showAdminOverride && <CompanyAdminOverrideBadge />}
         {showEmployee && (
           <span className="text-sm text-muted-foreground">{report.employee_email}</span>
         )}
@@ -22,6 +30,24 @@ export function ReportDetail({ report, showEmployee = true }: ReportDetailProps)
           {report.department_name} · {formatDate(report.month)}
         </span>
       </div>
+
+      {report.current_step && (
+        <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+          Current step: {report.current_step.approver_role} (order{' '}
+          {report.current_step.step_order})
+        </div>
+      )}
+
+      {report.latest_rejection_reason && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
+          <p className="font-medium">Rejected by {report.latest_rejection_reason.rejected_by}</p>
+          <p className="mt-1">{report.latest_rejection_reason.reason}</p>
+        </div>
+      )}
+
+      {report.workflow_timeline && report.workflow_timeline.length > 0 && (
+        <WorkflowTimeline timeline={report.workflow_timeline} />
+      )}
 
       <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
         <div>
@@ -42,10 +68,11 @@ export function ReportDetail({ report, showEmployee = true }: ReportDetailProps)
         </div>
       </div>
 
-      {(report.manager_notes || report.accounts_notes) && (
+      {(report.manager_notes || report.accounts_notes || report.paid_notes) && (
         <div className="rounded-lg bg-muted/60 p-4 text-sm">
           {report.manager_notes && <p><strong>Manager:</strong> {report.manager_notes}</p>}
           {report.accounts_notes && <p><strong>Accounts:</strong> {report.accounts_notes}</p>}
+          {report.paid_notes && <p><strong>Payment:</strong> {report.paid_notes}</p>}
         </div>
       )}
 

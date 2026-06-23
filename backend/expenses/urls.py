@@ -69,6 +69,6 @@ path(
 path("duplicates/", duplicate_receipts, name="duplicate-receipts"),
 path("admin/reports/",admin_reports_list,name="admin-reports-list"
 ),
-path("workflow/steps/<uuid:step_id>/update/",update_workflow_step,name="update-workflow-step"),
+path("workflow/steps/<int:step_id>/update/", update_workflow_step, name="update-workflow-step"),
 
 ]

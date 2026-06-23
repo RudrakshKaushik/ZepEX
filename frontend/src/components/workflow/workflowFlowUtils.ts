@@ -172,3 +172,23 @@ export function sortApprovalNodesByFlow(nodes: WorkflowNode[], edges: Edge[]): W
 
   return [...ordered, ...remaining]
 }
+
+export function canvasMatchesBackendSteps(
+  orderedNodes: WorkflowNode[],
+  activeSteps: { id: string; approver_role: number; routing_type: string; department: string | null }[],
+): boolean {
+  if (orderedNodes.length !== activeSteps.length) return false
+  if (orderedNodes.some((node) => !(node.data as ApprovalNodeData).backendStepId)) {
+    return false
+  }
+
+  return activeSteps.every((step, index) => {
+    const data = orderedNodes[index].data as ApprovalNodeData
+    return (
+      data.backendStepId === step.id &&
+      data.roleId === step.approver_role &&
+      data.routingType === step.routing_type &&
+      (data.departmentId || null) === (step.department || null)
+    )
+  })
+}

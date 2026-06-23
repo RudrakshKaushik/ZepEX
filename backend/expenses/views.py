@@ -10,14 +10,12 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 
-from tenants.models import Company, UserProfile
+from tenants.models import Company, UserProfile, CompanyRole, Department
 
 from .models import (
     ExpenseReport,
     ExpenseSubmission,
     ExpenseReceipt,
-    CompanyRole,
-    Department
 )
 
 

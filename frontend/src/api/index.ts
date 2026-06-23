@@ -1,17 +1,25 @@
 import { api } from './client'
 import type {
+  AddWorkflowStepResponse,
+  AdminReportsResponse,
   ApprovalWorkflow,
+  ApproveReportResponse,
   AuditLogEntry,
   CompanyRegistrationRequest,
   CompanyRole,
+  DeactivateWorkflowStepResponse,
   DepartmentRecord,
   EmployeeRecord,
   ExpenseReport,
   LoginResponse,
+  MarkPaidReportResponse,
+  PendingApprovalsResponse,
   PolicyRule,
   Receipt,
   ReimbursementEmailConfig,
+  RejectReportResponse,
   SmtpConfig,
+  UpdateWorkflowStepResponse,
   User,
   UserProfile,
 } from '@/types'
@@ -250,17 +258,35 @@ export const getCurrentMonthReport = () =>
 export const deleteLineItem = (lineItemId: string) =>
   api.delete(`/expenses/line-items/${lineItemId}/delete/`)
 
-export const getMyPendingApprovals = () =>
-  api.get<{ count: number; results: ExpenseReport[] }>('/expenses/approvals/my-pending/')
+export const getMyPendingApprovals = (params?: {
+  employee_id?: number
+  employee_email?: string
+  department_id?: string
+  start_date?: string
+  end_date?: string
+  min_amount?: string
+  max_amount?: string
+  page?: number
+}) => api.get<PendingApprovalsResponse>('/expenses/approvals/my-pending/', { params })
+
+export const getAdminReports = (params?: {
+  status?: string
+  employee_id?: number
+  employee_email?: string
+  department_id?: string
+  start_date?: string
+  end_date?: string
+  page?: number
+}) => api.get<AdminReportsResponse>('/expenses/admin/reports/', { params })
 
 export const approveReport = (reportId: string, notes?: string) =>
-  api.post(`/expenses/reports/${reportId}/approve/`, { notes })
+  api.post<ApproveReportResponse>(`/expenses/reports/${reportId}/approve/`, { notes })
 
 export const rejectReport = (reportId: string, notes: string) =>
-  api.post(`/expenses/reports/${reportId}/reject/`, { notes })
+  api.post<RejectReportResponse>(`/expenses/reports/${reportId}/reject/`, { notes })
 
 export const accountsMarkPaid = (reportId: string, notes: string) =>
-  api.post(`/expenses/accounts/reports/${reportId}/paid/`, { notes })
+  api.post<MarkPaidReportResponse>(`/expenses/accounts/reports/${reportId}/paid/`, { notes })
 
 export const triggerEmailFetch = () =>
   api.post<{ success: boolean; processed_count: number; skipped_count: number }>(
@@ -281,10 +307,20 @@ export const addWorkflowStep = (data: {
   approver_role: number
   routing_type: 'DEPARTMENT' | 'COMPANY'
   department?: string | null
-}) => api.post('/expenses/workflow/steps/add/', data)
+}) => api.post<AddWorkflowStepResponse>('/expenses/workflow/steps/add/', data)
 
 export const deactivateWorkflowStep = (stepId: string) =>
-  api.patch(`/expenses/workflow/steps/${stepId}/deactivate/`)
+  api.patch<DeactivateWorkflowStepResponse>(`/expenses/workflow/steps/${stepId}/deactivate/`)
+
+export const updateWorkflowStep = (
+  stepId: string,
+  data: {
+    step_order?: number
+    approver_role?: number
+    routing_type?: 'DEPARTMENT' | 'COMPANY'
+    department?: string | null
+  },
+) => api.patch<UpdateWorkflowStepResponse>(`/expenses/workflow/steps/${stepId}/update/`, data)
 
 // Dashboards
 export const getDashboard = () => api.get('/dashboard/')

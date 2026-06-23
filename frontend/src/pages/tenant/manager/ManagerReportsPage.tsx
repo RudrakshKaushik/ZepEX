@@ -6,6 +6,8 @@ import {
   managerRejectReport,
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
+import { showReportActionToast } from '@/lib/reportActions'
+import { toast } from '@/lib/toast'
 import { DashboardEmptyState } from '@/components/dashboard/DashboardEmptyState'
 import { DashboardPanel } from '@/components/dashboard/DashboardPanel'
 import { ReportDetail } from '@/components/ReportDetail'
@@ -45,10 +47,11 @@ export function ManagerReportsPage() {
     setActionId(reportId)
     setError('')
     try {
-      await managerApproveReport(reportId, notes[reportId] || 'Approved by manager')
+      const { data } = await managerApproveReport(reportId, notes[reportId] || 'Approved by manager')
+      showReportActionToast(data)
       await load()
     } catch (err) {
-      setError(getApiErrorMessage(err))
+      toast.error(getApiErrorMessage(err))
     } finally {
       setActionId(null)
     }
@@ -57,16 +60,17 @@ export function ManagerReportsPage() {
   const handleReject = async (reportId: string) => {
     const reason = notes[reportId]?.trim()
     if (!reason) {
-      setError('Rejection reason is required.')
+      toast.error('Rejection reason is required.')
       return
     }
     setActionId(reportId)
     setError('')
     try {
-      await managerRejectReport(reportId, reason)
+      const { data } = await managerRejectReport(reportId, reason)
+      showReportActionToast(data)
       await load()
     } catch (err) {
-      setError(getApiErrorMessage(err))
+      toast.error(getApiErrorMessage(err))
     } finally {
       setActionId(null)
     }

@@ -9,6 +9,7 @@ import {
   listCompanyRoles,
   listDepartments,
   saveApprovalWorkflow,
+  updateWorkflowStep,
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
 import { AdminListPanel } from '@/components/admin/AdminListPanel'
@@ -23,7 +24,44 @@ import { Label } from '@/components/ui/label'
 import { PageLoader } from '@/components/ui/spinner'
 import { fetchAllPages } from '@/lib/pagination'
 import { toast } from '@/lib/toast'
-import type { ApprovalWorkflow, CompanyRole, DepartmentRecord } from '@/types'
+import type { ApprovalWorkflow, ApprovalWorkflowStep, CompanyRole, DepartmentRecord } from '@/types'
+
+function getActiveSteps(workflow: ApprovalWorkflow | null): ApprovalWorkflowStep[] {
+  return (workflow?.steps ?? [])
+    .filter((step) => step.is_active)
+    .sort((a, b) => a.step_order - b.step_order)
+}
+
+function resolveCanvasStepIds(
+  orderedNodes: WorkflowNode[],
+  activeSteps: ApprovalWorkflowStep[],
+): Array<string | undefined> {
+  const usedStepIds = new Set<string>()
+
+  return orderedNodes.map((node) => {
+    const data = node.data as ApprovalNodeData
+
+    if (data.backendStepId) {
+      usedStepIds.add(data.backendStepId)
+      return data.backendStepId
+    }
+
+    const match = activeSteps.find(
+      (step) =>
+        !usedStepIds.has(step.id) &&
+        step.approver_role === data.roleId &&
+        step.routing_type === data.routingType &&
+        (step.department || null) === (data.departmentId || null),
+    )
+
+    if (match) {
+      usedStepIds.add(match.id)
+      return match.id
+    }
+
+    return undefined
+  })
+}
 
 async function loadWorkflowState(): Promise<ApprovalWorkflow | null> {
   try {
@@ -169,6 +207,14 @@ export function WorkflowPage() {
     setSaving(true)
     setError('')
     try {
+      for (const node of approvalNodes) {
+        const data = node.data as ApprovalNodeData
+        if (!data.roleId) {
+          toast.error(`Approval node "${data.label}" needs a company role before saving.`)
+          return
+        }
+      }
+
       const canvasStepIds = new Set(
         approvalNodes
           .map((node) => (node.data as ApprovalNodeData).backendStepId)
@@ -181,34 +227,73 @@ export function WorkflowPage() {
         }
       }
 
-      let stepOrder = 1
-      for (const node of approvalNodes) {
-        const data = node.data as ApprovalNodeData
+      let workflowData = await refreshWorkflow()
+      let currentActive = getActiveSteps(workflowData)
 
-        if (data.backendStepId) {
-          stepOrder += 1
-          continue
+      const newNodes = approvalNodes.filter(
+        (node) => !(node.data as ApprovalNodeData).backendStepId,
+      )
+
+      if (newNodes.length > 0) {
+        let nextOrder =
+          currentActive.length > 0
+            ? Math.max(...currentActive.map((step) => step.step_order)) + 1
+            : 1
+
+        for (const node of newNodes) {
+          const data = node.data as ApprovalNodeData
+          await addWorkflowStep({
+            step_order: nextOrder,
+            approver_role: data.roleId!,
+            routing_type: data.routingType,
+            department: data.routingType === 'DEPARTMENT' ? data.departmentId : null,
+          })
+          nextOrder += 1
         }
 
-        if (!data.roleId) {
-          toast.error(`Approval node "${data.label}" needs a company role before saving.`)
-          return
-        }
-
-        await addWorkflowStep({
-          step_order: stepOrder,
-          approver_role: data.roleId,
-          routing_type: data.routingType,
-          department: data.routingType === 'DEPARTMENT' ? data.departmentId : null,
-        })
-        stepOrder += 1
+        workflowData = await refreshWorkflow()
+        currentActive = getActiveSteps(workflowData)
       }
 
-      const workflowData = await refreshWorkflow()
+      let stepIds = resolveCanvasStepIds(approvalNodes, currentActive)
+
+      for (let index = 0; index < approvalNodes.length; index += 1) {
+        const stepId = stepIds[index]
+        if (!stepId) continue
+
+        const data = approvalNodes[index].data as ApprovalNodeData
+        const step = currentActive.find((item) => item.id === stepId)
+        if (!step) continue
+
+        const targetOrder = index + 1
+        const targetDepartment = data.routingType === 'DEPARTMENT' ? data.departmentId : null
+        const orderChanged = step.step_order !== targetOrder
+        const fieldsChanged =
+          step.approver_role !== data.roleId ||
+          step.routing_type !== data.routingType ||
+          (step.department || null) !== (targetDepartment || null)
+
+        if (!orderChanged && !fieldsChanged) continue
+
+        await updateWorkflowStep(stepId, {
+          step_order: targetOrder,
+          approver_role: data.roleId!,
+          routing_type: data.routingType,
+          department: targetDepartment,
+        })
+
+        if (orderChanged) {
+          workflowData = await refreshWorkflow()
+          currentActive = getActiveSteps(workflowData)
+          stepIds = resolveCanvasStepIds(approvalNodes, currentActive)
+        }
+      }
+
+      workflowData = await refreshWorkflow()
       if (!workflowData) {
         throw new Error('Workflow was saved but could not be loaded.')
       }
-      toast.success('Workflow Saved.')
+      toast.success('Workflow saved.')
       invalidateAdminSetupCache()
     } catch (err) {
       toast.error(getApiErrorMessage(err))

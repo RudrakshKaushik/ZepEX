@@ -10,6 +10,11 @@ export interface UserPermissions {
   can_submit_expense: boolean
   can_approve_expense: boolean
   can_mark_paid: boolean
+  can_manage_users?: boolean
+  can_manage_policy?: boolean
+  can_manage_workflow?: boolean
+  can_view_all_reports?: boolean
+  can_view_audit_logs?: boolean
 }
 
 export interface Company {
@@ -127,6 +132,7 @@ export interface PolicyRule {
 
 export interface ApprovalWorkflowStep {
   id: string
+  workflow?: string
   step_order: number
   approver_role: number
   approver_role_name: string
@@ -186,6 +192,31 @@ export interface Receipt {
   updated_at: string
 }
 
+export interface WorkflowTimelineEntry {
+  step_order: number
+  step_name: string
+  status: string
+  action_by: string | null
+  action_role: string
+  comments: string | null
+  action_at?: string | null
+}
+
+export interface ReportCurrentStep {
+  id?: string
+  step_order: number
+  approver_role: string
+  routing_type: 'DEPARTMENT' | 'COMPANY'
+  department: string | null
+}
+
+export interface LatestRejectionReason {
+  rejected_by: string
+  role: string
+  reason: string
+  rejected_at: string
+}
+
 export interface ExpenseReport {
   id: string
   company: string
@@ -198,14 +229,85 @@ export interface ExpenseReport {
   status: string
   total_amount: string
   submitted_at: string | null
-  manager_action_at: string | null
-  accounts_action_at: string | null
+  manager_action_at?: string | null
+  accounts_action_at?: string | null
   paid_at: string | null
-  manager_notes: string | null
-  accounts_notes: string | null
+  paid_notes?: string | null
+  manager_notes?: string | null
+  accounts_notes?: string | null
+  current_step?: ReportCurrentStep | null
+  workflow_timeline?: WorkflowTimelineEntry[]
+  latest_rejection_reason?: LatestRejectionReason | null
+  workflow_completed?: boolean
   receipts: Receipt[]
   created_at: string
   updated_at: string
+}
+
+export interface ApproveReportResponse {
+  message: string
+  approved_by: string
+  is_company_admin_override: boolean
+  next_step?: {
+    step_order: number
+    role: string
+    routing_type: string
+    department: string | null
+  }
+  status?: string
+  report: ExpenseReport
+}
+
+export interface RejectReportResponse {
+  message: string
+  rejected_by: string
+  is_company_admin_override: boolean
+  status: string
+  report: ExpenseReport
+}
+
+export interface MarkPaidReportResponse {
+  message: string
+  paid_by: string
+  is_company_admin_override: boolean
+  report: ExpenseReport
+}
+
+export interface AddWorkflowStepResponse {
+  message: string
+  step: ApprovalWorkflowStep
+}
+
+export interface DeactivateWorkflowStepResponse {
+  message: string
+  workflow_steps_reordered: boolean
+}
+
+export interface UpdateWorkflowStepResponse {
+  message: string
+  step: {
+    id: string
+    step_order: number
+    approver_role: { id: string; name: string } | number
+    routing_type: 'DEPARTMENT' | 'COMPANY'
+    department: string | null
+    is_active: boolean
+    created_at: string
+  }
+}
+
+export interface PendingApprovalsResponse {
+  count: number
+  filters: Record<string, string | null>
+  results: ExpenseReport[]
+}
+
+export interface AdminReportsResponse {
+  count: number
+  total_pages: number
+  current_page: number
+  filters: Record<string, string | null>
+  results: ExpenseReport[]
 }
 
 export interface AuditLogEntry {

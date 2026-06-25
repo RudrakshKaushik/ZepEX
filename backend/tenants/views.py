@@ -43,6 +43,9 @@ from rest_framework.permissions import (
     AllowAny
 )
 from django.core.paginator import Paginator
+from django.db.models import Q
+
+from decimal import Decimal
 
 @api_view(["POST"])
 @permission_classes([
@@ -96,9 +99,20 @@ def create_department(request):
 ])
 def list_departments(request):
 
+    search = request.GET.get("search")
+
     departments = Department.objects.filter(
         company=request.user.profile.company
-    ).order_by("name")
+    )
+
+    if search:
+        departments = departments.filter(
+            name__icontains=search
+        )
+
+    departments = departments.order_by(
+        "name"
+    )
 
     page = request.GET.get("page", 1)
 
@@ -118,6 +132,9 @@ def list_departments(request):
         "count": paginator.count,
         "total_pages": paginator.num_pages,
         "current_page": page_obj.number,
+        "filters": {
+            "search": search,
+        },
         "results": serializer.data
     })
 
@@ -230,12 +247,38 @@ def create_employee(request):
 ])
 def list_employees(request):
 
+    search = request.GET.get("search")
+    department_id = request.GET.get("department_id")
+    role = request.GET.get("role")
+
     employees = UserProfile.objects.select_related(
         "user",
-        "department"
+        "department",
+        "company_role"
     ).filter(
         company=request.user.profile.company
-    ).order_by(
+    )
+
+    if search:
+        employees = employees.filter(
+            Q(user__first_name__icontains=search)
+            |
+            Q(user__last_name__icontains=search)
+            |
+            Q(user__email__icontains=search)
+        )
+
+    if department_id:
+        employees = employees.filter(
+            department_id=department_id
+        )
+
+    if role:
+        employees = employees.filter(
+            role=role
+        )
+
+    employees = employees.order_by(
         "user__first_name"
     )
 
@@ -258,6 +301,11 @@ def list_employees(request):
         "count": paginator.count,
         "total_pages": paginator.num_pages,
         "current_page": page_obj.number,
+        "filters": {
+            "search": search,
+            "department_id": department_id,
+            "role": role,
+        },
         "results": serializer.data
     })
 
@@ -482,6 +530,9 @@ def list_policy_rules(request):
 
     company = request.user.profile.company
 
+    search = request.GET.get("search")
+    category = request.GET.get("category")
+
     policy, created = CompanyPolicy.objects.get_or_create(
         company=company
     )
@@ -489,6 +540,16 @@ def list_policy_rules(request):
     rules = PolicyCategoryRule.objects.filter(
         policy=policy
     )
+
+    if category:
+        rules = rules.filter(
+            category__iexact=category
+        )
+
+    if search:
+        rules = rules.filter(
+            Q(category__icontains=search)
+        )
 
     page = request.GET.get("page", 1)
 
@@ -508,6 +569,10 @@ def list_policy_rules(request):
         "count": paginator.count,
         "total_pages": paginator.num_pages,
         "current_page": page_obj.number,
+        "filters": {
+            "search": search,
+            "category": category,
+        },
         "results": serializer.data
     })
 
@@ -1398,17 +1463,30 @@ def company_roles(request):
 
     profile = request.user.profile
 
+    search = request.GET.get("search")
+    can_approve_expense = request.GET.get("can_approve_expense")
+
     roles = CompanyRole.objects.filter(
         company=profile.company,
         is_active=True
-    ).order_by("name")
+    )
+
+    if search:
+        roles = roles.filter(
+            Q(name__icontains=search)
+        )
+
+    if can_approve_expense:
+        roles = roles.filter(
+            can_approve_expense=
+            can_approve_expense.lower() == "true"
+        )
+
+    roles = roles.order_by("name")
 
     page = request.GET.get("page", 1)
 
-    paginator = Paginator(
-        roles,
-        10
-    )
+    paginator = Paginator(roles, 10)
 
     page_obj = paginator.get_page(page)
 
@@ -1421,6 +1499,10 @@ def company_roles(request):
         "count": paginator.count,
         "total_pages": paginator.num_pages,
         "current_page": page_obj.number,
+        "filters": {
+            "search": search,
+            "can_approve_expense": can_approve_expense,
+        },
         "results": serializer.data
     })
 
@@ -1823,3 +1905,959 @@ def assign_missing_company_roles_view(request):
     return Response({
         "message": "Assign missing company roles API is not implemented yet."
     })
+
+
+import csv
+import io
+
+from rest_framework.parsers import MultiPartParser
+
+@api_view(["POST"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin
+])
+def import_departments(request):
+
+    profile = request.user.profile
+
+    file = request.FILES.get("file")
+
+    if not file:
+        return Response(
+            {"error": "CSV file is required."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        decoded_file = file.read().decode("utf-8")
+
+        csv_data = csv.DictReader(
+            io.StringIO(decoded_file)
+        )
+
+        created_count = 0
+        skipped_count = 0
+        errors = []
+
+        for row_number, row in enumerate(csv_data, start=2):
+
+            name = (
+                row.get("name", "")
+                .strip()
+            )
+
+            if not name:
+                errors.append({
+                    "row": row_number,
+                    "message": "Department name is required."
+                })
+                continue
+
+            exists = Department.objects.filter(
+                company=profile.company,
+                name__iexact=name
+            ).exists()
+
+            if exists:
+                skipped_count += 1
+                continue
+
+            Department.objects.create(
+                company=profile.company,
+                name=name
+            )
+
+            created_count += 1
+
+        create_audit_log(
+            company=profile.company,
+            action="DEPARTMENT_IMPORT",
+            action_by=profile,
+            message="Departments imported.",
+            metadata={
+                "created": created_count,
+                "skipped": skipped_count,
+                "errors": len(errors),
+            }
+        )
+
+        return Response({
+            "success": True,
+            "created": created_count,
+            "skipped": skipped_count,
+            "errors": errors,
+        })
+
+    except Exception as e:
+
+        return Response(
+            {
+                "success": False,
+                "error": str(e)
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+
+@api_view(["POST"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin
+])
+def import_company_roles(request):
+
+    profile = request.user.profile
+
+    file = request.FILES.get("file")
+
+    if not file:
+        return Response(
+            {"error": "CSV file is required."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        decoded_file = file.read().decode("utf-8")
+
+        csv_data = csv.DictReader(
+            io.StringIO(decoded_file)
+        )
+
+        created_count = 0
+        updated_count = 0
+        skipped_count = 0
+        errors = []
+
+        def to_bool(value):
+            return str(value).strip().lower() in [
+                "true",
+                "1",
+                "yes",
+                "y"
+            ]
+
+        for row_number, row in enumerate(csv_data, start=2):
+
+            name = row.get("name", "").strip()
+
+            if not name:
+                errors.append({
+                    "row": row_number,
+                    "message": "Role name is required."
+                })
+                continue
+
+            role, created = CompanyRole.objects.update_or_create(
+                company=profile.company,
+                name=name,
+                defaults={
+                    "can_upload_receipt": to_bool(
+                        row.get("can_upload_receipt", False)
+                    ),
+                    "can_submit_expense": to_bool(
+                        row.get("can_submit_expense", False)
+                    ),
+                    "can_approve_expense": to_bool(
+                        row.get("can_approve_expense", False)
+                    ),
+                    "can_mark_paid": to_bool(
+                        row.get("can_mark_paid", False)
+                    ),
+                    "is_active": True,
+                }
+            )
+
+            if created:
+                created_count += 1
+            else:
+                updated_count += 1
+
+        create_audit_log(
+            company=profile.company,
+            action="COMPANY_ROLES_IMPORT",
+            action_by=profile,
+            message="Company roles imported.",
+            metadata={
+                "created": created_count,
+                "updated": updated_count,
+                "skipped": skipped_count,
+                "errors": len(errors),
+            }
+        )
+
+        return Response({
+            "success": True,
+            "created": created_count,
+            "updated": updated_count,
+            "skipped": skipped_count,
+            "errors": errors,
+        })
+
+    except Exception as e:
+        return Response(
+            {
+                "success": False,
+                "error": str(e)
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+@api_view(["POST"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin
+])
+def import_company_roles(request):
+
+    profile = request.user.profile
+
+    file = request.FILES.get("file")
+
+    if not file:
+        return Response(
+            {"error": "CSV file is required."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        decoded_file = file.read().decode("utf-8")
+
+        csv_data = csv.DictReader(
+            io.StringIO(decoded_file)
+        )
+
+        created_count = 0
+        updated_count = 0
+        skipped_count = 0
+        errors = []
+
+        def to_bool(value):
+            return str(value).strip().lower() in [
+                "true",
+                "1",
+                "yes",
+                "y"
+            ]
+
+        for row_number, row in enumerate(csv_data, start=2):
+
+            name = row.get("name", "").strip()
+
+            if not name:
+                errors.append({
+                    "row": row_number,
+                    "message": "Role name is required."
+                })
+                continue
+
+            role, created = CompanyRole.objects.update_or_create(
+                company=profile.company,
+                name=name,
+                defaults={
+                    "can_upload_receipt": to_bool(
+                        row.get("can_upload_receipt", False)
+                    ),
+                    "can_submit_expense": to_bool(
+                        row.get("can_submit_expense", False)
+                    ),
+                    "can_approve_expense": to_bool(
+                        row.get("can_approve_expense", False)
+                    ),
+                    "can_mark_paid": to_bool(
+                        row.get("can_mark_paid", False)
+                    ),
+                    "is_active": True,
+                }
+            )
+
+            if created:
+                created_count += 1
+            else:
+                updated_count += 1
+
+        create_audit_log(
+            company=profile.company,
+            action="COMPANY_ROLES_IMPORT",
+            action_by=profile,
+            message="Company roles imported.",
+            metadata={
+                "created": created_count,
+                "updated": updated_count,
+                "skipped": skipped_count,
+                "errors": len(errors),
+            }
+        )
+
+        return Response({
+            "success": True,
+            "created": created_count,
+            "updated": updated_count,
+            "skipped": skipped_count,
+            "errors": errors,
+        })
+
+    except Exception as e:
+        return Response(
+            {
+                "success": False,
+                "error": str(e)
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )        
+    
+@api_view(["POST"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin
+])
+def import_employees(request):
+
+    profile = request.user.profile
+    company = profile.company
+
+    file = request.FILES.get("file")
+
+    if not file:
+        return Response(
+            {"error": "CSV file is required."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        decoded_file = file.read().decode("utf-8")
+        csv_data = csv.DictReader(io.StringIO(decoded_file))
+
+        created_count = 0
+        skipped_count = 0
+        errors = []
+
+        for row_number, row in enumerate(csv_data, start=2):
+
+            first_name = row.get("first_name", "").strip()
+            last_name = row.get("last_name", "").strip()
+            email = row.get("email", "").strip().lower()
+            department_name = row.get("department", "").strip()
+            role = row.get("role", "").strip().upper()
+            company_role_name = row.get("company_role", "").strip()
+            password = row.get("password", "Password@123").strip()
+
+            if not email:
+                errors.append({
+                    "row": row_number,
+                    "message": "Email is required."
+                })
+                continue
+
+            if not first_name:
+                errors.append({
+                    "row": row_number,
+                    "message": "First name is required."
+                })
+                continue
+
+            if role not in ["COMPANY_ADMIN", "MANAGER", "ACCOUNTS", "EMPLOYEE"]:
+                errors.append({
+                    "row": row_number,
+                    "message": "Invalid role."
+                })
+                continue
+
+            if User.objects.filter(email=email).exists():
+                skipped_count += 1
+                continue
+
+            department = None
+
+            if department_name:
+                department = Department.objects.filter(
+                    company=company,
+                    name__iexact=department_name,
+                    is_active=True
+                ).first()
+
+                if not department:
+                    errors.append({
+                        "row": row_number,
+                        "message": f"Department '{department_name}' not found."
+                    })
+                    continue
+
+            company_role = None
+
+            if company_role_name:
+                company_role = CompanyRole.objects.filter(
+                    company=company,
+                    name__iexact=company_role_name,
+                    is_active=True
+                ).first()
+
+                if not company_role:
+                    errors.append({
+                        "row": row_number,
+                        "message": f"Company role '{company_role_name}' not found."
+                    })
+                    continue
+
+            user = User.objects.create_user(
+                username=email,
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name
+            )
+
+            UserProfile.objects.create(
+                user=user,
+                company=company,
+                department=department,
+                role=role,
+                company_role=company_role
+            )
+
+            created_count += 1
+
+        create_audit_log(
+            company=company,
+            action="EMPLOYEE_IMPORT",
+            action_by=profile,
+            message="Employees imported.",
+            metadata={
+                "created": created_count,
+                "skipped": skipped_count,
+                "errors": len(errors),
+            }
+        )
+
+        return Response({
+            "success": True,
+            "created": created_count,
+            "skipped": skipped_count,
+            "errors": errors,
+        })
+
+    except Exception as e:
+        return Response(
+            {
+                "success": False,
+                "error": str(e)
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+
+@api_view(["POST"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin
+])
+def import_policy_rules(request):
+
+    profile = request.user.profile
+    company = profile.company
+
+    file = request.FILES.get("file")
+
+    if not file:
+        return Response(
+            {"error": "CSV file is required."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+
+        policy, _ = CompanyPolicy.objects.get_or_create(
+            company=company
+        )
+
+        decoded_file = file.read().decode("utf-8")
+
+        csv_data = csv.DictReader(
+            io.StringIO(decoded_file)
+        )
+
+        created_count = 0
+        updated_count = 0
+        errors = []
+
+        for row_number, row in enumerate(csv_data, start=2):
+
+            category = row.get(
+                "category",
+                ""
+            ).strip().lower()
+
+            if not category:
+                errors.append({
+                    "row": row_number,
+                    "message": "Category is required."
+                })
+                continue
+
+            try:
+                max_amount = Decimal(
+                    row.get("max_amount", 0)
+                )
+
+            except Exception:
+                errors.append({
+                    "row": row_number,
+                    "message": "Invalid max_amount."
+                })
+                continue
+
+            rule, created = PolicyCategoryRule.objects.update_or_create(
+                policy=policy,
+                category=category,
+                defaults={
+                    "max_amount": max_amount
+                }
+            )
+
+            if created:
+                created_count += 1
+            else:
+                updated_count += 1
+
+        create_audit_log(
+            company=company,
+            action="POLICY_RULE_IMPORT",
+            action_by=profile,
+            message="Policy rules imported.",
+            metadata={
+                "created": created_count,
+                "updated": updated_count,
+                "errors": len(errors),
+            }
+        )
+
+        return Response({
+            "success": True,
+            "created": created_count,
+            "updated": updated_count,
+            "errors": errors,
+        })
+
+    except Exception as e:
+
+        return Response(
+            {
+                "success": False,
+                "error": str(e)
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )    
+    
+from django.http import HttpResponse
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def download_department_template(request):
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="department_template.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow(["name"])
+    writer.writerow(["Engineering"])
+    writer.writerow(["HR"])
+    writer.writerow(["Finance"])
+
+    return response
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def download_roles_template(request):
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="roles_template.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow([
+        "name",
+        "can_upload_receipt",
+        "can_submit_expense",
+        "can_approve_expense",
+        "can_mark_paid"
+    ])
+    writer.writerow(["Employee", "true", "true", "false", "false"])
+    writer.writerow(["Manager", "false", "false", "true", "false"])
+    writer.writerow(["Accounts", "false", "false", "false", "true"])
+
+    return response
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def download_employees_template(request):
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="employees_template.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow([
+        "first_name",
+        "last_name",
+        "email",
+        "department",
+        "role",
+        "company_role",
+        "password"
+    ])
+    writer.writerow([
+        "Rudraksh",
+        "Kaushik",
+        "rudraksh@company.com",
+        "Engineering",
+        "EMPLOYEE",
+        "Employee",
+        "Password@123"
+    ])
+
+    return response
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def download_policy_rules_template(request):
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="policy_rules_template.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow(["category", "max_amount"])
+    writer.writerow(["food", "1000"])
+    writer.writerow(["hotel", "5000"])
+    writer.writerow(["fuel", "3000"])
+
+    return response
+
+import csv
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def department_template_info(request):
+    return Response({
+        "success": True,
+        "template_name": "department_template.csv",
+        "description": "Import company departments in bulk.",
+        "required_columns": ["name"],
+        "sample_data": [
+            {"name": "Engineering"},
+            {"name": "HR"},
+            {"name": "Finance"}
+        ]
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def roles_template_info(request):
+    return Response({
+        "success": True,
+        "template_name": "roles_template.csv",
+        "description": "Import company roles and permissions.",
+        "required_columns": [
+            "name",
+            "can_upload_receipt",
+            "can_submit_expense",
+            "can_approve_expense",
+            "can_mark_paid"
+        ],
+        "sample_data": [
+            {
+                "name": "Employee",
+                "can_upload_receipt": True,
+                "can_submit_expense": True,
+                "can_approve_expense": False,
+                "can_mark_paid": False
+            },
+            {
+                "name": "Manager",
+                "can_upload_receipt": False,
+                "can_submit_expense": False,
+                "can_approve_expense": True,
+                "can_mark_paid": False
+            },
+            {
+                "name": "Accounts",
+                "can_upload_receipt": False,
+                "can_submit_expense": False,
+                "can_approve_expense": False,
+                "can_mark_paid": True
+            }
+        ]
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def employees_template_info(request):
+    return Response({
+        "success": True,
+        "template_name": "employees_template.csv",
+        "description": "Import employees in bulk.",
+        "required_columns": [
+            "first_name",
+            "last_name",
+            "email",
+            "department",
+            "role",
+            "company_role",
+            "password"
+        ],
+        "allowed_roles": [
+            "COMPANY_ADMIN",
+            "MANAGER",
+            "ACCOUNTS",
+            "EMPLOYEE"
+        ],
+        "sample_data": [
+            {
+                "first_name": "John",
+                "last_name": "Doe",
+                "email": "john@company.com",
+                "department": "Engineering",
+                "role": "EMPLOYEE",
+                "company_role": "Employee",
+                "password": "Password@123"
+            }
+        ]
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def policy_rules_template_info(request):
+    return Response({
+        "success": True,
+        "template_name": "policy_rules_template.csv",
+        "description": "Import reimbursement policy rules.",
+        "required_columns": [
+            "category",
+            "max_amount"
+        ],
+        "supported_categories": [
+            "food",
+            "hotel",
+            "flight_ticket",
+            "train_ticket",
+            "car_rental",
+            "fuel",
+            "gas",
+            "parking",
+            "office_supplies",
+            "medical",
+            "courier",
+            "telecom",
+            "training",
+            "relocation",
+            "wfh",
+            "miscellaneous"
+        ],
+        "sample_data": [
+            {"category": "food", "max_amount": "1000"},
+            {"category": "hotel", "max_amount": "5000"},
+            {"category": "fuel", "max_amount": "3000"}
+        ]
+    })
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def download_department_template(request):
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="department_template.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow(["name"])
+    writer.writerow(["Engineering"])
+    writer.writerow(["HR"])
+    writer.writerow(["Finance"])
+    writer.writerow(["Accounts"])
+
+    return response
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def download_roles_template(request):
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="roles_template.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow([
+        "name",
+        "can_upload_receipt",
+        "can_submit_expense",
+        "can_approve_expense",
+        "can_mark_paid"
+    ])
+    writer.writerow(["Employee", "true", "true", "false", "false"])
+    writer.writerow(["Manager", "false", "false", "true", "false"])
+    writer.writerow(["Accounts", "false", "false", "false", "true"])
+    writer.writerow(["CEO", "false", "false", "true", "false"])
+
+    return response
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def download_employees_template(request):
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="employees_template.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow([
+        "first_name",
+        "last_name",
+        "email",
+        "department",
+        "role",
+        "company_role",
+        "password"
+    ])
+    writer.writerow([
+        "John",
+        "Doe",
+        "john@company.com",
+        "Engineering",
+        "EMPLOYEE",
+        "Employee",
+        "Password@123"
+    ])
+
+    return response
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def download_policy_rules_template(request):
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="policy_rules_template.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow(["category", "max_amount"])
+    writer.writerow(["food", "1000"])
+    writer.writerow(["hotel", "5000"])
+    writer.writerow(["flight_ticket", "15000"])
+    writer.writerow(["train_ticket", "8000"])
+    writer.writerow(["fuel", "3000"])
+    writer.writerow(["parking", "1000"])
+    writer.writerow(["medical", "5000"])
+    writer.writerow(["office_supplies", "2000"])
+    writer.writerow(["miscellaneous", "1000"])
+
+    return response
+
+from django.conf import settings
+from django.core.mail import EmailMultiAlternatives
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def send_employee_invites(request):
+
+    profile = request.user.profile
+    company = profile.company
+
+    employee_ids = request.data.get("employee_ids", [])
+    send_to_all = request.data.get("send_to_all", False)
+
+    employees = UserProfile.objects.select_related(
+        "user",
+        "department",
+        "company_role"
+    ).filter(
+        company=company,
+        user__is_active=True
+    )
+
+    if not send_to_all:
+        if not employee_ids:
+            return Response(
+                {"error": "employee_ids or send_to_all is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        employees = employees.filter(
+            id__in=employee_ids
+        )
+
+    sent_count = 0
+    failed_count = 0
+    errors = []
+
+    login_url = getattr(
+        settings,
+        "FRONTEND_LOGIN_URL",
+        "http://localhost:5173/login"
+    )
+
+    for employee in employees:
+        try:
+            temporary_password = "Password@123"
+
+            html_content = render_to_string(
+                "emails/employee_invite.html",
+                {
+                    "employee_name": employee.user.first_name or employee.user.email,
+                    "company_name": company.name,
+                    "email": employee.user.email,
+                    "department": (
+                        employee.department.name
+                        if employee.department else "Not Assigned"
+                    ),
+                    "role": (
+                        employee.company_role.name
+                        if employee.company_role else employee.role
+                    ),
+                    "temporary_password": temporary_password,
+                    "login_url": login_url,
+                }
+            )
+
+            text_content = strip_tags(html_content)
+
+            email_message = EmailMultiAlternatives(
+                subject=f"Welcome to ZepEx - {company.name}",
+                body=text_content,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[employee.user.email],
+            )
+
+            email_message.attach_alternative(
+                html_content,
+                "text/html"
+            )
+
+            email_message.send()
+
+            sent_count += 1
+
+        except Exception as e:
+            failed_count += 1
+            errors.append({
+                "employee": employee.user.email,
+                "error": str(e)
+            })
+
+    create_audit_log(
+        company=company,
+        action="EMPLOYEE_INVITES_SENT",
+        action_by=profile,
+        message="Employee invite emails sent.",
+        metadata={
+            "sent": sent_count,
+            "failed": failed_count,
+        }
+    )
+
+    return Response({
+        "success": True,
+        "sent": sent_count,
+        "failed": failed_count,
+        "errors": errors,
+    })
+
+
+
+

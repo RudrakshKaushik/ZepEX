@@ -25,6 +25,28 @@ from rest_framework.response import Response
 
 from rest_framework import status
 
+from django.core.paginator import Paginator
+from django.db.models import Q
+
+from tenants.models import (
+    Company,
+    Department,
+    UserProfile,
+    CompanyRole,
+    CompanyPolicy,
+    PolicyCategoryRule,
+)
+
+from expenses.models import ApprovalWorkflow, ApprovalWorkflowStep
+from tenants.serializers import (
+    CompanySerializer,
+    DepartmentSerializer,
+    UserProfileSerializer,
+    CompanyRoleSerializer,
+    PolicyCategoryRuleSerializer,
+)
+from expenses.serializers import ApprovalWorkflowSerializer
+
 @api_view(["POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
@@ -310,3 +332,174 @@ def delete_company(request, company_id):
             "name": company_name
         }
     })
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsPlatformOwner])
+def platform_company_details(request, company_id):
+
+    try:
+        company = Company.objects.get(id=company_id)
+
+    except Company.DoesNotExist:
+        return Response(
+            {"error": "Company not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    page = request.GET.get("page", 1)
+    page_size = int(request.GET.get("page_size", 10))
+    section = request.GET.get("section", "all")
+
+    search = request.GET.get("search")
+    department_id = request.GET.get("department_id")
+    role = request.GET.get("role")
+    company_role_id = request.GET.get("company_role_id")
+    category = request.GET.get("category")
+
+    def paginate_queryset(queryset, serializer_class):
+        paginator = Paginator(queryset, page_size)
+        page_obj = paginator.get_page(page)
+
+        serializer = serializer_class(
+            page_obj,
+            many=True
+        )
+
+        return {
+            "count": paginator.count,
+            "total_pages": paginator.num_pages,
+            "current_page": page_obj.number,
+            "page_size": page_size,
+            "results": serializer.data
+        }
+
+    response_data = {
+        "company": CompanySerializer(company).data,
+        "filters": {
+            "section": section,
+            "search": search,
+            "department_id": department_id,
+            "role": role,
+            "company_role_id": company_role_id,
+            "category": category,
+            "page": page,
+            "page_size": page_size,
+        }
+    }
+
+    if section in ["all", "departments"]:
+        departments = Department.objects.filter(
+            company=company
+        )
+
+        if search:
+            departments = departments.filter(
+                name__icontains=search
+            )
+
+        departments = departments.order_by("name")
+
+        response_data["departments"] = paginate_queryset(
+            departments,
+            DepartmentSerializer
+        )
+
+    if section in ["all", "employees"]:
+        employees = UserProfile.objects.select_related(
+            "user",
+            "department",
+            "company_role"
+        ).filter(
+            company=company
+        )
+
+        if search:
+            employees = employees.filter(
+                Q(user__first_name__icontains=search)
+                |
+                Q(user__last_name__icontains=search)
+                |
+                Q(user__email__icontains=search)
+            )
+
+        if department_id:
+            employees = employees.filter(
+                department_id=department_id
+            )
+
+        if role:
+            employees = employees.filter(
+                role=role
+            )
+
+        if company_role_id:
+            employees = employees.filter(
+                company_role_id=company_role_id
+            )
+
+        employees = employees.order_by("user__first_name")
+
+        response_data["employees"] = paginate_queryset(
+            employees,
+            UserProfileSerializer
+        )
+
+    if section in ["all", "roles"]:
+        roles = CompanyRole.objects.filter(
+            company=company
+        )
+
+        if search:
+            roles = roles.filter(
+                name__icontains=search
+            )
+
+        roles = roles.order_by("name")
+
+        response_data["roles"] = paginate_queryset(
+            roles,
+            CompanyRoleSerializer
+        )
+
+    if section in ["all", "policy_rules"]:
+        policy, created = CompanyPolicy.objects.get_or_create(
+            company=company
+        )
+
+        policy_rules = PolicyCategoryRule.objects.filter(
+            policy=policy
+        )
+
+        if category:
+            policy_rules = policy_rules.filter(
+                category__iexact=category
+            )
+
+        if search:
+            policy_rules = policy_rules.filter(
+                category__icontains=search
+            )
+
+        policy_rules = policy_rules.order_by("category")
+
+        response_data["policy_rules"] = paginate_queryset(
+            policy_rules,
+            PolicyCategoryRuleSerializer
+        )
+
+    if section in ["all", "workflow"]:
+        workflow = ApprovalWorkflow.objects.filter(
+            company=company,
+            is_active=True
+        ).prefetch_related(
+            "steps",
+            "steps__approver_role",
+            "steps__department"
+        ).first()
+
+        response_data["workflow"] = (
+            ApprovalWorkflowSerializer(workflow).data
+            if workflow else None
+        )
+
+    return Response(response_data)

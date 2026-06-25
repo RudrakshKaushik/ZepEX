@@ -10,6 +10,7 @@ from .views import (
     deactivate_company,
     activate_company,
     delete_company,
+    platform_company_details
 )
 
 urlpatterns = [
@@ -56,6 +57,11 @@ path(
 
 path("companies/<uuid:company_id>/activate/", activate_company,name="activate-company"),
 path("companies/<uuid:company_id>/delete/",delete_company,name="delete-company"
+),
+path(
+    "companies/<uuid:company_id>/details/",
+    platform_company_details,
+    name="platform-company-details"
 ),
 
 

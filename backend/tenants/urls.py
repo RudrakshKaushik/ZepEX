@@ -36,6 +36,21 @@ from .views import (
     database_sync_status,
     database_sync_logs,
     database_sync_dashboard,
+    import_departments,
+    import_company_roles,
+    import_employees,
+    import_policy_rules,
+    download_department_template,
+    download_roles_template,
+    download_employees_template,
+    download_policy_rules_template,
+    department_template_info,
+    roles_template_info,
+    employees_template_info,
+    policy_rules_template_info,
+    send_employee_invites,
+
+
 )
 
 urlpatterns = [
@@ -89,5 +104,45 @@ urlpatterns = [
     "database/sync-dashboard/",
     database_sync_dashboard,
     name="database-sync-dashboard"
+),
+path(
+    "departments/import/",
+    import_departments,
+    name="import-departments"
+),
+path(
+    "roles/import/",
+    import_company_roles,
+    name="import-company-roles"
+),
+path(
+    "employees/import/",
+    import_employees,
+    name="import-employees"
+),
+path(
+    "policy-rules/import/",
+    import_policy_rules,
+    name="import-policy-rules"
+),
+path("departments/template/", download_department_template, name="department-template"),
+path("roles/template/", download_roles_template, name="roles-template"),
+path("employees/template/", download_employees_template, name="employees-template"),
+path("policy-rules/template/", download_policy_rules_template, name="policy-rules-template"),
+path("departments/template/", department_template_info, name="department-template-info"),
+path("departments/template/download/", download_department_template, name="department-template-download"),
+
+path("roles/template/", roles_template_info, name="roles-template-info"),
+path("roles/template/download/", download_roles_template, name="roles-template-download"),
+
+path("employees/template/", employees_template_info, name="employees-template-info"),
+path("employees/template/download/", download_employees_template, name="employees-template-download"),
+
+path("policy-rules/template/", policy_rules_template_info, name="policy-rules-template-info"),
+path("policy-rules/template/download/", download_policy_rules_template, name="policy-rules-template-download"),
+path(
+    "employees/send-invites/",
+    send_employee_invites,
+    name="send-employee-invites"
 ),
 ]

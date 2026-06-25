@@ -3,10 +3,15 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
   createCompanyRole,
   deactivateCompanyRole,
+  downloadRolesTemplate,
+  importCompanyRolesCsv,
   listCompanyRoles,
   updateCompanyRole,
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
+import { AdminBulkActions } from '@/components/admin/AdminBulkActions'
+import { CsvImportDialog } from '@/components/admin/CsvImportDialog'
+import { AdminListSearchBar } from '@/components/admin/AdminListSearchBar'
 import { AdminConfirmDialog } from '@/components/admin/AdminConfirmDialog'
 import { AdminDataTable, AdminTableCell, AdminTableRow } from '@/components/admin/AdminDataTable'
 import { AdminListPanel } from '@/components/admin/AdminListPanel'
@@ -90,6 +95,9 @@ export function RolesPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [deactivateRole, setDeactivateRole] = useState<CompanyRole | null>(null)
+  const [searchDraft, setSearchDraft] = useState('')
+  const [search, setSearch] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
   const [editing, setEditing] = useState<CompanyRole | null>(null)
   const [form, setForm] = useState({ name: '', ...defaultPermissions })
   const [editForm, setEditForm] = useState({ name: '', ...defaultPermissions })
@@ -97,14 +105,18 @@ export function RolesPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await listCompanyRoles({ page })
+      const { data } = await listCompanyRoles({ page, search: search || undefined })
       setRoles(data.results)
       setTotalPages(data.total_pages)
       setTotalCount(data.count)
     } finally {
       setLoading(false)
     }
-  }, [page])
+  }, [page, search])
+
+  useEffect(() => {
+    setPage(1)
+  }, [search])
 
   useEffect(() => {
     load()
@@ -227,6 +239,11 @@ export function RolesPage() {
               <img src={AssignIcon} alt="Assign" className="w-6 h-6" />
             </Button>
           )}
+          <AdminBulkActions
+            onImport={() => setImportOpen(true)}
+            onDownloadTemplate={downloadRolesTemplate}
+            disabled={saving}
+          />
           <Button onClick={() => { setError(''); setCreateOpen(true) }}>
             Create Role
             <img src={UploadIcon} alt="Upload" className="w-6 h-6" />
@@ -242,6 +259,19 @@ export function RolesPage() {
         title="Company Roles"
         count={totalCount}
         description="Custom permission profiles for upload, approve, and payment workflows."
+        toolbar={
+          <AdminListSearchBar
+            value={searchDraft}
+            onChange={setSearchDraft}
+            onApply={() => setSearch(searchDraft.trim())}
+            onClear={() => {
+              setSearchDraft('')
+              setSearch('')
+            }}
+            placeholder="Search roles…"
+            disabled={saving}
+          />
+        }
       >
         {roles.length === 0 ? (
           <p className="px-5 py-8 text-sm text-gray-400 sm:px-6">
@@ -393,6 +423,15 @@ export function RolesPage() {
         confirmLabel="Deactivate"
         onConfirm={handleDeactivate}
         loading={saving}
+      />
+
+      <CsvImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        title="Import roles"
+        description="Upload a CSV file to create or update company roles in bulk."
+        onImport={importCompanyRolesCsv}
+        onSuccess={load}
       />
     </DashboardLayout>
   )

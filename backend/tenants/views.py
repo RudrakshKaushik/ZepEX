@@ -543,12 +543,13 @@ def list_policy_rules(request):
 
     if category:
         rules = rules.filter(
-            category__iexact=category
+            category_name__iexact=category
         )
 
     if search:
         rules = rules.filter(
-            Q(category__icontains=search)
+            Q(category_name__icontains=search)
+            | Q(category_description__icontains=search)
         )
 
     page = request.GET.get("page", 1)

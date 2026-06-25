@@ -1,5 +1,6 @@
 import {
   Building2,
+  ClipboardList,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -160,7 +161,8 @@ export function DashboardLayout({
 
 export const platformNav: NavItem[] = [
   { label: 'Dashboard', to: '/platform', icon: LayoutDashboard },
-  { label: 'Company Requests', to: '/platform/requests', icon: Building2 },
+  { label: 'Companies', to: '/platform/companies', icon: Building2 },
+  { label: 'Company Requests', to: '/platform/requests', icon: ClipboardList },
 ]
 
 export const platformNavWithAudit: NavItem[] = [

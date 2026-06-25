@@ -72,13 +72,17 @@ export const getPlatformDashboard = () => api.get('/dashboard/platform-owner/')
 export const createDepartment = (name: string) =>
   api.post<DepartmentRecord>('/tenants/departments/', { name })
 
-export const listDepartments = (params?: { page?: number }) =>
+export const listDepartments = (params?: { page?: number; search?: string }) =>
   api.get<import('@/lib/pagination').PaginatedResponse<DepartmentRecord>>(
     '/tenants/departments/list/',
     { params },
   )
 
-export const listCompanyRoles = (params?: { page?: number }) =>
+export const listCompanyRoles = (params?: {
+  page?: number
+  search?: string
+  can_approve_expense?: string
+}) =>
   api.get<import('@/lib/pagination').PaginatedResponse<CompanyRole>>('/tenants/roles/', {
     params,
   })
@@ -93,7 +97,12 @@ export const createEmployee = (data: {
   company_role_id?: number
 }) => api.post('/tenants/employees/', data)
 
-export const listEmployees = (params?: { page?: number }) =>
+export const listEmployees = (params?: {
+  page?: number
+  search?: string
+  department_id?: string
+  role?: string
+}) =>
   api.get<import('@/lib/pagination').PaginatedResponse<EmployeeRecord>>(
     '/tenants/employees/list/',
     { params },
@@ -185,7 +194,7 @@ export const createPolicyRule = (data: {
   category_description: string
 }) => api.post<PolicyRule>('/tenants/policy/rules/create/', data)
 
-export const listPolicyRules = (params?: { page?: number }) =>
+export const listPolicyRules = (params?: { page?: number; search?: string; category?: string }) =>
   api.get<import('@/lib/pagination').PaginatedResponse<PolicyRule>>(
     '/tenants/policy/rules/',
     { params },
@@ -247,6 +256,88 @@ export const listPlatformCompanies = () =>
     count: number
     results: Array<{ id: string; name: string; domain: string; is_verified: boolean }>
   }>('/platform/companies/')
+
+function uploadCsv(path: string, file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return api.post<import('@/types').CsvImportResult>(path, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
+export const importDepartments = (file: File) =>
+  uploadCsv('/tenants/departments/import/', file)
+
+export const importCompanyRolesCsv = (file: File) => uploadCsv('/tenants/roles/import/', file)
+
+export const importEmployeesCsv = (file: File) => uploadCsv('/tenants/employees/import/', file)
+
+export const importPolicyRulesCsv = (file: File) =>
+  uploadCsv('/tenants/policy-rules/import/', file)
+
+export const getDepartmentTemplateInfo = () =>
+  api.get<import('@/types').CsvTemplateInfo>('/tenants/departments/template/')
+
+export const getRolesTemplateInfo = () =>
+  api.get<import('@/types').CsvTemplateInfo>('/tenants/roles/template/')
+
+export const getEmployeesTemplateInfo = () =>
+  api.get<import('@/types').CsvTemplateInfo>('/tenants/employees/template/')
+
+export const getPolicyRulesTemplateInfo = () =>
+  api.get<import('@/types').CsvTemplateInfo>('/tenants/policy-rules/template/')
+
+async function downloadCsvTemplate(path: string, fallbackName: string) {
+  const response = await api.get<Blob>(path, { responseType: 'blob' })
+  const { downloadBlob, filenameFromContentDisposition } = await import('@/lib/csvDownload')
+  const filename = filenameFromContentDisposition(
+    response.headers['content-disposition'],
+    fallbackName,
+  )
+  downloadBlob(response.data, filename)
+}
+
+export const downloadDepartmentTemplate = () =>
+  downloadCsvTemplate('/tenants/departments/template/download/', 'department_template.csv')
+
+export const downloadRolesTemplate = () =>
+  downloadCsvTemplate('/tenants/roles/template/download/', 'roles_template.csv')
+
+export const downloadEmployeesTemplate = () =>
+  downloadCsvTemplate('/tenants/employees/template/download/', 'employees_template.csv')
+
+export const downloadPolicyRulesTemplate = () =>
+  downloadCsvTemplate('/tenants/policy-rules/template/download/', 'policy_rules_template.csv')
+
+export const sendEmployeeInvites = (data: { employee_ids?: string[]; send_to_all?: boolean }) =>
+  api.post<import('@/types').EmployeeInviteResult>('/tenants/employees/send-invites/', data)
+
+export const getPlatformCompanyDetails = (
+  companyId: string,
+  params?: {
+    section?: 'all' | 'departments' | 'employees' | 'roles' | 'policy_rules' | 'workflow'
+    page?: number
+    page_size?: number
+    search?: string
+    department_id?: string
+    role?: string
+    company_role_id?: string
+    category?: string
+  },
+) =>
+  api.get<import('@/types').PlatformCompanyDetailsResponse>(
+    `/platform/companies/${companyId}/details/`,
+    { params },
+  )
+
+export const deactivatePlatformCompany = (companyId: string) =>
+  api.patch(`/platform/companies/${companyId}/deactivate/`)
+
+export const activatePlatformCompany = (companyId: string) =>
+  api.patch(`/platform/companies/${companyId}/activate/`)
+
+export const deletePlatformCompany = (companyId: string) =>
+  api.delete(`/platform/companies/${companyId}/delete/`)
 
 export const getAuditLogDashboard = () => api.get('/audit-logs/dashboard/')
 

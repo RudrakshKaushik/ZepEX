@@ -5,11 +5,16 @@ import {
   createDepartment,
   deactivateDepartment,
   deleteDepartment,
+  downloadDepartmentTemplate,
+  importDepartments,
   listDepartments,
   listEmployees,
   updateDepartment,
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
+import { AdminBulkActions } from '@/components/admin/AdminBulkActions'
+import { CsvImportDialog } from '@/components/admin/CsvImportDialog'
+import { AdminListSearchBar } from '@/components/admin/AdminListSearchBar'
 import { AdminConfirmDialog } from '@/components/admin/AdminConfirmDialog'
 import { AdminDataTable, AdminTableCell, AdminTableRow } from '@/components/admin/AdminDataTable'
 import { AdminListPanel } from '@/components/admin/AdminListPanel'
@@ -54,12 +59,15 @@ export function DepartmentsPage() {
   const [editing, setEditing] = useState<DepartmentRecord | null>(null)
   const [editForm, setEditForm] = useState({ name: '', manager_id: '' })
   const [confirm, setConfirm] = useState<ConfirmAction | null>(null)
+  const [searchDraft, setSearchDraft] = useState('')
+  const [search, setSearch] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const [deptRes, allEmployees] = await Promise.all([
-        listDepartments({ page }),
+        listDepartments({ page, search: search || undefined }),
         fetchAllPages((page) => listEmployees({ page })),
       ])
       setDepartments(deptRes.data.results)
@@ -69,7 +77,11 @@ export function DepartmentsPage() {
     } finally {
       setLoading(false)
     }
-  }, [page])
+  }, [page, search])
+
+  useEffect(() => {
+    setPage(1)
+  }, [search])
 
   useEffect(() => {
     load()
@@ -183,10 +195,17 @@ export function DepartmentsPage() {
       icon={Building2}
       navItems={navItems}
       headerAction={
-        <Button onClick={() => { setError(''); setOpen(true) }}>
-          Create Department
-          <img src={UploadIcon} alt="Upload" className="w-6 h-6" />
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <AdminBulkActions
+            onImport={() => setImportOpen(true)}
+            onDownloadTemplate={downloadDepartmentTemplate}
+            disabled={saving}
+          />
+          <Button onClick={() => { setError(''); setOpen(true) }}>
+            Create Department
+            <img src={UploadIcon} alt="Upload" className="w-6 h-6" />
+          </Button>
+        </div>
       }
     >
       {error && !open && !editOpen && !confirm && (
@@ -197,6 +216,19 @@ export function DepartmentsPage() {
         title="All Departments"
         count={totalCount}
         description="View and manage departments across your organization."
+        toolbar={
+          <AdminListSearchBar
+            value={searchDraft}
+            onChange={setSearchDraft}
+            onApply={() => setSearch(searchDraft.trim())}
+            onClear={() => {
+              setSearchDraft('')
+              setSearch('')
+            }}
+            placeholder="Search departments…"
+            disabled={saving}
+          />
+        }
       >
         {departments.length === 0 ? (
           <p className="px-5 py-8 text-sm text-gray-400 sm:px-6">No departments yet.</p>
@@ -334,6 +366,15 @@ export function DepartmentsPage() {
         confirmLabel="Delete"
         onConfirm={handleConfirmAction}
         loading={saving}
+      />
+
+      <CsvImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        title="Import departments"
+        description="Upload a CSV file to create or update departments in bulk."
+        onImport={importDepartments}
+        onSuccess={load}
       />
     </DashboardLayout>
   )

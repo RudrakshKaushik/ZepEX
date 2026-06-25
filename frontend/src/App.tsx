@@ -9,6 +9,8 @@ import { PlatformLoginPage } from '@/pages/platform/PlatformLoginPage'
 import { RegisterPage } from '@/pages/RegisterPage'
 import { PlatformDashboard } from '@/pages/platform/PlatformDashboard'
 import { CompanyRequestsPage } from '@/pages/platform/CompanyRequestsPage'
+import { CompanyDetailPage } from '@/pages/platform/CompanyDetailPage'
+import { PlatformCompaniesPage } from '@/pages/platform/PlatformCompaniesPage'
 import { PlatformAuditLogsPage } from '@/pages/platform/PlatformAuditLogsPage'
 import { AdminDashboard } from '@/pages/tenant/admin/AdminDashboard'
 import { DepartmentsPage } from '@/pages/tenant/admin/DepartmentsPage'
@@ -85,7 +87,9 @@ export default function App() {
             }
           >
             <Route path="/platform" element={<PlatformDashboard />} />
+            <Route path="/platform/companies" element={<PlatformCompaniesPage />} />
             <Route path="/platform/requests" element={<CompanyRequestsPage />} />
+            <Route path="/platform/companies/:companyId" element={<CompanyDetailPage />} />
             <Route path="/platform/audit-logs" element={<PlatformAuditLogsPage />} />
             <Route path="/platform-dashboard" element={<Navigate to="/platform" replace />} />
           </Route>

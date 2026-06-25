@@ -1,4 +1,4 @@
-import { Pencil, Power, PowerOff, Trash2, Users } from 'lucide-react'
+import { Pencil, Power, PowerOff, Trash2, Users, Mail, ListFilter } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
   activateCompanyUser,
@@ -7,13 +7,19 @@ import {
   createEmployee,
   deactivateCompanyUser,
   deleteCompanyUser,
+  downloadEmployeesTemplate,
   editCompanyUser,
+  importEmployeesCsv,
   listCompanyRoles,
   listDepartments,
   listEmployees,
+  sendEmployeeInvites,
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
 import { toast } from '@/lib/toast'
+import { AdminBulkActions } from '@/components/admin/AdminBulkActions'
+import { CsvImportDialog } from '@/components/admin/CsvImportDialog'
+import { AdminListSearchBar } from '@/components/admin/AdminListSearchBar'
 import { AdminConfirmDialog } from '@/components/admin/AdminConfirmDialog'
 import { AdminDataTable, AdminTableCell, AdminTableRow, RolePill } from '@/components/admin/AdminDataTable'
 import { UserAvatar } from '@/components/ui/user-avatar'
@@ -75,6 +81,13 @@ export function EmployeesPage() {
   const [editOpen, setEditOpen] = useState(false)
   const [assignOpen, setAssignOpen] = useState(false)
   const [confirm, setConfirm] = useState<ConfirmAction | null>(null)
+  const [searchDraft, setSearchDraft] = useState('')
+  const [search, setSearch] = useState('')
+  const [filterDepartmentId, setFilterDepartmentId] = useState('')
+  const [filterRole, setFilterRole] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [editing, setEditing] = useState<EmployeeRecord | null>(null)
   const [assignDept, setAssignDept] = useState('')
   const [assignManagerId, setAssignManagerId] = useState('')
@@ -101,7 +114,12 @@ export function EmployeesPage() {
     setLoading(true)
     try {
       const [empRes, allDepts, allEmps, rolesRes] = await Promise.all([
-        listEmployees({ page }),
+        listEmployees({
+          page,
+          search: search || undefined,
+          department_id: filterDepartmentId || undefined,
+          role: filterRole || undefined,
+        }),
         fetchAllPages((page) => listDepartments({ page })),
         fetchAllPages((page) => listEmployees({ page })),
         listCompanyRoles(),
@@ -115,7 +133,11 @@ export function EmployeesPage() {
     } finally {
       setLoading(false)
     }
-  }, [page])
+  }, [page, search, filterDepartmentId, filterRole])
+
+  useEffect(() => {
+    setPage(1)
+  }, [search, filterDepartmentId, filterRole])
 
   useEffect(() => {
     load()
@@ -272,6 +294,20 @@ export function EmployeesPage() {
     }
   }
 
+  const handleSendInvites = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      const { data } = await sendEmployeeInvites({ send_to_all: true })
+      setInviteOpen(false)
+      toast.success(`Invites sent: ${data.sent}${data.failed ? `, ${data.failed} failed` : ''}.`)
+    } catch (err) {
+      setError(getApiErrorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const managers = allEmployees.filter((e) => e.role === 'MANAGER' && e.is_active !== false)
   const missingCompanyRoleCount = allEmployees.filter(
     (e) => !e.company_role_name && ['EMPLOYEE', 'MANAGER', 'ACCOUNTS'].includes(e.role),
@@ -299,16 +335,25 @@ export function EmployeesPage() {
       icon={Users}
       navItems={navItems}
       headerAction={
-        <>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" disabled={saving} onClick={() => { setError(''); setInviteOpen(true) }}>
+            <Mail className="h-4 w-4" />
+            Send invites
+          </Button>
           <Button variant="secondary" onClick={() => { setError(''); setAssignOpen(true) }}>
             Assign Manager
             <img src={AssignIcon} alt="Assign" className="w-6 h-6" />
           </Button>
+          <AdminBulkActions
+            onImport={() => setImportOpen(true)}
+            onDownloadTemplate={downloadEmployeesTemplate}
+            disabled={saving}
+          />
           <Button onClick={() => { setError(''); resetForm(); setCreateOpen(true) }}>
             Create Employee
             <img src={UploadIcon} alt="Upload" className="w-6 h-6" />
           </Button>
-        </>
+        </div>
       }
     >
       {missingCompanyRoleCount > 0 && (
@@ -329,6 +374,66 @@ export function EmployeesPage() {
         title="All Users"
         count={totalCount}
         description="View employee details, roles, and department assignments."
+        toolbar={
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <AdminListSearchBar
+                  value={searchDraft}
+                  onChange={setSearchDraft}
+                  onApply={() => setSearch(searchDraft.trim())}
+                  onClear={() => {
+                    setSearchDraft('')
+                    setSearch('')
+                  }}
+                  placeholder="Search employees…"
+                  disabled={saving}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setFiltersOpen((value) => !value)}
+                aria-expanded={filtersOpen}
+                disabled={saving}
+              >
+                <ListFilter className="h-4 w-4" />
+                Filter
+              </Button>
+            </div>
+            {filtersOpen && (
+              <div className="mt-3 flex flex-wrap gap-2 rounded-lg border border-[#e2e8f0] bg-gray-50 p-3">
+                <select
+                  className={selectClassName + ' w-full min-w-[10rem] sm:w-auto sm:flex-1'}
+                  value={filterDepartmentId}
+                  onChange={(e) => setFilterDepartmentId(e.target.value)}
+                  disabled={saving}
+                >
+                  <option value="">All departments</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={String(d.id)}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className={selectClassName + ' w-full min-w-[8rem] sm:w-auto sm:flex-1'}
+                  value={filterRole}
+                  onChange={(e) => setFilterRole(e.target.value)}
+                  disabled={saving}
+                >
+                  <option value="">All roles</option>
+                  {roles.map((r) => (
+                    <option key={r} value={r}>
+                      {r.charAt(0) + r.slice(1).toLowerCase()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </>
+        }
       >
         <AdminDataTable columns={['Name', 'Email Address', 'Role', 'Department', 'Created', '']}>
           {employees.map((emp) => (
@@ -617,6 +722,25 @@ export function EmployeesPage() {
         confirmLabel="Delete"
         onConfirm={handleConfirmAction}
         loading={saving}
+      />
+
+      <AdminConfirmDialog
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        title="Send employee invites"
+        description="Send login invite emails to all active employees who have not yet received one?"
+        confirmLabel="Send invites"
+        onConfirm={handleSendInvites}
+        loading={saving}
+      />
+
+      <CsvImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        title="Import employees"
+        description="Upload a CSV file to create or update employees in bulk."
+        onImport={importEmployeesCsv}
+        onSuccess={load}
       />
     </DashboardLayout>
   )

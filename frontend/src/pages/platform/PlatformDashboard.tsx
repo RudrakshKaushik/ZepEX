@@ -1,6 +1,6 @@
+import { Link } from 'react-router-dom'
 import { Building2, ClipboardList, FileText, LayoutDashboard } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { getPlatformDashboard } from '@/api'
 import { AdminDataTable, AdminTableCell, AdminTableRow } from '@/components/admin/AdminDataTable'
 import { AdminListPanel } from '@/components/admin/AdminListPanel'
@@ -109,7 +109,12 @@ export function PlatformDashboard() {
               {companies.map((company) => (
                 <AdminTableRow key={company.id}>
                   <AdminTableCell className="font-medium text-gray-900">
-                    {company.name}
+                    <Link
+                      to={`/platform/companies/${company.id}`}
+                      className="text-primary hover:underline"
+                    >
+                      {company.name}
+                    </Link>
                   </AdminTableCell>
                   <AdminTableCell>{company.domain}</AdminTableCell>
                   <AdminTableCell>

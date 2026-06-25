@@ -369,3 +369,52 @@ export interface SmtpConfig {
   use_tls: boolean
   is_active: boolean
 }
+
+export interface CsvImportError {
+  row: number
+  message: string
+}
+
+export interface CsvImportResult {
+  success?: boolean
+  created?: number
+  updated?: number
+  skipped?: number
+  errors?: CsvImportError[]
+}
+
+export interface CsvTemplateInfo {
+  success: boolean
+  template_name: string
+  description: string
+  required_columns: string[]
+  sample_data?: Record<string, string>[]
+  allowed_roles?: string[]
+  supported_categories?: string[]
+}
+
+export interface PlatformCompanySummary {
+  id: string
+  name: string
+  domain: string
+  reimbursement_email_prefix?: string
+  is_verified: boolean
+  created_at: string
+}
+
+export interface PlatformCompanyDetailsResponse {
+  company: PlatformCompanySummary
+  filters: Record<string, string | number | null>
+  departments?: import('@/lib/pagination').PaginatedResponse<DepartmentRecord>
+  employees?: import('@/lib/pagination').PaginatedResponse<EmployeeRecord>
+  roles?: import('@/lib/pagination').PaginatedResponse<CompanyRole>
+  policy_rules?: import('@/lib/pagination').PaginatedResponse<PolicyRule>
+  workflow?: ApprovalWorkflow | null
+}
+
+export interface EmployeeInviteResult {
+  success: boolean
+  sent: number
+  failed: number
+  errors?: Array<{ employee: string; error: string }>
+}

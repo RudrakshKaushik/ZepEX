@@ -197,6 +197,7 @@ export function ReportQueuePage({ mode }: ReportQueuePageProps) {
           onApprove={canApprove ? handleApprove : undefined}
           onReject={canApprove ? handleReject : undefined}
           onMarkPaid={canPay ? handleMarkPaid : undefined}
+          showAdminOverride={user?.role === 'COMPANY_ADMIN'}
         />
       )}
     </DashboardLayout>

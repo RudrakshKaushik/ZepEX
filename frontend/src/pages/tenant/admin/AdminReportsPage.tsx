@@ -124,7 +124,7 @@ function AdminReportExpandedPanel({
           </div>
         </div>
       )}
-      <ReportDetail report={report} showEmployee={false} />
+      <ReportDetail report={report} showEmployee={false} showAdminOverride />
     </div>
   )
 }

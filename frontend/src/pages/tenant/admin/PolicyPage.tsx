@@ -5,10 +5,15 @@ import {
   createCompanyPolicy,
   createPolicyRule,
   deactivatePolicyRule,
+  downloadPolicyRulesTemplate,
+  importPolicyRulesCsv,
   listPolicyRules,
   updatePolicyRule,
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
+import { AdminBulkActions } from '@/components/admin/AdminBulkActions'
+import { CsvImportDialog } from '@/components/admin/CsvImportDialog'
+import { AdminListSearchBar } from '@/components/admin/AdminListSearchBar'
 import { AdminListPanel } from '@/components/admin/AdminListPanel'
 import { AdminModalFooter } from '@/components/admin/AdminModalFooter'
 import { AdminPolicyRuleCard } from '@/components/admin/AdminPolicyRuleCard'
@@ -52,11 +57,14 @@ export function PolicyPage() {
     max_amount: '',
     category_description: '',
   })
+  const [searchDraft, setSearchDraft] = useState('')
+  const [search, setSearch] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await listPolicyRules({ page })
+      const { data } = await listPolicyRules({ page, search: search || undefined })
       setRules(data.results)
       setTotalPages(data.total_pages)
       setTotalCount(data.count)
@@ -67,7 +75,11 @@ export function PolicyPage() {
     } finally {
       setLoading(false)
     }
-  }, [page])
+  }, [page, search])
+
+  useEffect(() => {
+    setPage(1)
+  }, [search])
 
   useEffect(() => {
     load()
@@ -177,16 +189,21 @@ export function PolicyPage() {
       icon={Shield}
       navItems={navItems}
       headerAction={
-        <>
+        <div className="flex flex-wrap gap-2">
           <Button variant="secondary" onClick={initPolicy} disabled={saving}>
             Initialize Company Policy
             <img src={AssignIcon} alt="Assign" className="w-6 h-6" />
           </Button>
+          <AdminBulkActions
+            onImport={() => setImportOpen(true)}
+            onDownloadTemplate={downloadPolicyRulesTemplate}
+            disabled={saving}
+          />
           <Button onClick={() => { setError(''); setOpen(true) }}>
             Add Policy Rules
             <img src={UploadIcon} alt="Upload" className="w-6 h-6" />
           </Button>
-        </>
+        </div>
       }
     >
       {error && !open && !editOpen && (
@@ -197,6 +214,19 @@ export function PolicyPage() {
         title="Policy Rules"
         count={totalCount}
         description="Manage active policies, approval rules, and automation settings in one place."
+        toolbar={
+          <AdminListSearchBar
+            value={searchDraft}
+            onChange={setSearchDraft}
+            onApply={() => setSearch(searchDraft.trim())}
+            onClear={() => {
+              setSearchDraft('')
+              setSearch('')
+            }}
+            placeholder="Search policy rules…"
+            disabled={saving}
+          />
+        }
       >
         {rules.length === 0 ? (
           <p className="px-5 py-8 text-sm text-gray-400 sm:px-6">No policy rules configured.</p>
@@ -329,6 +359,15 @@ export function PolicyPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <CsvImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        title="Import policy rules"
+        description="Upload a CSV file to create or update policy rules in bulk."
+        onImport={importPolicyRulesCsv}
+        onSuccess={load}
+      />
     </DashboardLayout>
   )
 }

@@ -14,6 +14,7 @@ interface ReportQueueTableProps {
   onApprove?: (reportId: string) => void
   onReject?: (reportId: string) => void
   onMarkPaid?: (reportId: string) => void
+  showAdminOverride?: boolean
 }
 
 export function ReportQueueTable({
@@ -24,6 +25,7 @@ export function ReportQueueTable({
   onApprove,
   onReject,
   onMarkPaid,
+  showAdminOverride,
 }: ReportQueueTableProps) {
   return (
     <ExpenseReportTable
@@ -91,6 +93,7 @@ export function ReportQueueTable({
             onApprove={onApprove}
             onReject={onReject}
             onMarkPaid={onMarkPaid}
+            showAdminOverride={showAdminOverride}
           />
         )
       }}
@@ -109,6 +112,7 @@ function ExpandedReportPanel({
   onApprove,
   onReject,
   onMarkPaid,
+  showAdminOverride,
 }: {
   report: QueuedReport['report']
   employeeLabel: string
@@ -120,6 +124,7 @@ function ExpandedReportPanel({
   onApprove?: (reportId: string) => void
   onReject?: (reportId: string) => void
   onMarkPaid?: (reportId: string) => void
+  showAdminOverride?: boolean
 }) {
   let actions: ReactNode = null
 
@@ -186,7 +191,7 @@ function ExpandedReportPanel({
   return (
     <div className="space-y-4">
       {actions}
-      <ReportDetail report={report} showEmployee={false} />
+      <ReportDetail report={report} showEmployee={false} showAdminOverride={showAdminOverride} />
     </div>
   )
 }

@@ -6,6 +6,7 @@ interface AdminListPanelProps {
   count?: number
   description?: string
   action?: ReactNode
+  toolbar?: ReactNode
   children: ReactNode
   className?: string
 }
@@ -15,6 +16,7 @@ export function AdminListPanel({
   count,
   description,
   action,
+  toolbar,
   children,
   className,
 }: AdminListPanelProps) {
@@ -29,8 +31,15 @@ export function AdminListPanel({
         </div>
         {action}
       </div>
-      <div className="overflow-hidden rounded-lg border border-[#e2e8f0] bg-white">
-        {children}
+      <div className="space-y-4">
+        {toolbar && (
+          <div className="rounded-lg border border-[#e2e8f0] bg-white px-5 py-4 sm:px-6">
+            {toolbar}
+          </div>
+        )}
+        <div className="overflow-hidden rounded-lg border border-[#e2e8f0] bg-white">
+          {children}
+        </div>
       </div>
     </div>
   )

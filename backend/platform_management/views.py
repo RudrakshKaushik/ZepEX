@@ -472,15 +472,16 @@ def platform_company_details(request, company_id):
 
         if category:
             policy_rules = policy_rules.filter(
-                category__iexact=category
+                category_name__iexact=category
             )
 
         if search:
             policy_rules = policy_rules.filter(
-                category__icontains=search
+                Q(category_name__icontains=search)
+                | Q(category_description__icontains=search)
             )
 
-        policy_rules = policy_rules.order_by("category")
+        policy_rules = policy_rules.order_by("category_name")
 
         response_data["policy_rules"] = paginate_queryset(
             policy_rules,

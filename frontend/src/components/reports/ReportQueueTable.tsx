@@ -76,8 +76,7 @@ export function ReportQueueTable({
         const item = items.find((entry) => entry.report.id === report.id)
         if (!item) return null
 
-        const showApprovalActions =
-          item.queueKind === 'approval_pending' && onApprove && onReject
+        const showApprovalActions = item.queueKind === 'approval_pending' && onApprove && onReject
         const showPaymentActions = item.queueKind === 'payment_pending' && onMarkPaid
 
         return (

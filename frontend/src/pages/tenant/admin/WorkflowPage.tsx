@@ -332,7 +332,7 @@ export function WorkflowPage() {
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
 
-      {!workflow && needsRolesFirst ? (
+      {needsRolesFirst ? (
         <AdminListPanel
           title="Roles required"
           description="Workflow steps need at least one company role that can approve expenses or mark reports as paid."
@@ -348,9 +348,11 @@ export function WorkflowPage() {
               Go to Roles and add permission profiles with approve or payment access, then return
               here to build your approval flow.
             </p>
-            <Button asChild className="mt-6">
-              <Link to="/admin/roles">Go to Roles</Link>
-            </Button>
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
+              <Button asChild>
+                <Link to="/admin/roles">Go to Roles</Link>
+              </Button>
+            </div>
           </div>
         </AdminListPanel>
       ) : !workflow ? (

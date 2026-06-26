@@ -3,64 +3,92 @@ from .models import ExpenseReceipt
 
 
 def validate_receipt_policy(receipt: ExpenseReceipt):
-    company = receipt.company
-
     try:
-        policy = CompanyPolicy.objects.get(company=company)
+        policy = CompanyPolicy.objects.get(
+            company=receipt.company
+        )
+
     except CompanyPolicy.DoesNotExist:
-        receipt.status = "POLICY_VIOLATION"
+        receipt.status = ExpenseReceipt.STATUS_POLICY_VIOLATION
         receipt.policy_violation_reason = "No company policy configured."
-        receipt.save(update_fields=["status", "policy_violation_reason"])
+        receipt.has_any_violation = True
+
+        receipt.save(update_fields=[
+            "status",
+            "policy_violation_reason",
+            "has_any_violation",
+        ])
+
         return {
             "success": False,
-            "reason": "No company policy configured."
+            "has_violations": True,
+            "violations": ["No company policy configured."],
+            "next_status": receipt.status,
         }
 
     violations = []
 
+    receipt.has_amount_violation = False
+    receipt.has_any_violation = False
+    receipt.policy_violation_reason = None
+
     for item in receipt.line_items.all():
         category = item.category.strip().lower()
 
+        item.is_violating = False
+        item.violation_reason = None
+
         rule = PolicyCategoryRule.objects.filter(
             policy=policy,
-            category_name__iexact=category
+            category_name__iexact=category,
+            is_active=True
         ).first()
 
         if not rule:
+            reason = f"{item.category}: No matching policy rule found."
+
             item.is_violating = True
-            item.violation_reason = "No matching policy rule found."
-            item.save(update_fields=["is_violating", "violation_reason"])
+            item.violation_reason = reason
 
-            violations.append(
-                f"{item.category}: No matching policy rule found."
+            receipt.has_amount_violation = True
+            violations.append(reason)
+
+        elif item.amount > rule.max_amount:
+            reason = (
+                f"{item.category}: Amount {item.amount} "
+                f"exceeds limit {rule.max_amount}"
             )
-            continue
 
-        if item.amount > rule.max_amount:
             item.is_violating = True
-            item.violation_reason = f"Amount exceeds limit {rule.max_amount}"
-            item.save(update_fields=["is_violating", "violation_reason"])
+            item.violation_reason = reason
 
-            violations.append(
-                f"{item.category}: Amount {item.amount} exceeds limit {rule.max_amount}"
-            )
-        else:
-            item.is_violating = False
-            item.violation_reason = None
-            item.save(update_fields=["is_violating", "violation_reason"])
+            receipt.has_amount_violation = True
+            violations.append(reason)
+
+        item.save(update_fields=[
+            "is_violating",
+            "violation_reason",
+        ])
 
     if violations:
-        receipt.status = "POLICY_VIOLATION"
+        receipt.status = ExpenseReceipt.STATUS_POLICY_VIOLATION
         receipt.policy_violation_reason = " | ".join(violations)
+        receipt.has_any_violation = True
     else:
-        receipt.status = "PENDING_MANAGER"
+        receipt.status = ExpenseReceipt.STATUS_VALID
         receipt.policy_violation_reason = None
+        receipt.has_any_violation = False
 
-    receipt.save(update_fields=["status", "policy_violation_reason"])
+    receipt.save(update_fields=[
+        "status",
+        "policy_violation_reason",
+        "has_amount_violation",
+        "has_any_violation",
+    ])
 
     return {
         "success": True,
         "has_violations": bool(violations),
         "violations": violations,
-        "next_status": receipt.status
+        "next_status": receipt.status,
     }

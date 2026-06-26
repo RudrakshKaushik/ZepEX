@@ -2,19 +2,34 @@ from celery import shared_task
 
 from .models import ExpenseReceipt
 from .services import extract_receipt_with_gemini
-
+from .policy_services import validate_receipt_policy
 
 @shared_task
 def process_receipt_ai_task(receipt_id):
     try:
         receipt = ExpenseReceipt.objects.get(id=receipt_id)
+
         result = extract_receipt_with_gemini(receipt)
+
+        receipt.refresh_from_db()
+
+        if result.get("success"):
+            policy_result = validate_receipt_policy(receipt)
+
+            result["policy"] = policy_result
+
         return result
 
     except ExpenseReceipt.DoesNotExist:
         return {
             "success": False,
             "error": "Receipt not found."
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
         }
     
 from tenants.models import ReimbursementEmailConfig

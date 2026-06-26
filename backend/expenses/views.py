@@ -177,7 +177,7 @@ def upload_receipt(request):
 
     return Response(
         {
-            "message": "Receipt uploaded successfully. AI processing started.",
+            "message": message,
             "report_id": str(report.id),
             "receipt": serializer.data,
             "ai_result": ai_result,

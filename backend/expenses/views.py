@@ -348,7 +348,9 @@ def submit_current_month_report(request):
     current_month = date.today().replace(day=1)
 
     try:
-        report = ExpenseReport.objects.get(
+        report = ExpenseReport.objects.prefetch_related(
+            "receipts"
+        ).get(
             company=profile.company,
             employee=profile,
             month=current_month,
@@ -367,6 +369,74 @@ def submit_current_month_report(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    has_violation = report.receipts.filter(
+        has_any_violation=True
+    ).exists()
+
+    submitted_at = timezone.now()
+
+    # CASE 1: No violation → Approved by System
+    if not has_violation:
+        report.status = ExpenseReport.STATUS_APPROVED
+        report.is_auto_approved = True
+        report.auto_approved_at = submitted_at
+        report.current_workflow_step = None
+        report.workflow_completed = True
+        report.submitted_at = submitted_at
+
+        report.save(update_fields=[
+            "status",
+            "is_auto_approved",
+            "auto_approved_at",
+            "current_workflow_step",
+            "workflow_completed",
+            "submitted_at",
+            "updated_at",
+        ])
+
+        report.receipts.all().update(
+            status=ExpenseReceipt.STATUS_APPROVED
+        )
+
+        ApprovalHistory.objects.create(
+            report=report,
+            action_by=profile,
+            action=ApprovalHistory.ACTION_REPORT_SUBMITTED,
+            comments=(
+                "Monthly expense report submitted and approved automatically by system "
+                "because all receipts satisfied company policy."
+            )
+        )
+
+        create_audit_log(
+            company=profile.company,
+            action="REPORT_AUTO_APPROVED",
+            action_by=profile,
+            message=f"Expense report {report.id} approved automatically by system.",
+            metadata={
+                "report_id": str(report.id),
+                "employee_email": profile.user.email,
+                "auto_approved": True,
+                "reason": "No policy violations found.",
+                "status": ExpenseReport.STATUS_APPROVED,
+            }
+        )
+
+        serializer = ExpenseReportSerializer(report)
+
+        return Response(
+            {
+                "message": "Monthly report approved automatically by system.",
+                "auto_approved": True,
+                "approval_required": False,
+                "view_only_for_workflow": True,
+                "next_action": "Accounts can mark this report as paid.",
+                "report": serializer.data,
+            },
+            status=status.HTTP_200_OK
+        )
+
+    # CASE 2: Violation exists → Dynamic Workflow
     try:
         workflow = ApprovalWorkflow.objects.get(
             company=profile.company,
@@ -395,16 +465,20 @@ def submit_current_month_report(request):
         )
 
     report.status = ExpenseReport.STATUS_SUBMITTED
+    report.is_auto_approved = False
+    report.auto_approved_at = None
     report.current_workflow_step = first_step
     report.workflow_completed = False
-    report.submitted_at = timezone.now()
+    report.submitted_at = submitted_at
 
     report.save(update_fields=[
         "status",
+        "is_auto_approved",
+        "auto_approved_at",
         "current_workflow_step",
         "workflow_completed",
         "submitted_at",
-        "updated_at"
+        "updated_at",
     ])
 
     report.receipts.all().update(
@@ -416,7 +490,7 @@ def submit_current_month_report(request):
         action_by=profile,
         action=ApprovalHistory.ACTION_REPORT_SUBMITTED,
         comments=(
-            f"Monthly expense report submitted. "
+            f"Monthly expense report submitted with policy violations. "
             f"Current approval step: {first_step.approver_role.name}"
         )
     )
@@ -429,6 +503,8 @@ def submit_current_month_report(request):
         metadata={
             "report_id": str(report.id),
             "employee_email": profile.user.email,
+            "has_violation": True,
+            "auto_approved": False,
             "current_step": first_step.step_order,
             "approver_role": first_step.approver_role.name,
             "routing_type": first_step.routing_type,
@@ -444,6 +520,8 @@ def submit_current_month_report(request):
     return Response(
         {
             "message": "Monthly report submitted successfully.",
+            "auto_approved": False,
+            "approval_required": True,
             "current_approval_step": {
                 "step_order": first_step.step_order,
                 "approver_role": first_step.approver_role.name,

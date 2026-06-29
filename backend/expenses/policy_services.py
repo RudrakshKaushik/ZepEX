@@ -32,15 +32,17 @@ def validate_receipt_policy(receipt: ExpenseReceipt):
     receipt.has_any_violation = False
     receipt.policy_violation_reason = None
 
-    for item in receipt.line_items.all():
-        category = item.category.strip().lower()
+    company_currency = receipt.company_currency or receipt.original_currency
 
+    line_items_count = receipt.line_items.count()
+
+    for item in receipt.line_items.all():
         item.is_violating = False
         item.violation_reason = None
 
         rule = PolicyCategoryRule.objects.filter(
             policy=policy,
-            category_name__iexact=category,
+            category_name__iexact=item.category,
             is_active=True
         ).first()
 
@@ -53,17 +55,27 @@ def validate_receipt_policy(receipt: ExpenseReceipt):
             receipt.has_amount_violation = True
             violations.append(reason)
 
-        elif item.amount > rule.max_amount:
-            reason = (
-                f"{item.category}: Amount {item.amount} "
-                f"exceeds limit {rule.max_amount}"
-            )
+        else:
+            if line_items_count > 1 and receipt.original_amount:
+                converted_item_amount = (
+                    item.amount / receipt.original_amount
+                ) * receipt.company_amount
+            else:
+                converted_item_amount = receipt.company_amount
 
-            item.is_violating = True
-            item.violation_reason = reason
+            if converted_item_amount > rule.max_amount:
+                reason = (
+                    f"{item.category}: Amount {converted_item_amount:.2f} "
+                    f"{company_currency} exceeds limit {rule.max_amount} "
+                    f"{company_currency}. Original amount was "
+                    f"{item.amount} {receipt.original_currency}."
+                )
 
-            receipt.has_amount_violation = True
-            violations.append(reason)
+                item.is_violating = True
+                item.violation_reason = reason
+
+                receipt.has_amount_violation = True
+                violations.append(reason)
 
         item.save(update_fields=[
             "is_violating",
@@ -91,4 +103,5 @@ def validate_receipt_policy(receipt: ExpenseReceipt):
         "has_violations": bool(violations),
         "violations": violations,
         "next_status": receipt.status,
+        "policy_currency": company_currency,
     }

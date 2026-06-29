@@ -302,7 +302,9 @@ def payment_dashboard(request):
         company=profile.company
     )
 
-    approved_reports = get_reports_awaiting_payment(profile.company).select_related(
+    approved_reports = get_reports_awaiting_payment(
+        profile.company
+    ).select_related(
         "employee",
         "employee__user",
         "department",
@@ -316,6 +318,14 @@ def payment_dashboard(request):
         "approval_history__action_by__user",
         "approval_history__action_by__company_role",
     ).order_by("-updated_at")
+
+    auto_approved_reports = approved_reports.filter(
+        is_auto_approved=True
+    )
+
+    manual_approved_reports = approved_reports.filter(
+        is_auto_approved=False
+    )
 
     paid_reports = reports.filter(
         status=ExpenseReport.STATUS_PAID
@@ -340,6 +350,14 @@ def payment_dashboard(request):
         total=Sum("total_amount")
     )["total"] or 0
 
+    auto_approved_amount = auto_approved_reports.aggregate(
+        total=Sum("total_amount")
+    )["total"] or 0
+
+    manual_approved_amount = manual_approved_reports.aggregate(
+        total=Sum("total_amount")
+    )["total"] or 0
+
     paid_amount = paid_reports.aggregate(
         total=Sum("total_amount")
     )["total"] or 0
@@ -359,6 +377,8 @@ def payment_dashboard(request):
         )
 
     recent_approved_reports = approved_reports[:10]
+    recent_auto_approved_reports = auto_approved_reports[:10]
+    recent_manual_approved_reports = manual_approved_reports[:10]
     recent_paid_reports = paid_reports[:10]
 
     department_payment_summary = paid_reports.values(
@@ -381,10 +401,16 @@ def payment_dashboard(request):
 
         "metrics": {
             "approved_reports_waiting_payment": approved_reports.count(),
+            "auto_approved_reports_waiting_payment": auto_approved_reports.count(),
+            "manual_approved_reports_waiting_payment": manual_approved_reports.count(),
+
             "paid_reports": paid_reports.count(),
             "rejected_reports": rejected_reports.count(),
 
             "approved_amount": str(approved_amount),
+            "auto_approved_amount": str(auto_approved_amount),
+            "manual_approved_amount": str(manual_approved_amount),
+
             "paid_amount": str(paid_amount),
             "rejected_amount": str(rejected_amount),
 
@@ -404,6 +430,16 @@ def payment_dashboard(request):
             many=True
         ).data,
 
+        "recent_auto_approved_reports": ExpenseReportSerializer(
+            recent_auto_approved_reports,
+            many=True
+        ).data,
+
+        "recent_manual_approved_reports": ExpenseReportSerializer(
+            recent_manual_approved_reports,
+            many=True
+        ).data,
+
         "recent_paid_reports": ExpenseReportSerializer(
             recent_paid_reports,
             many=True
@@ -411,6 +447,16 @@ def payment_dashboard(request):
 
         "approved_reports": ExpenseReportSerializer(
             approved_reports,
+            many=True
+        ).data,
+
+        "auto_approved_reports": ExpenseReportSerializer(
+            auto_approved_reports,
+            many=True
+        ).data,
+
+        "manual_approved_reports": ExpenseReportSerializer(
+            manual_approved_reports,
             many=True
         ).data,
 

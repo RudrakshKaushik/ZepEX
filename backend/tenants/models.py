@@ -40,6 +40,7 @@ class Company(models.Model):
     created_at = models.DateTimeField(
         auto_now_add=True
     )
+  
 
     def __str__(self):
         return self.name
@@ -243,7 +244,10 @@ class CompanyPolicy(models.Model):
     updated_at = models.DateTimeField(
         auto_now=True
     )
-
+        
+    auto_approve_if_no_violation = models.BooleanField(
+    default=True
+    )    
     def __str__(self):
         return f"Policy - {self.company.name}"
 
@@ -415,3 +419,118 @@ class DatabaseSyncLog(models.Model):
 
     def __str__(self):
         return f"{self.company.name} - {self.status}"    
+    
+
+class Currency(models.Model):
+    code = models.CharField(
+        max_length=3,
+        unique=True
+    )
+
+    name = models.CharField(
+        max_length=100
+    )
+
+    symbol = models.CharField(
+        max_length=10
+    )
+
+    country = models.CharField(
+        max_length=100
+    )
+
+    flag = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True
+    )
+
+    is_active = models.BooleanField(
+        default=True
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    class Meta:
+        ordering = ["code"]
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"   
+
+
+class CompanyFinanceSettings(models.Model):
+
+    EXCHANGE_RATE_PROVIDER_CHOICES = [
+        ("ExchangeRate API", "ExchangeRate API"),
+        ("Open Exchange Rates", "Open Exchange Rates"),
+        ("Fixer", "Fixer"),
+    ]
+
+    DATE_FORMAT_CHOICES = [
+        ("DD/MM/YYYY", "DD/MM/YYYY"),
+        ("MM/DD/YYYY", "MM/DD/YYYY"),
+        ("YYYY-MM-DD", "YYYY-MM-DD"),
+    ]
+
+    company = models.OneToOneField(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="finance_settings"
+    )
+
+    base_currency = models.ForeignKey(
+        Currency,
+        on_delete=models.PROTECT,
+        related_name="company_finance_settings"
+    )
+
+    auto_currency_conversion = models.BooleanField(
+        default=True
+    )
+
+    exchange_rate_provider = models.CharField(
+        max_length=100,
+        choices=EXCHANGE_RATE_PROVIDER_CHOICES,
+        default="ExchangeRate API"
+    )
+
+    allow_manual_exchange_rate = models.BooleanField(
+        default=False
+    )
+
+    decimal_places = models.PositiveSmallIntegerField(
+        default=2
+    )
+
+    rounding_enabled = models.BooleanField(
+        default=True
+    )
+
+    timezone = models.CharField(
+        max_length=100,
+        default="UTC"
+    )
+
+    date_format = models.CharField(
+        max_length=20,
+        choices=DATE_FORMAT_CHOICES,
+        default="DD/MM/YYYY"
+    )
+
+    last_exchange_sync = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True
+    )
+
+    def __str__(self):
+        return f"{self.company.name} Finance Settings"

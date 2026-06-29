@@ -46,6 +46,7 @@ from django.core.paginator import Paginator
 from django.db.models import Q
 
 from decimal import Decimal
+from .serializers import CompanyFinanceSettingsSerializer
 
 @api_view(["POST"])
 @permission_classes([
@@ -2903,6 +2904,186 @@ def send_employee_invites(request):
         "errors": errors,
     })
 
+@api_view(["GET", "PUT"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin
+])
+def company_finance_settings(request):
+
+    company = request.user.profile.company
+
+    if request.method == "GET":
+        serializer = CompanyFinanceSettingsSerializer(company)
+
+        return Response({
+            "success": True,
+            "settings": serializer.data
+        })
+
+    serializer = CompanyFinanceSettingsSerializer(
+        company,
+        data=request.data,
+        partial=True
+    )
+
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
+
+    create_audit_log(
+        company=company,
+        action="COMPANY_FINANCE_SETTINGS_UPDATED",
+        action_by=request.user.profile,
+        message="Company finance settings updated.",
+        metadata={
+            "base_currency": serializer.data.get("base_currency"),
+            "auto_currency_conversion": serializer.data.get(
+                "auto_currency_conversion"
+            ),
+        }
+    )
+
+    return Response({
+        "success": True,
+        "message": "Company finance settings updated successfully.",
+        "settings": serializer.data
+    })
+
+from .models import Currency, CompanyFinanceSettings
+from .serializers import CompanyFinanceSettingsSerializer
+
+@api_view(["GET", "PUT"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin
+])
+def company_finance_settings(request):
+
+    profile = request.user.profile
+    company = profile.company
+
+    default_currency = Currency.objects.filter(
+        code="INR",
+        is_active=True
+    ).first()
+
+    finance_settings, created = CompanyFinanceSettings.objects.get_or_create(
+        company=company,
+        defaults={
+            "base_currency": default_currency
+        }
+    )
+
+    if request.method == "GET":
+        serializer = CompanyFinanceSettingsSerializer(finance_settings)
+
+        return Response({
+            "success": True,
+            "settings": serializer.data
+        })
+
+    serializer = CompanyFinanceSettingsSerializer(
+        finance_settings,
+        data=request.data,
+        partial=True
+    )
+
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
+
+    create_audit_log(
+        company=company,
+        action="COMPANY_FINANCE_SETTINGS_UPDATED",
+        action_by=profile,
+        message="Company finance settings updated.",
+        metadata={
+            "base_currency": serializer.data.get("base_currency_code"),
+            "auto_currency_conversion": serializer.data.get(
+                "auto_currency_conversion"
+            ),
+            "exchange_rate_provider": serializer.data.get(
+                "exchange_rate_provider"
+            ),
+            "timezone": serializer.data.get("timezone"),
+            "date_format": serializer.data.get("date_format"),
+        }
+    )
+
+    return Response({
+        "success": True,
+        "message": "Company finance settings updated successfully.",
+        "settings": serializer.data
+    })
 
 
+from .models import Currency
+from .serializers import CurrencySerializer
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def currency_list(request):
+
+    search = request.GET.get("search")
+    is_active = request.GET.get("is_active", "true")
+    page = request.GET.get("page", 1)
+    page_size = int(request.GET.get("page_size", 20))
+
+    currencies = Currency.objects.all()
+
+    if is_active:
+        currencies = currencies.filter(
+            is_active=is_active.lower() == "true"
+        )
+
+    if search:
+        currencies = currencies.filter(
+            Q(code__icontains=search)
+            |
+            Q(name__icontains=search)
+            |
+            Q(country__icontains=search)
+        )
+
+    currencies = currencies.order_by("name")
+
+    paginator = Paginator(currencies, page_size)
+    page_obj = paginator.get_page(page)
+
+    serializer = CurrencySerializer(
+        page_obj,
+        many=True
+    )
+
+    return Response({
+        "count": paginator.count,
+        "total_pages": paginator.num_pages,
+        "current_page": page_obj.number,
+        "page_size": page_size,
+        "filters": {
+            "search": search,
+            "is_active": is_active,
+        },
+        "results": serializer.data,
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def currency_detail(request, code):
+
+    currency = Currency.objects.filter(
+        code=code.upper()
+    ).first()
+
+    if not currency:
+        return Response(
+            {"error": "Currency not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    serializer = CurrencySerializer(currency)
+
+    return Response({
+        "success": True,
+        "currency": serializer.data,
+    })
 

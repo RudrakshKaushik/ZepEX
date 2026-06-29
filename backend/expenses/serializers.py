@@ -48,27 +48,53 @@ class ExpenseReceiptSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ExpenseReceipt
+
         fields = [
             "id",
             "report",
             "submission",
             "company",
+
             "employee",
             "employee_email",
+
             "department",
             "department_name",
+
             "receipt_file",
+
             "vendor_name",
             "invoice_date",
+
+            # Existing (keep for backward compatibility)
             "total_amount",
             "currency",
+
+            # Original Receipt
+            "original_amount",
+            "original_currency",
+
+            # Company Reimbursement
+            "company_amount",
+            "company_currency",
+
+            # Exchange Details
+            "exchange_rate",
+            "exchange_rate_date",
+            "exchange_rate_provider",
+
+            # Status
             "status",
+
+            # Policy
             "policy_violation_reason",
             "has_duplicate_violation",
             "has_old_bill_violation",
             "has_amount_violation",
             "has_any_violation",
+
             "line_items",
+
             "created_at",
             "updated_at",
         ]
@@ -78,22 +104,37 @@ class ExpenseReceiptSerializer(serializers.ModelSerializer):
             "report",
             "submission",
             "company",
+
             "employee",
             "department",
+
             "vendor_name",
             "invoice_date",
+
             "total_amount",
             "currency",
+
+            "original_amount",
+            "original_currency",
+
+            "company_amount",
+            "company_currency",
+
+            "exchange_rate",
+            "exchange_rate_date",
+            "exchange_rate_provider",
+
             "status",
+
             "policy_violation_reason",
             "has_duplicate_violation",
             "has_old_bill_violation",
             "has_amount_violation",
             "has_any_violation",
+
             "created_at",
             "updated_at",
         ]
-
 
 class ApprovalHistorySerializer(serializers.ModelSerializer):
     action_by_email = serializers.EmailField(
@@ -189,6 +230,12 @@ class ExpenseReportSerializer(serializers.ModelSerializer):
 
     latest_rejection_reason = serializers.SerializerMethodField()
 
+    approval_type = serializers.SerializerMethodField()
+
+    approval_required = serializers.SerializerMethodField()
+
+    view_only_for_workflow = serializers.SerializerMethodField()
+
     class Meta:
         model = ExpenseReport
 
@@ -203,6 +250,11 @@ class ExpenseReportSerializer(serializers.ModelSerializer):
             "department_name",
             "month",
             "status",
+            "is_auto_approved",
+            "auto_approved_at",
+            "approval_type",
+            "approval_required",
+            "view_only_for_workflow",
             "total_amount",
             "submitted_at",
             "paid_at",
@@ -224,6 +276,11 @@ class ExpenseReportSerializer(serializers.ModelSerializer):
             "employee",
             "department",
             "status",
+            "is_auto_approved",
+            "auto_approved_at",
+            "approval_type",
+            "approval_required",
+            "view_only_for_workflow",
             "total_amount",
             "submitted_at",
             "paid_at",
@@ -243,7 +300,41 @@ class ExpenseReportSerializer(serializers.ModelSerializer):
         return full_name or obj.employee.user.email
 
     def get_employee_profile_picture(self, obj):
-        return profile_picture_url(obj.employee, self.context.get("request"))
+        return profile_picture_url(
+            obj.employee,
+            self.context.get("request")
+        )
+
+    def get_approval_type(self, obj):
+        if obj.is_auto_approved:
+            return "SYSTEM_AUTO_APPROVED"
+
+        if obj.status == ExpenseReport.STATUS_APPROVED:
+            return "MANUAL_APPROVED"
+
+        if obj.status == ExpenseReport.STATUS_REJECTED:
+            return "REJECTED"
+
+        if obj.status == ExpenseReport.STATUS_SUBMITTED:
+            return "MANUAL_APPROVAL_REQUIRED"
+
+        return "NOT_SUBMITTED"
+
+    def get_approval_required(self, obj):
+        return (
+            obj.status == ExpenseReport.STATUS_SUBMITTED
+            and not obj.workflow_completed
+            and not obj.is_auto_approved
+        )
+
+    def get_view_only_for_workflow(self, obj):
+        return (
+            obj.is_auto_approved
+            and obj.status in [
+                ExpenseReport.STATUS_APPROVED,
+                ExpenseReport.STATUS_PAID,
+            ]
+        )
 
     def get_current_step(self, obj):
         step = obj.current_workflow_step
@@ -297,6 +388,77 @@ class ExpenseReportSerializer(serializers.ModelSerializer):
             "comments": None,
             "action_at": obj.submitted_at,
         })
+
+        if obj.is_auto_approved:
+            timeline.append({
+                "step_order": 1,
+                "step_name": "System Auto Approval",
+                "status": "AUTO_APPROVED",
+                "action_by": "SYSTEM",
+                "action_role": "SYSTEM",
+                "comments": (
+                    "Approved automatically because all receipts satisfied "
+                    "company policy."
+                ),
+                "action_at": obj.auto_approved_at,
+            })
+
+            workflow_steps = ApprovalWorkflowStep.objects.filter(
+                workflow__company=obj.company,
+                is_active=True
+            ).select_related(
+                "approver_role",
+                "department"
+            ).order_by(
+                "step_order"
+            )
+
+            for step in workflow_steps:
+                timeline.append({
+                    "step_order": step.step_order + 1,
+                    "step_name": step.approver_role.name,
+                    "status": "VIEW_ONLY",
+                    "action_by": None,
+                    "action_role": step.approver_role.name,
+                    "comments": "No action required. Auto approved by system.",
+                    "action_at": None,
+                })
+
+            if obj.status == ExpenseReport.STATUS_PAID:
+                paid_history = obj.approval_history.filter(
+                    action=ApprovalHistory.ACTION_PAID
+                ).first()
+
+                timeline.append({
+                    "step_order": 999,
+                    "step_name": "Payment",
+                    "status": "PAID",
+                    "action_by": (
+                        paid_history.action_by.user.email
+                        if paid_history and paid_history.action_by
+                        else None
+                    ),
+                    "action_role": "ACCOUNTS",
+                    "comments": (
+                        paid_history.comments
+                        if paid_history
+                        else obj.paid_notes
+                    ),
+                    "action_at": obj.paid_at,
+                })
+
+            else:
+                timeline.append({
+                    "step_order": 999,
+                    "step_name": "Payment",
+                    "status": "PENDING_PAYMENT",
+                    "action_by": None,
+                    "action_role": "ACCOUNTS",
+                    "comments": None,
+                    "action_at": None,
+                })
+
+            return timeline
 
         workflow = None
 
@@ -369,8 +531,8 @@ class ExpenseReportSerializer(serializers.ModelSerializer):
                 if workflow_stopped:
                     status_value = "CANCELLED"
                 elif (
-                    obj.current_workflow_step and
-                    obj.current_workflow_step.id == step.id
+                    obj.current_workflow_step
+                    and obj.current_workflow_step.id == step.id
                 ):
                     if is_payment_queue_role(step.approver_role):
                         status_value = "PENDING_PAYMENT"
@@ -429,7 +591,6 @@ class ExpenseReportSerializer(serializers.ModelSerializer):
             })
 
         return timeline
-
 class ExpenseSubmissionSerializer(serializers.ModelSerializer):
     receipts = ExpenseReceiptSerializer(
         many=True,

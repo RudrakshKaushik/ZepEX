@@ -53,6 +53,17 @@ class ExpenseReport(models.Model):
         default=STATUS_DRAFT
     )
 
+    # ⭐ NEW
+    is_auto_approved = models.BooleanField(
+        default=False
+    )
+
+    # ⭐ NEW
+    auto_approved_at = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
     total_amount = models.DecimalField(
         max_digits=12,
         decimal_places=2,
@@ -286,6 +297,57 @@ class ExpenseReceipt(models.Model):
     updated_at = models.DateTimeField(
         auto_now=True
     )
+    # -----------------------------
+# Original Receipt Currency
+# -----------------------------
+
+    original_amount = models.DecimalField(
+    max_digits=12,
+    decimal_places=2,
+    default=0
+)
+
+    original_currency = models.CharField(
+    max_length=3,
+    default="INR"
+)
+
+# -----------------------------
+# Company Reimbursement Currency
+# -----------------------------
+
+    company_amount = models.DecimalField(
+    max_digits=12,
+    decimal_places=2,
+    default=0
+)
+
+    company_currency = models.CharField(
+    max_length=3,
+    default="INR"
+)
+
+# -----------------------------
+# Exchange Information
+# -----------------------------
+
+    exchange_rate = models.DecimalField(
+    max_digits=18,
+    decimal_places=8,
+    null=True,
+    blank=True
+)
+
+    exchange_rate_date = models.DateTimeField(
+    null=True,
+    blank=True
+)
+
+    exchange_rate_provider = models.CharField(
+    max_length=100,
+    blank=True,
+    null=True
+)
 
     class Meta:
         ordering = [

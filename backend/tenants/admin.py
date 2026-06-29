@@ -97,3 +97,30 @@ class ReimbursementEmailConfigAdmin(admin.ModelAdmin):
     )
     list_filter = ("is_active",)
     search_fields = ("company__name", "email_address")    
+
+
+from .models import Currency
+
+@admin.register(Currency)
+class CurrencyAdmin(admin.ModelAdmin):
+    list_display = (
+        "code",
+        "name",
+        "country",
+        "symbol",
+        "is_active",
+    )
+
+    search_fields = (
+        "code",
+        "name",
+        "country",
+    )
+
+    list_filter = (
+        "is_active",
+    )
+
+    ordering = (
+        "code",
+    )

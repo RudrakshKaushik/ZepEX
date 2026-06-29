@@ -49,6 +49,9 @@ from .views import (
     employees_template_info,
     policy_rules_template_info,
     send_employee_invites,
+    company_finance_settings,
+    currency_list,
+    currency_detail
 
 
 )
@@ -145,4 +148,22 @@ path(
     send_employee_invites,
     name="send-employee-invites"
 ),
+
+path(
+    "company/finance-settings/",
+    company_finance_settings,
+    name="company-finance-settings"
+),
+path(
+    "currencies/",
+    currency_list,
+    name="currency-list"
+),
+
+path(
+    "currencies/<str:code>/",
+    currency_detail,
+    name="currency-detail"
+),
+
 ]

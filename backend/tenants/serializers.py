@@ -491,7 +491,7 @@ class CompanySerializer(serializers.ModelSerializer):
         ]
 
 
-from .models import DatabaseSyncLog
+from .models import DatabaseSyncLog,CompanyFinanceSettings,Currency
 
 
 class DatabaseSyncLogSerializer(serializers.ModelSerializer):
@@ -506,4 +506,81 @@ class DatabaseSyncLogSerializer(serializers.ModelSerializer):
             "error_message",
             "started_at",
             "completed_at",
+        ]        
+
+class CompanyFinanceSettingsSerializer(serializers.ModelSerializer):
+
+    base_currency_code = serializers.CharField(
+        source="base_currency.code",
+        read_only=True
+    )
+
+    base_currency_name = serializers.CharField(
+        source="base_currency.name",
+        read_only=True
+    )
+
+    base_currency_symbol = serializers.CharField(
+        source="base_currency.symbol",
+        read_only=True
+    )
+
+    base_currency_flag = serializers.CharField(
+        source="base_currency.flag",
+        read_only=True
+    )
+
+    class Meta:
+        model = CompanyFinanceSettings
+        fields = [
+            "id",
+            "company",
+            "base_currency",
+            "base_currency_code",
+            "base_currency_name",
+            "base_currency_symbol",
+            "base_currency_flag",
+            "auto_currency_conversion",
+            "exchange_rate_provider",
+            "allow_manual_exchange_rate",
+            "decimal_places",
+            "rounding_enabled",
+            "timezone",
+            "date_format",
+            "last_exchange_sync",
+            "created_at",
+            "updated_at",
+        ]
+
+        read_only_fields = [
+            "id",
+            "company",
+            "base_currency_code",
+            "base_currency_name",
+            "base_currency_symbol",
+            "base_currency_flag",
+            "last_exchange_sync",
+            "created_at",
+            "updated_at",
+        ]
+
+
+class CurrencySerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Currency
+        fields = [
+            "id",
+            "code",
+            "name",
+            "symbol",
+            "country",
+            "flag",
+            "is_active",
+            "created_at",
+        ]
+
+        read_only_fields = [
+            "id",
+            "created_at",
         ]        

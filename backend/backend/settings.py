@@ -315,3 +315,20 @@ FRONTEND_LOGIN_URL = os.getenv(
     "FRONTEND_LOGIN_URL",
     "http://localhost:5173/login"
 )
+
+
+# --------------------------------------------------
+# CURRENCY EXCHANGE
+# --------------------------------------------------
+
+EXCHANGE_RATE_API_KEY = os.getenv("EXCHANGE_RATE_API_KEY", "")
+
+EXCHANGE_RATE_PROVIDER = os.getenv(
+    "EXCHANGE_RATE_PROVIDER",
+    "ExchangeRate API"
+)
+
+EXCHANGE_RATE_API_URL = os.getenv(
+    "EXCHANGE_RATE_API_URL",
+    "https://v6.exchangerate-api.com/v6"
+)

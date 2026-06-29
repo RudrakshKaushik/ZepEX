@@ -101,6 +101,7 @@ export interface DepartmentRecord {
   id: string
   name: string
   manager: string | null
+  manager_name?: string | null
   is_active?: boolean
   created_at: string
 }
@@ -399,6 +400,7 @@ export interface PlatformCompanySummary {
   domain: string
   reimbursement_email_prefix?: string
   is_verified: boolean
+  is_active?: boolean
   created_at: string
 }
 
@@ -417,4 +419,70 @@ export interface EmployeeInviteResult {
   sent: number
   failed: number
   errors?: Array<{ employee: string; error: string }>
+}
+
+export interface UploadPolicyResult {
+  success: boolean
+  has_violations?: boolean
+  violations?: string[]
+  next_status?: string
+}
+
+export interface UploadAiResult {
+  success?: boolean | null
+  pending?: boolean
+  error?: string
+  receipt_id?: string
+  line_items_created?: string[]
+  total_amount?: number
+  has_any_violation?: boolean
+  violation_reason?: string | null
+  policy?: UploadPolicyResult
+}
+
+export interface UploadReceiptResponse {
+  message: string
+  report_id: string
+  receipt: Receipt
+  ai_result?: UploadAiResult
+}
+
+export interface Currency {
+  id: number
+  code: string
+  name: string
+  symbol: string
+  country: string
+  flag: string
+  is_active: boolean
+  created_at: string
+}
+
+export interface CurrencyListResponse {
+  count: number
+  total_pages: number
+  current_page: number
+  page_size: number
+  filters: {
+    search: string | null
+    is_active: string | null
+  }
+  results: Currency[]
+}
+
+export interface FinanceSettings {
+  id: number
+  company: string
+  base_currency: number
+  base_currency_details: Currency
+  auto_currency_conversion: boolean
+  exchange_rate_provider: string
+  allow_manual_exchange_rate: boolean
+  decimal_places: number
+  rounding_enabled: boolean
+  timezone: string
+  date_format: string
+  last_exchange_sync: string | null
+  created_at: string
+  updated_at: string
 }

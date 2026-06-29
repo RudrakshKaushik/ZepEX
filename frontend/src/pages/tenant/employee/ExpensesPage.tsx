@@ -91,6 +91,9 @@ function MyExpenseExpandedPanel({
                   <StatusBadge status={receipt.status} />
                 </div>
               </div>
+              {receipt.has_any_violation && receipt.policy_violation_reason && (
+                <p className="mt-2 text-sm text-amber-700">{receipt.policy_violation_reason}</p>
+              )}
               {receipt.line_items.map((item) => (
                 <div
                   key={item.id}
@@ -101,6 +104,9 @@ function MyExpenseExpandedPanel({
                       {item.category.replace(/_/g, ' ')}
                     </p>
                     <p className="line-clamp-2 text-muted-foreground">{item.description}</p>
+                    {item.is_violating && item.violation_reason && (
+                      <p className="mt-1 text-xs text-amber-700">{item.violation_reason}</p>
+                    )}
                     <p className="mt-1">{formatCurrency(item.amount, receipt.currency)}</p>
                   </div>
                   {canEditReceipts && (
@@ -201,22 +207,36 @@ export function ExpensesPage() {
     setUploading(true)
     try {
       const errors: string[] = []
+      const violationMessages: string[] = []
       let successCount = 0
       for (const file of selectedFiles) {
         const { data } = await uploadReceipt(file)
-        if (data.ai_result?.success) {
+        const aiFailed = data.ai_result?.success === false && !data.ai_result?.pending
+        if (aiFailed) {
+          errors.push(data.ai_result?.error || data.message)
+        } else {
           successCount += 1
-        } else if (data.ai_result?.pending) {
-          successCount += 1
-        } else if (data.ai_result?.success === false) {
-          errors.push(data.ai_result.error || data.message)
+        }
+        const violationReason =
+          data.ai_result?.violation_reason ||
+          data.receipt?.policy_violation_reason ||
+          data.ai_result?.policy?.violations?.join('; ')
+        if (data.receipt?.has_any_violation || data.ai_result?.has_any_violation) {
+          violationMessages.push(violationReason || 'Policy violation detected on uploaded receipt.')
         }
       }
       if (errors.length) {
         toast.error(formatUploadError(errors[0]))
       }
+      if (violationMessages.length) {
+        toast(violationMessages[0])
+      }
       if (successCount && !errors.length) {
-        toast.success('Receipt(s) uploaded and processed by AI.')
+        toast.success(
+          violationMessages.length
+            ? 'Receipt(s) uploaded with policy violations flagged.'
+            : 'Receipt(s) uploaded and processed by AI.',
+        )
         setUploadOpen(false)
         resetUploadModal()
       } else if (successCount && errors.length) {

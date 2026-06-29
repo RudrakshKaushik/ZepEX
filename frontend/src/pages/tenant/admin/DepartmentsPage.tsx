@@ -46,7 +46,7 @@ type ConfirmAction = { type: 'deactivate' | 'delete'; dept: DepartmentRecord }
 export function DepartmentsPage() {
   const { navItems } = useAdminNav()
   const [departments, setDepartments] = useState<DepartmentRecord[]>([])
-  const [managers, setManagers] = useState<EmployeeRecord[]>([])
+  const [allEmployees, setAllEmployees] = useState<EmployeeRecord[]>([])
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
@@ -73,7 +73,7 @@ export function DepartmentsPage() {
       setDepartments(deptRes.data.results)
       setTotalPages(deptRes.data.total_pages)
       setTotalCount(deptRes.data.count)
-      setManagers(allEmployees.filter((e) => e.role === 'MANAGER' && e.is_active !== false))
+      setAllEmployees(allEmployees)
     } finally {
       setLoading(false)
     }
@@ -167,10 +167,13 @@ export function DepartmentsPage() {
     }
   }
 
-  const managerName = (managerId: string | null) => {
-    if (!managerId) return '—'
-    const m = managers.find((mgr) => String(mgr.id) === managerId)
-    return m ? `${m.first_name} ${m.last_name}` : managerId
+  const managers = allEmployees.filter((e) => e.role === 'MANAGER' && e.is_active !== false)
+
+  const managerName = (dept: DepartmentRecord) => {
+    if (dept.manager_name) return dept.manager_name
+    if (!dept.manager) return '—'
+    const m = allEmployees.find((emp) => String(emp.id) === String(dept.manager))
+    return m ? `${m.first_name} ${m.last_name}`.trim() || m.email : '—'
   }
 
   if (loading) {
@@ -237,7 +240,7 @@ export function DepartmentsPage() {
             {departments.map((dept) => (
               <AdminTableRow key={dept.id}>
                 <AdminTableCell className="font-medium text-gray-900">{dept.name}</AdminTableCell>
-                <AdminTableCell>{managerName(dept.manager)}</AdminTableCell>
+                <AdminTableCell>{managerName(dept)}</AdminTableCell>
                 <AdminTableCell className="text-gray-500">
                   {formatDate(dept.created_at)}
                 </AdminTableCell>

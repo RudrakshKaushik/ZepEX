@@ -17,11 +17,14 @@ import type {
   MyUploadedExpensesResponse,
   PendingApprovalsResponse,
   PolicyRule,
-  Receipt,
   ReimbursementEmailConfig,
   RejectReportResponse,
   SmtpConfig,
   UpdateWorkflowStepResponse,
+  Currency,
+  CurrencyListResponse,
+  FinanceSettings,
+  UploadReceiptResponse,
   User,
   UserProfile,
 } from '@/types'
@@ -141,6 +144,7 @@ export const editCompanyUser = (
     department_id?: string | null
     phone_number?: string
     address?: string
+    email?: string
   },
 ) => api.patch(`/tenants/users/${userId}/edit/`, data)
 
@@ -257,23 +261,37 @@ export const listPlatformCompanies = () =>
     results: Array<{ id: string; name: string; domain: string; is_verified: boolean }>
   }>('/platform/companies/')
 
-function uploadCsv(path: string, file: File) {
+function uploadCsv(
+  path: string,
+  file: File,
+  onUploadProgress?: (percent: number) => void,
+) {
   const formData = new FormData()
   formData.append('file', file)
   return api.post<import('@/types').CsvImportResult>(path, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: (event) => {
+      if (!onUploadProgress || !event.total) return
+      onUploadProgress(Math.round((event.loaded / event.total) * 100))
+    },
   })
 }
 
-export const importDepartments = (file: File) =>
-  uploadCsv('/tenants/departments/import/', file)
+export type CsvImportOptions = {
+  onUploadProgress?: (percent: number) => void
+}
 
-export const importCompanyRolesCsv = (file: File) => uploadCsv('/tenants/roles/import/', file)
+export const importDepartments = (file: File, options?: CsvImportOptions) =>
+  uploadCsv('/tenants/departments/import/', file, options?.onUploadProgress)
 
-export const importEmployeesCsv = (file: File) => uploadCsv('/tenants/employees/import/', file)
+export const importCompanyRolesCsv = (file: File, options?: CsvImportOptions) =>
+  uploadCsv('/tenants/roles/import/', file, options?.onUploadProgress)
 
-export const importPolicyRulesCsv = (file: File) =>
-  uploadCsv('/tenants/policy-rules/import/', file)
+export const importEmployeesCsv = (file: File, options?: CsvImportOptions) =>
+  uploadCsv('/tenants/employees/import/', file, options?.onUploadProgress)
+
+export const importPolicyRulesCsv = (file: File, options?: CsvImportOptions) =>
+  uploadCsv('/tenants/policy-rules/import/', file, options?.onUploadProgress)
 
 export const getDepartmentTemplateInfo = () =>
   api.get<import('@/types').CsvTemplateInfo>('/tenants/departments/template/')
@@ -339,18 +357,42 @@ export const activatePlatformCompany = (companyId: string) =>
 export const deletePlatformCompany = (companyId: string) =>
   api.delete(`/platform/companies/${companyId}/delete/`)
 
+export const listCurrencies = (params?: {
+  page?: number
+  page_size?: number
+  search?: string
+  is_active?: string
+}) => api.get<CurrencyListResponse>('/tenants/currencies/', { params })
+
+export const getCurrency = (currencyCode: string) =>
+  api.get<{ success: boolean; currency: Currency }>(`/tenants/currencies/${currencyCode}/`)
+
+export const getFinanceSettings = () =>
+  api.get<{ success: boolean; settings: FinanceSettings }>('/tenants/company/finance-settings/')
+
+export const updateFinanceSettings = (data: {
+  base_currency: number
+  auto_currency_conversion: boolean
+  exchange_rate_provider: string
+  allow_manual_exchange_rate: boolean
+  decimal_places: number
+  rounding_enabled: boolean
+  timezone: string
+  date_format: string
+}) =>
+  api.put<{
+    success: boolean
+    message: string
+    settings: FinanceSettings
+  }>('/tenants/company/finance-settings/', data)
+
 export const getAuditLogDashboard = () => api.get('/audit-logs/dashboard/')
 
 // Expenses
 export const uploadReceipt = (file: File) => {
   const formData = new FormData()
   formData.append('receipt_file', file)
-  return api.post<{
-    message: string
-    report_id: string
-    receipt: Receipt
-    ai_result?: { success?: boolean | null; pending?: boolean; error?: string }
-  }>('/expenses/upload/', formData, {
+  return api.post<UploadReceiptResponse>('/expenses/upload/', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
 }

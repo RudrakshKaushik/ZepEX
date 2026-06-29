@@ -80,7 +80,7 @@ export function ReportDetail({
                   <FileText className="h-4 w-4 text-primary" />
                   {receipt.vendor_name || 'Unknown vendor'}
                 </CardTitle>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {receipt.has_any_violation && (
                     <Badge variant="destructive" className="gap-1">
                       <AlertTriangle className="h-3 w-3" />
@@ -97,6 +97,23 @@ export function ReportDetail({
                 <span className="text-muted-foreground">{formatDate(receipt.invoice_date)}</span>
               </div>
 
+              {receipt.has_any_violation && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  {receipt.policy_violation_reason && <p>{receipt.policy_violation_reason}</p>}
+                  <div className="mt-1 flex flex-wrap gap-2 text-xs">
+                    {receipt.has_duplicate_violation && (
+                      <Badge variant="outline">Duplicate receipt</Badge>
+                    )}
+                    {receipt.has_old_bill_violation && (
+                      <Badge variant="outline">Old bill</Badge>
+                    )}
+                    {receipt.has_amount_violation && (
+                      <Badge variant="outline">Amount limit</Badge>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {receipt.line_items.length > 0 ? (
                 <div className="overflow-x-auto rounded-lg border">
                   <table className="w-full text-sm">
@@ -112,7 +129,12 @@ export function ReportDetail({
                       {receipt.line_items.map((item) => (
                         <tr key={item.id} className="border-t">
                           <td className="px-3 py-2 capitalize">{item.category.replace(/_/g, ' ')}</td>
-                          <td className="max-w-xs truncate px-3 py-2">{item.description}</td>
+                          <td className="max-w-xs truncate px-3 py-2">
+                            <div>{item.description}</div>
+                            {item.is_violating && item.violation_reason && (
+                              <p className="mt-1 text-xs text-amber-700">{item.violation_reason}</p>
+                            )}
+                          </td>
                           <td className="px-3 py-2">{formatCurrency(item.amount, receipt.currency)}</td>
                           <td className="px-3 py-2">{formatDate(item.bill_date)}</td>
                         </tr>

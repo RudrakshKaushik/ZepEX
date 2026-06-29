@@ -388,7 +388,9 @@ def platform_company_details(request, company_id):
     }
 
     if section in ["all", "departments"]:
-        departments = Department.objects.filter(
+        departments = Department.objects.select_related(
+            "manager__user"
+        ).filter(
             company=company
         )
 

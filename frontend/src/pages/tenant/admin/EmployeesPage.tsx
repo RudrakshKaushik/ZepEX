@@ -47,22 +47,36 @@ import AssignIcon from '@/assets/assign.png'
 
 const roles = ['MANAGER', 'EMPLOYEE', 'ACCOUNTS'] as const
 
+const COMPANY_ADMIN_ROLE_VALUE = '__COMPANY_ADMIN__'
+
 const selectClassName =
   'flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm'
 
 type ConfirmAction = { type: 'deactivate' | 'delete'; emp: EmployeeRecord }
 
-const systemRoleToCompanyRoleName: Record<string, string> = {
-  EMPLOYEE: 'Employee',
-  MANAGER: 'Manager',
-  ACCOUNTS: 'Accounts',
+function employeeRoleLabel(emp: EmployeeRecord) {
+  if (emp.role === 'COMPANY_ADMIN') return 'Company Admin'
+  return emp.company_role_name || emp.role
 }
 
-function matchCompanyRoleId(systemRole: string, companyRoles: CompanyRole[]) {
-  const name = systemRoleToCompanyRoleName[systemRole]
-  if (!name) return ''
-  const match = companyRoles.find((r) => r.name.toLowerCase() === name.toLowerCase())
-  return match ? String(match.id) : ''
+function isCompanyAdminRoleValue(value: string) {
+  return value === COMPANY_ADMIN_ROLE_VALUE
+}
+
+function inferSystemRole(role: CompanyRole): string {
+  const name = role.name.trim().toLowerCase()
+  if (name === 'accounts') return 'ACCOUNTS'
+  if (name === 'manager') return 'MANAGER'
+  if (role.can_mark_paid && !role.can_approve_expense) return 'ACCOUNTS'
+  if (role.can_approve_expense) return 'MANAGER'
+  return 'EMPLOYEE'
+}
+
+function defaultCompanyRoleId(roles: CompanyRole[]) {
+  const active = roles.filter((r) => r.is_active !== false)
+  const employee =
+    active.find((r) => r.name.toLowerCase() === 'employee') ?? active[0]
+  return employee ? String(employee.id) : ''
 }
 
 export function EmployeesPage() {
@@ -96,24 +110,31 @@ export function EmployeesPage() {
     last_name: '',
     email: '',
     password: '',
-    role: 'EMPLOYEE' as string,
     department_id: '',
     company_role_id: '',
   })
   const [editForm, setEditForm] = useState({
     first_name: '',
     last_name: '',
-    role: 'EMPLOYEE',
+    email: '',
     department_id: '',
     company_role_id: '',
     phone_number: '',
     address: '',
   })
 
+  const activeCompanyRoles = companyRoles.filter((r) => r.is_active !== false)
+  const activeCompanyAdminCount = allEmployees.filter(
+    (e) => e.role === 'COMPANY_ADMIN' && e.is_active !== false,
+  ).length
+
+  const isSoleCompanyAdmin = (emp: EmployeeRecord) =>
+    emp.role === 'COMPANY_ADMIN' && activeCompanyAdminCount <= 1
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [empRes, allDepts, allEmps, rolesRes] = await Promise.all([
+      const [empRes, allDepts, allEmps, allRoles] = await Promise.all([
         listEmployees({
           page,
           search: search || undefined,
@@ -122,14 +143,14 @@ export function EmployeesPage() {
         }),
         fetchAllPages((page) => listDepartments({ page })),
         fetchAllPages((page) => listEmployees({ page })),
-        listCompanyRoles(),
+        fetchAllPages((page) => listCompanyRoles({ page })),
       ])
       setEmployees(empRes.data.results)
       setTotalPages(empRes.data.total_pages)
       setTotalCount(empRes.data.count)
       setAllEmployees(allEmps)
       setDepartments(allDepts.filter((d) => d.is_active !== false))
-      setCompanyRoles(rolesRes.data.results)
+      setCompanyRoles(allRoles)
     } finally {
       setLoading(false)
     }
@@ -149,9 +170,8 @@ export function EmployeesPage() {
       last_name: '',
       email: '',
       password: '',
-      role: 'EMPLOYEE',
       department_id: '',
-      company_role_id: matchCompanyRoleId('EMPLOYEE', companyRoles),
+      company_role_id: defaultCompanyRoleId(companyRoles),
     })
   }
 
@@ -169,16 +189,25 @@ export function EmployeesPage() {
     }
   }
 
-  const setSystemRole = (role: string) => {
-    setForm((prev) => ({
-      ...prev,
-      role,
-      company_role_id: matchCompanyRoleId(role, companyRoles) || prev.company_role_id,
-    }))
-  }
-
   const handleCreate = async (e: FormEvent) => {
     e.preventDefault()
+    if (!form.company_role_id) {
+      setError('Select a role.')
+      return
+    }
+    const selectedRole = activeCompanyRoles.find(
+      (r) => String(r.id) === form.company_role_id,
+    )
+    const isCompanyAdmin = isCompanyAdminRoleValue(form.company_role_id)
+    if (!isCompanyAdmin && !selectedRole) {
+      setError('Selected role is no longer available.')
+      return
+    }
+    const systemRole = isCompanyAdmin ? 'COMPANY_ADMIN' : inferSystemRole(selectedRole!)
+    if (['EMPLOYEE', 'MANAGER'].includes(systemRole) && !form.department_id) {
+      setError('Department is required for this role.')
+      return
+    }
     setSaving(true)
     setError('')
     try {
@@ -187,9 +216,9 @@ export function EmployeesPage() {
         last_name: form.last_name,
         email: form.email,
         password: form.password,
-        role: form.role,
-        department_id: form.role === 'ACCOUNTS' ? undefined : form.department_id || undefined,
-        company_role_id: form.company_role_id ? parseInt(form.company_role_id, 10) : undefined,
+        role: systemRole,
+        department_id: form.department_id || undefined,
+        company_role_id: isCompanyAdmin ? undefined : parseInt(form.company_role_id, 10),
       })
       resetForm()
       setCreateOpen(false)
@@ -207,9 +236,14 @@ export function EmployeesPage() {
     setEditForm({
       first_name: emp.first_name,
       last_name: emp.last_name,
-      role: emp.role,
+      email: emp.email,
       department_id: emp.department || '',
-      company_role_id: emp.company_role ? String(emp.company_role) : '',
+      company_role_id:
+        emp.role === 'COMPANY_ADMIN'
+          ? COMPANY_ADMIN_ROLE_VALUE
+          : emp.company_role
+            ? String(emp.company_role)
+            : defaultCompanyRoleId(companyRoles),
       phone_number: emp.phone_number || '',
       address: emp.address || '',
     })
@@ -220,17 +254,41 @@ export function EmployeesPage() {
   const handleEdit = async (e: FormEvent) => {
     e.preventDefault()
     if (!editing) return
+    if (!editForm.company_role_id) {
+      setError('Select a role.')
+      return
+    }
+    const isCompanyAdmin = isCompanyAdminRoleValue(editForm.company_role_id)
+    const selectedRole = activeCompanyRoles.find(
+      (r) => String(r.id) === editForm.company_role_id,
+    )
+    if (!isCompanyAdmin && !selectedRole) {
+      setError('Selected role is no longer available.')
+      return
+    }
+    if (
+      editing.role === 'COMPANY_ADMIN' &&
+      activeCompanyAdminCount <= 1 &&
+      !isCompanyAdmin
+    ) {
+      setError('Cannot change role of the only company admin.')
+      return
+    }
+    const systemRole = isCompanyAdmin ? 'COMPANY_ADMIN' : inferSystemRole(selectedRole!)
+    if (['EMPLOYEE', 'MANAGER'].includes(systemRole) && !editForm.department_id) {
+      setError('Department is required for this role.')
+      return
+    }
     setSaving(true)
     setError('')
     try {
       await editCompanyUser(editing.id, {
         first_name: editForm.first_name,
         last_name: editForm.last_name,
-        role: editForm.role,
-        department_id: editForm.role === 'ACCOUNTS' ? null : editForm.department_id || null,
-        company_role_id: editForm.company_role_id
-          ? parseInt(editForm.company_role_id, 10)
-          : null,
+        email: editForm.email,
+        role: systemRole,
+        department_id: editForm.department_id || null,
+        company_role_id: isCompanyAdmin ? null : parseInt(editForm.company_role_id, 10),
         phone_number: editForm.phone_number || undefined,
         address: editForm.address || undefined,
       })
@@ -247,6 +305,11 @@ export function EmployeesPage() {
 
   const handleConfirmAction = async () => {
     if (!confirm) return
+    if (isSoleCompanyAdmin(confirm.emp)) {
+      setError('Cannot deactivate or delete the only company admin.')
+      setConfirm(null)
+      return
+    }
     setSaving(true)
     setError('')
     try {
@@ -310,7 +373,7 @@ export function EmployeesPage() {
 
   const managers = allEmployees.filter((e) => e.role === 'MANAGER' && e.is_active !== false)
   const missingCompanyRoleCount = allEmployees.filter(
-    (e) => !e.company_role_name && ['EMPLOYEE', 'MANAGER', 'ACCOUNTS'].includes(e.role),
+    (e) => !e.company_role && e.role !== 'COMPANY_ADMIN',
   ).length
 
   if (loading) {
@@ -453,7 +516,7 @@ export function EmployeesPage() {
               </AdminTableCell>
               <AdminTableCell>{emp.email}</AdminTableCell>
               <AdminTableCell>
-                <RolePill>{emp.role.toLowerCase()}</RolePill>
+                <RolePill>{employeeRoleLabel(emp)}</RolePill>
               </AdminTableCell>
               <AdminTableCell>{emp.department_name || '—'}</AdminTableCell>
               <AdminTableCell className="text-gray-500">
@@ -472,7 +535,7 @@ export function EmployeesPage() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      disabled={saving}
+                      disabled={saving || isSoleCompanyAdmin(emp)}
                       onClick={() => setConfirm({ type: 'deactivate', emp })}
                     >
                       <PowerOff className="h-3.5 w-3.5" />
@@ -481,7 +544,7 @@ export function EmployeesPage() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={saving}
+                    disabled={saving || isSoleCompanyAdmin(emp)}
                     onClick={() => setConfirm({ type: 'delete', emp })}
                   >
                     <Trash2 className="h-3.5 w-3.5 text-red-500" />
@@ -540,32 +603,33 @@ export function EmployeesPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Department</Label>
+              <Label>Role</Label>
               <select
                 className={selectClassName}
-                value={form.department_id}
-                onChange={(e) => setForm({ ...form, department_id: e.target.value })}
-                required={form.role !== 'ACCOUNTS'}
-                disabled={form.role === 'ACCOUNTS'}
+                value={form.company_role_id}
+                onChange={(e) => setForm({ ...form, company_role_id: e.target.value })}
+                required
               >
-                <option value="">Select department</option>
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
+                <option value="">Select role</option>
+                <option value={COMPANY_ADMIN_ROLE_VALUE}>Company Admin</option>
+                {activeCompanyRoles.map((r) => (
+                  <option key={r.id} value={String(r.id)}>
+                    {r.name}
                   </option>
                 ))}
               </select>
             </div>
             <div className="space-y-2">
-              <Label>Role</Label>
+              <Label>Department</Label>
               <select
                 className={selectClassName}
-                value={form.role}
-                onChange={(e) => setSystemRole(e.target.value)}
+                value={form.department_id}
+                onChange={(e) => setForm({ ...form, department_id: e.target.value })}
               >
-                {roles.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
+                <option value="">Select department</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
                   </option>
                 ))}
               </select>
@@ -601,51 +665,54 @@ export function EmployeesPage() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Role</Label>
-              <select
-                className={selectClassName}
-                value={editForm.role}
-                onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
-              >
-                {roles.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={editForm.email}
+                onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                required
+              />
             </div>
             <div className="space-y-2">
-              <Label>Company role</Label>
+              <Label>Role</Label>
               <select
                 className={selectClassName}
                 value={editForm.company_role_id}
                 onChange={(e) => setEditForm({ ...editForm, company_role_id: e.target.value })}
+                required
+                disabled={
+                  editing?.role === 'COMPANY_ADMIN' && activeCompanyAdminCount <= 1
+                }
               >
-                <option value="">None</option>
-                {companyRoles.map((r) => (
+                <option value="">Select role</option>
+                <option value={COMPANY_ADMIN_ROLE_VALUE}>Company Admin</option>
+                {activeCompanyRoles.map((r) => (
                   <option key={r.id} value={String(r.id)}>
                     {r.name}
                   </option>
                 ))}
               </select>
+              {editing?.role === 'COMPANY_ADMIN' && activeCompanyAdminCount <= 1 && (
+                <p className="text-xs text-gray-500">
+                  Role cannot be changed while this is the only company admin.
+                </p>
+              )}
             </div>
-            {editForm.role !== 'ACCOUNTS' && (
-              <div className="space-y-2">
-                <Label>Department</Label>
-                <select
-                  className={selectClassName}
-                  value={editForm.department_id}
-                  onChange={(e) => setEditForm({ ...editForm, department_id: e.target.value })}
-                >
-                  <option value="">None</option>
-                  {departments.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            <div className="space-y-2">
+              <Label>Department</Label>
+              <select
+                className={selectClassName}
+                value={editForm.department_id}
+                onChange={(e) => setEditForm({ ...editForm, department_id: e.target.value })}
+              >
+                <option value="">None</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             {error && editOpen && <p className="text-sm text-red-600">{error}</p>}
             <AdminModalFooter
               onCancel={() => setEditOpen(false)}

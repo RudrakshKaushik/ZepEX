@@ -16,6 +16,14 @@ from .models import (
 
 
 class DepartmentSerializer(serializers.ModelSerializer):
+    manager_name = serializers.SerializerMethodField()
+
+    def get_manager_name(self, obj):
+        if not obj.manager:
+            return None
+        user = obj.manager.user
+        name = f"{user.first_name} {user.last_name}".strip()
+        return name or user.email
 
     def validate_name(self, value):
         name = value.strip()
@@ -46,6 +54,7 @@ class DepartmentSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "manager",
+            "manager_name",
             "is_active",
             "created_at",
             "updated_at",
@@ -170,6 +179,7 @@ class EmployeeCreateSerializer(serializers.Serializer):
         ("MANAGER", "Manager"),
         ("ACCOUNTS", "Accounts"),
         ("EMPLOYEE", "Employee"),
+        ("COMPANY_ADMIN", "Company Admin"),
     )
 
     first_name = serializers.CharField(
@@ -265,8 +275,12 @@ class CompanyUserUpdateSerializer(serializers.Serializer):
         required=False
     )
 
+    email = serializers.EmailField(
+        required=False
+    )
+
     role = serializers.ChoiceField(
-        choices=["EMPLOYEE", "MANAGER", "ACCOUNTS"],
+        choices=["EMPLOYEE", "MANAGER", "ACCOUNTS", "COMPANY_ADMIN"],
         required=False
     )
 
@@ -289,6 +303,21 @@ class CompanyUserUpdateSerializer(serializers.Serializer):
         required=False,
         allow_blank=True
     )
+
+    def validate_email(self, value):
+        email = value.lower().strip()
+        user_id = self.context.get("user_id")
+
+        existing = User.objects.filter(email__iexact=email)
+        if user_id:
+            existing = existing.exclude(id=user_id)
+
+        if existing.exists():
+            raise serializers.ValidationError(
+                "User with this email already exists."
+            )
+
+        return email
 
     def validate(self, attrs):
         request = self.context.get("request")

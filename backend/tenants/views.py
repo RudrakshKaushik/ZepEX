@@ -101,7 +101,9 @@ def list_departments(request):
 
     search = request.GET.get("search")
 
-    departments = Department.objects.filter(
+    departments = Department.objects.select_related(
+        "manager__user"
+    ).filter(
         company=request.user.profile.company
     )
 
@@ -803,6 +805,15 @@ from audit_logs.utils import create_audit_log
 
 from .serializers import CompanyUserUpdateSerializer
 
+
+def active_company_admin_count(company):
+    return UserProfile.objects.filter(
+        company=company,
+        role="COMPANY_ADMIN",
+        user__is_active=True,
+    ).count()
+
+
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated, IsCompanyAdmin])
 def edit_company_user(request, user_id):
@@ -828,7 +839,11 @@ def edit_company_user(request, user_id):
 
     serializer = CompanyUserUpdateSerializer(
         data=request.data,
-        context={"request": request}
+        context={
+            "request": request,
+            "profile_id": profile.id,
+            "user_id": profile.user_id,
+        },
     )
 
     if not serializer.is_valid():
@@ -847,6 +862,17 @@ def edit_company_user(request, user_id):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    if (
+        profile.role == "COMPANY_ADMIN"
+        and "role" in data
+        and data["role"] != "COMPANY_ADMIN"
+        and active_company_admin_count(company) <= 1
+    ):
+        return Response(
+            {"error": "Cannot change role of the only company admin."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     user = profile.user
 
     user.first_name = data.get(
@@ -859,13 +885,19 @@ def edit_company_user(request, user_id):
         user.last_name
     )
 
-    user.save(update_fields=[
-        "first_name",
-        "last_name"
-    ])
+    update_user_fields = ["first_name", "last_name"]
+
+    if "email" in data:
+        user.email = data["email"]
+        user.username = data["email"]
+        update_user_fields.extend(["email", "username"])
+
+    user.save(update_fields=update_user_fields)
 
     if "role" in data:
         profile.role = data["role"]
+        if data["role"] == "COMPANY_ADMIN":
+            profile.company_role = None
 
     if "department_id" in data:
 
@@ -985,6 +1017,12 @@ def deactivate_company_user(request, user_id):
         return Response(
             {"error": "You cannot deactivate your own account."},
             status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if profile.role == "COMPANY_ADMIN" and active_company_admin_count(company) <= 1:
+        return Response(
+            {"error": "Cannot deactivate the only company admin."},
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
     profile.user.is_active = False
@@ -1349,6 +1387,12 @@ def delete_company_user(request, user_id):
         return Response(
             {"error": "You cannot delete your own account."},
             status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if profile.role == "COMPANY_ADMIN" and active_company_admin_count(company) <= 1:
+        return Response(
+            {"error": "Cannot delete the only company admin."},
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
     email = profile.user.email

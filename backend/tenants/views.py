@@ -844,6 +844,7 @@ def edit_company_user(request, user_id):
             "request": request,
             "profile_id": profile.id,
             "user_id": profile.user_id,
+            "profile_role": profile.role,
         },
     )
 
@@ -899,8 +900,11 @@ def edit_company_user(request, user_id):
         profile.role = data["role"]
         if data["role"] == "COMPANY_ADMIN":
             profile.company_role = None
+            profile.department = None
 
-    if "department_id" in data:
+    effective_role = data.get("role", profile.role)
+
+    if "department_id" in data and effective_role != "COMPANY_ADMIN":
 
         department_id = data["department_id"]
 
@@ -2794,9 +2798,10 @@ def download_policy_rules_template(request):
     return response
 
 from django.conf import settings
-from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
+
+from tenants.email_utils import send_company_email
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated, IsCompanyAdmin])
@@ -2839,51 +2844,44 @@ def send_employee_invites(request):
     )
 
     for employee in employees:
-        try:
-            temporary_password = "Password@123"
+        temporary_password = "Password@123"
 
-            html_content = render_to_string(
-                "emails/employee_invite.html",
-                {
-                    "employee_name": employee.user.first_name or employee.user.email,
-                    "company_name": company.name,
-                    "email": employee.user.email,
-                    "department": (
-                        employee.department.name
-                        if employee.department else "Not Assigned"
-                    ),
-                    "role": (
-                        employee.company_role.name
-                        if employee.company_role else employee.role
-                    ),
-                    "temporary_password": temporary_password,
-                    "login_url": login_url,
-                }
-            )
+        html_content = render_to_string(
+            "emails/employee_invite.html",
+            {
+                "employee_name": employee.user.first_name or employee.user.email,
+                "company_name": company.name,
+                "email": employee.user.email,
+                "department": (
+                    employee.department.name
+                    if employee.department else "Not Assigned"
+                ),
+                "role": (
+                    employee.company_role.name
+                    if employee.company_role else employee.role
+                ),
+                "temporary_password": temporary_password,
+                "login_url": login_url,
+            }
+        )
 
-            text_content = strip_tags(html_content)
+        text_content = strip_tags(html_content)
 
-            email_message = EmailMultiAlternatives(
-                subject=f"Welcome to ZepEx - {company.name}",
-                body=text_content,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                to=[employee.user.email],
-            )
+        result = send_company_email(
+            company,
+            subject=f"Welcome to ZepEx - {company.name}",
+            text_content=text_content,
+            html_content=html_content,
+            to_emails=[employee.user.email],
+        )
 
-            email_message.attach_alternative(
-                html_content,
-                "text/html"
-            )
-
-            email_message.send()
-
+        if result.get("success"):
             sent_count += 1
-
-        except Exception as e:
+        else:
             failed_count += 1
             errors.append({
                 "employee": employee.user.email,
-                "error": str(e)
+                "error": result.get("error", "Failed to send invite email."),
             })
 
     create_audit_log(
@@ -2902,51 +2900,6 @@ def send_employee_invites(request):
         "sent": sent_count,
         "failed": failed_count,
         "errors": errors,
-    })
-
-@api_view(["GET", "PUT"])
-@permission_classes([
-    IsAuthenticated,
-    IsCompanyAdmin
-])
-def company_finance_settings(request):
-
-    company = request.user.profile.company
-
-    if request.method == "GET":
-        serializer = CompanyFinanceSettingsSerializer(company)
-
-        return Response({
-            "success": True,
-            "settings": serializer.data
-        })
-
-    serializer = CompanyFinanceSettingsSerializer(
-        company,
-        data=request.data,
-        partial=True
-    )
-
-    serializer.is_valid(raise_exception=True)
-    serializer.save()
-
-    create_audit_log(
-        company=company,
-        action="COMPANY_FINANCE_SETTINGS_UPDATED",
-        action_by=request.user.profile,
-        message="Company finance settings updated.",
-        metadata={
-            "base_currency": serializer.data.get("base_currency"),
-            "auto_currency_conversion": serializer.data.get(
-                "auto_currency_conversion"
-            ),
-        }
-    )
-
-    return Response({
-        "success": True,
-        "message": "Company finance settings updated successfully.",
-        "settings": serializer.data
     })
 
 from .models import Currency, CompanyFinanceSettings

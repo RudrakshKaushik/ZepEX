@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import type { ExpenseReport } from '@/types'
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
+import { formatReceiptAmountDisplay, receiptExchangeRateHint } from '@/lib/receiptDisplay'
 
 interface ReportDetailProps {
   report: ExpenseReport
@@ -23,6 +24,11 @@ export function ReportDetail({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <StatusBadge status={report.status} />
+        {report.is_auto_approved && (
+          <Badge variant="outline" className="border-green-200 bg-green-50 text-green-800">
+            Auto-approved
+          </Badge>
+        )}
         {showAdminOverride && <CompanyAdminOverrideBadge />}
         {showEmployee && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -93,9 +99,12 @@ export function ReportDetail({
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex flex-wrap gap-4 text-sm">
-                <span>{formatCurrency(receipt.total_amount, receipt.currency)}</span>
+                <span>{formatReceiptAmountDisplay(receipt)}</span>
                 <span className="text-muted-foreground">{formatDate(receipt.invoice_date)}</span>
               </div>
+              {receiptExchangeRateHint(receipt) && (
+                <p className="text-xs text-muted-foreground">{receiptExchangeRateHint(receipt)}</p>
+              )}
 
               {receipt.has_any_violation && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">

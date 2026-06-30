@@ -338,6 +338,8 @@ Rules:
                 receipt.exchange_rate_provider = conversion_result[
                     "exchange_rate_provider"
                 ]
+                finance_settings.last_exchange_sync = timezone.now()
+                finance_settings.save(update_fields=["last_exchange_sync"])
             else:
                 receipt.company_amount = receipt.original_amount
                 receipt.company_currency = receipt.original_currency

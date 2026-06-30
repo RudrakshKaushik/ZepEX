@@ -182,6 +182,12 @@ export interface Receipt {
   invoice_date: string | null
   total_amount: string
   currency: string
+  original_amount?: string | null
+  original_currency?: string | null
+  company_amount?: string | null
+  company_currency?: string | null
+  exchange_rate?: string | null
+  exchange_rate_provider?: string | null
   status: string
   policy_violation_reason: string | null
   has_duplicate_violation: boolean
@@ -232,6 +238,11 @@ export interface ExpenseReport {
   month: string
   status: string
   total_amount: string
+  is_auto_approved?: boolean
+  auto_approved_at?: string | null
+  approval_type?: string | null
+  approval_required?: boolean
+  view_only_for_workflow?: boolean
   submitted_at: string | null
   manager_action_at?: string | null
   accounts_action_at?: string | null
@@ -428,6 +439,15 @@ export interface UploadPolicyResult {
   next_status?: string
 }
 
+export interface CurrencyConversionResult {
+  success: boolean
+  company_amount?: number
+  company_currency?: string
+  exchange_rate?: number
+  exchange_rate_provider?: string
+  error?: string
+}
+
 export interface UploadAiResult {
   success?: boolean | null
   pending?: boolean
@@ -435,8 +455,13 @@ export interface UploadAiResult {
   receipt_id?: string
   line_items_created?: string[]
   total_amount?: number
+  original_amount?: number
+  original_currency?: string
+  company_amount?: number
+  company_currency?: string
   has_any_violation?: boolean
   violation_reason?: string | null
+  currency_conversion?: CurrencyConversionResult
   policy?: UploadPolicyResult
 }
 
@@ -445,6 +470,59 @@ export interface UploadReceiptResponse {
   report_id: string
   receipt: Receipt
   ai_result?: UploadAiResult
+}
+
+export interface SubmitMonthlyReportResponse {
+  message: string
+  success?: boolean
+  workflow_started?: boolean
+  auto_approved?: boolean
+  approval_required?: boolean
+  view_only_for_workflow?: boolean
+  next_action?: string
+  current_approval_step?: ReportCurrentStep
+  report?: ExpenseReport
+}
+
+export interface PaymentDashboardMetrics {
+  approved_reports_waiting_payment: number
+  auto_approved_reports_waiting_payment: number
+  manual_approved_reports_waiting_payment: number
+  paid_reports: number
+  rejected_reports: number
+  approved_amount: string
+  auto_approved_amount: string
+  manual_approved_amount: string
+  paid_amount: string
+  rejected_amount: string
+  payment_completion_rate: number
+}
+
+export interface PaymentDashboardResponse {
+  payment_user: {
+    name: string
+    email: string
+    company: string
+    company_role: string
+    permissions?: {
+      can_mark_paid: boolean
+      can_approve_expense: boolean
+    }
+  }
+  metrics: PaymentDashboardMetrics
+  department_payment_summary?: Array<{
+    department: string
+    total_paid: string
+  }>
+  recent_approved_reports?: ExpenseReport[]
+  recent_auto_approved_reports?: ExpenseReport[]
+  recent_manual_approved_reports?: ExpenseReport[]
+  recent_paid_reports?: ExpenseReport[]
+  approved_reports: ExpenseReport[]
+  auto_approved_reports?: ExpenseReport[]
+  manual_approved_reports?: ExpenseReport[]
+  paid_reports?: ExpenseReport[]
+  rejected_reports?: ExpenseReport[]
 }
 
 export interface Currency {
@@ -474,7 +552,10 @@ export interface FinanceSettings {
   id: number
   company: string
   base_currency: number
-  base_currency_details: Currency
+  base_currency_code?: string
+  base_currency_name?: string
+  base_currency_symbol?: string
+  base_currency_flag?: string
   auto_currency_conversion: boolean
   exchange_rate_provider: string
   allow_manual_exchange_rate: boolean

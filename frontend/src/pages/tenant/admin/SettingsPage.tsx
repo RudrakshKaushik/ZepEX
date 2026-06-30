@@ -4,7 +4,6 @@ import {
   getFinanceSettings,
   getReimbursementEmailConfig,
   getSmtpConfig,
-  listCurrencies,
   saveReimbursementEmailConfig,
   saveSmtpConfig,
   triggerEmailFetch,
@@ -30,6 +29,7 @@ import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
 import { AdminListPanelShimmer } from '@/components/ui/shimmer'
 import { toast } from '@/lib/toast'
+import { financeCurrencyLabel as formatFinanceCurrencyLabel } from '@/lib/financeSettings'
 import type { FinanceSettings } from '@/types'
 
 type SettingsSection = 'imap' | 'smtp' | 'finance'
@@ -74,65 +74,83 @@ export function SettingsPage() {
   })
   const [financeLoaded, setFinanceLoaded] = useState(false)
   const [financeCurrencyLabel, setFinanceCurrencyLabel] = useState('')
+  const [financeSelectedCurrency, setFinanceSelectedCurrency] = useState<{
+    id: number
+    code: string
+    name: string
+    flag: string
+  } | null>(null)
+
+  const applyFinanceSettings = (settings: FinanceSettings) => {
+    setFinanceForm({
+      base_currency: settings.base_currency,
+      auto_currency_conversion: settings.auto_currency_conversion,
+      exchange_rate_provider: settings.exchange_rate_provider,
+      allow_manual_exchange_rate: settings.allow_manual_exchange_rate,
+      decimal_places: String(settings.decimal_places),
+      rounding_enabled: settings.rounding_enabled,
+      timezone: settings.timezone,
+      date_format: settings.date_format,
+    })
+    setFinanceCurrencyLabel(formatFinanceCurrencyLabel(settings))
+    if (settings.base_currency_code) {
+      setFinanceSelectedCurrency({
+        id: settings.base_currency,
+        code: settings.base_currency_code,
+        name: settings.base_currency_name || settings.base_currency_code,
+        flag: settings.base_currency_flag || '',
+      })
+    }
+    setFinanceLoaded(true)
+  }
 
   useEffect(() => {
-    Promise.all([getReimbursementEmailConfig(), getSmtpConfig(), getFinanceSettings()])
-      .then(([emailRes, smtpRes, financeRes]) => {
-        const emailData = emailRes.data
-        if ('email_address' in emailData) {
-          setEmailForm((f) => ({
-            ...f,
-            email_address: emailData.email_address,
-            imap_host: emailData.imap_host,
-            imap_port: String(emailData.imap_port),
-            imap_username: emailData.imap_username,
-          }))
-        }
-        const smtpData = smtpRes.data
-        if ('smtp_host' in smtpData) {
-          setSmtpForm((f) => ({
-            ...f,
-            smtp_host: smtpData.smtp_host,
-            smtp_port: String(smtpData.smtp_port),
-            smtp_email: smtpData.smtp_email,
-            from_email_name: smtpData.from_email_name,
-            use_tls: smtpData.use_tls,
-            is_active: smtpData.is_active,
-          }))
-        }
-        const settings: FinanceSettings | undefined = financeRes.data.settings
-        if (settings) {
-          setFinanceForm({
-            base_currency: settings.base_currency,
-            auto_currency_conversion: settings.auto_currency_conversion,
-            exchange_rate_provider: settings.exchange_rate_provider,
-            allow_manual_exchange_rate: settings.allow_manual_exchange_rate,
-            decimal_places: String(settings.decimal_places),
-            rounding_enabled: settings.rounding_enabled,
-            timezone: settings.timezone,
-            date_format: settings.date_format,
-          })
-          setFinanceCurrencyLabel(
-            settings.base_currency_details
-              ? `${settings.base_currency_details.flag} ${settings.base_currency_details.code}`
-              : '',
-          )
-          setFinanceLoaded(true)
-        }
-      })
-      .catch(async () => {
-        try {
-          const { data } = await listCurrencies({ search: 'INR', page_size: 1 })
-          const inr = data.results[0]
-          if (inr) {
-            setFinanceForm((f) => ({ ...f, base_currency: inr.id }))
-            setFinanceCurrencyLabel(`${inr.flag} ${inr.code}`)
+    async function loadSettings() {
+      setLoading(true)
+      try {
+        const [emailResult, smtpResult, financeResult] = await Promise.allSettled([
+          getReimbursementEmailConfig(),
+          getSmtpConfig(),
+          getFinanceSettings(),
+        ])
+
+        if (emailResult.status === 'fulfilled') {
+          const emailData = emailResult.value.data
+          if ('email_address' in emailData) {
+            setEmailForm((f) => ({
+              ...f,
+              email_address: emailData.email_address,
+              imap_host: emailData.imap_host,
+              imap_port: String(emailData.imap_port),
+              imap_username: emailData.imap_username,
+            }))
           }
-        } catch {
-          // Finance settings API may not be configured yet.
         }
-      })
-      .finally(() => setLoading(false))
+
+        if (smtpResult.status === 'fulfilled') {
+          const smtpData = smtpResult.value.data
+          if ('smtp_host' in smtpData) {
+            setSmtpForm((f) => ({
+              ...f,
+              smtp_host: smtpData.smtp_host,
+              smtp_port: String(smtpData.smtp_port),
+              smtp_email: smtpData.smtp_email,
+              from_email_name: smtpData.from_email_name,
+              use_tls: smtpData.use_tls,
+              is_active: smtpData.is_active,
+            }))
+          }
+        }
+
+        if (financeResult.status === 'fulfilled' && financeResult.value.data.settings) {
+          applyFinanceSettings(financeResult.value.data.settings)
+        }
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadSettings()
   }, [])
 
   const imapConfigured = Boolean(emailForm.email_address.trim())
@@ -237,22 +255,12 @@ export function SettingsPage() {
         timezone: financeForm.timezone,
         date_format: financeForm.date_format,
       })
-      setFinanceForm({
-        base_currency: data.settings.base_currency,
-        auto_currency_conversion: data.settings.auto_currency_conversion,
-        exchange_rate_provider: data.settings.exchange_rate_provider,
-        allow_manual_exchange_rate: data.settings.allow_manual_exchange_rate,
-        decimal_places: String(data.settings.decimal_places),
-        rounding_enabled: data.settings.rounding_enabled,
-        timezone: data.settings.timezone,
-        date_format: data.settings.date_format,
-      })
-      setFinanceCurrencyLabel(
-        data.settings.base_currency_details
-          ? `${data.settings.base_currency_details.flag} ${data.settings.base_currency_details.code}`
-          : '',
-      )
-      setFinanceLoaded(true)
+      applyFinanceSettings(data.settings)
+      if (financeSelectedCurrency) {
+        setFinanceCurrencyLabel(
+          `${financeSelectedCurrency.flag} ${financeSelectedCurrency.code}`.trim(),
+        )
+      }
       toast.success(data.message || 'Finance settings saved.')
       closeModal()
     } catch (err) {
@@ -482,21 +490,13 @@ export function SettingsPage() {
           <form onSubmit={saveFinance} className="space-y-4">
             <CurrencySelect
               value={financeForm.base_currency}
-              onChange={(currencyId) =>
+              selectedOption={financeSelectedCurrency}
+              onChange={(currencyId, currency) => {
                 setFinanceForm({ ...financeForm, base_currency: currencyId })
-              }
+                if (currency) setFinanceSelectedCurrency(currency)
+              }}
               disabled={saving}
             />
-            <div className="space-y-2">
-              <Label htmlFor="exchange-provider">Exchange rate provider</Label>
-              <Input
-                id="exchange-provider"
-                value={financeForm.exchange_rate_provider}
-                onChange={(e) =>
-                  setFinanceForm({ ...financeForm, exchange_rate_provider: e.target.value })
-                }
-              />
-            </div>
             <div className="space-y-2">
               <Label htmlFor="timezone">Timezone</Label>
               <Input

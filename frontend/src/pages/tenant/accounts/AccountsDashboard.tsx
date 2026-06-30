@@ -82,14 +82,14 @@ export function AccountsDashboard() {
           accent="orange"
         />
         <MetricCard
-          title="Paid reports"
-          value={metrics?.paid_reports ?? 0}
+          title="Auto-approved"
+          value={metrics?.auto_approved_reports_waiting_payment ?? 0}
           icon={CheckCircle2}
           accent="green"
         />
         <MetricCard
-          title="Completion rate"
-          value={`${metrics?.payment_completion_rate ?? 0}%`}
+          title="Manual approved"
+          value={metrics?.manual_approved_reports_waiting_payment ?? 0}
           icon={FileText}
           accent="blue"
         />
@@ -98,6 +98,27 @@ export function AccountsDashboard() {
           value={formatCurrency(String(metrics?.paid_amount ?? 0))}
           icon={DollarSign}
           accent="blue"
+        />
+      </div>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        <MetricCard
+          title="Auto-approved amount"
+          value={formatCurrency(String(metrics?.auto_approved_amount ?? 0))}
+          icon={CheckCircle2}
+          accent="green"
+        />
+        <MetricCard
+          title="Manual approved amount"
+          value={formatCurrency(String(metrics?.manual_approved_amount ?? 0))}
+          icon={FileText}
+          accent="blue"
+        />
+        <MetricCard
+          title="Completion rate"
+          value={`${metrics?.payment_completion_rate ?? 0}%`}
+          icon={FileText}
+          accent="orange"
         />
       </div>
 
@@ -148,6 +169,22 @@ export function AccountsDashboard() {
             />
           )}
         </DashboardPanel>
+        )}
+
+        {(payment?.department_payment_summary?.length ?? 0) > 0 && (
+          <DashboardPanel title="Paid by department">
+            <div className="divide-y divide-gray-100">
+              {payment!.department_payment_summary!.map((row) => (
+                <div
+                  key={row.department}
+                  className="flex items-center justify-between py-3 text-sm"
+                >
+                  <span className="font-medium text-gray-900">{row.department}</span>
+                  <span className="text-gray-600">{formatCurrency(row.total_paid)}</span>
+                </div>
+              ))}
+            </div>
+          </DashboardPanel>
         )}
 
         <DashboardPanel title="Recently Paid">

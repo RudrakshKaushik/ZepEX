@@ -1,5 +1,6 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
+import uuid
 
 from .media_utils import profile_picture_url
 from .models import (
@@ -268,11 +269,13 @@ class EmployeeCreateSerializer(serializers.Serializer):
 
 class CompanyUserUpdateSerializer(serializers.Serializer):
     first_name = serializers.CharField(
-        required=False
+        required=False,
+        allow_blank=True,
     )
 
     last_name = serializers.CharField(
-        required=False
+        required=False,
+        allow_blank=True,
     )
 
     email = serializers.EmailField(
@@ -284,9 +287,10 @@ class CompanyUserUpdateSerializer(serializers.Serializer):
         required=False
     )
 
-    department_id = serializers.UUIDField(
+    department_id = serializers.CharField(
         required=False,
-        allow_null=True
+        allow_null=True,
+        allow_blank=True,
     )
 
     company_role_id = serializers.IntegerField(
@@ -303,6 +307,14 @@ class CompanyUserUpdateSerializer(serializers.Serializer):
         required=False,
         allow_blank=True
     )
+
+    def validate_department_id(self, value):
+        if value in (None, ""):
+            return None
+        try:
+            return uuid.UUID(str(value))
+        except (ValueError, TypeError, AttributeError):
+            raise serializers.ValidationError("Must be a valid UUID.")
 
     def validate_email(self, value):
         email = value.lower().strip()
@@ -327,8 +339,14 @@ class CompanyUserUpdateSerializer(serializers.Serializer):
 
         company = request.user.profile.company
 
+        role = attrs.get("role") or self.context.get("profile_role")
         department_id = attrs.get("department_id")
         company_role_id = attrs.get("company_role_id")
+
+        if role in ["EMPLOYEE", "MANAGER"] and not department_id:
+            raise serializers.ValidationError({
+                "department_id": "Department is required for Employee and Manager."
+            })
 
         if department_id:
             try:

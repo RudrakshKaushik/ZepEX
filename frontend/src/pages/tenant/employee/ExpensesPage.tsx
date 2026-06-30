@@ -36,6 +36,8 @@ import {
 import { TableShimmer } from '@/components/ui/shimmer'
 import type { ExpenseReport } from '@/types'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatReceiptAmountDisplay, receiptExchangeRateHint } from '@/lib/receiptDisplay'
+import { fireImportConfetti } from '@/lib/confetti'
 import { normalizeCurrentMonthReport } from '@/lib/expenseReport'
 import {
   hasEmployeeExpenseFilters,
@@ -80,9 +82,13 @@ function MyExpenseExpandedPanel({
                 <div>
                   <p className="font-medium">{receipt.vendor_name || 'Processing...'}</p>
                   <p className="text-sm text-muted-foreground">
-                    {formatCurrency(receipt.total_amount, receipt.currency)} ·{' '}
-                    {formatDate(receipt.invoice_date)}
+                    {formatReceiptAmountDisplay(receipt)} · {formatDate(receipt.invoice_date)}
                   </p>
+                  {receiptExchangeRateHint(receipt) && (
+                    <p className="text-xs text-muted-foreground">
+                      {receiptExchangeRateHint(receipt)}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   {receipt.has_any_violation && (
@@ -209,6 +215,7 @@ export function ExpensesPage() {
       const errors: string[] = []
       const violationMessages: string[] = []
       let successCount = 0
+      const conversionMessages: string[] = []
       for (const file of selectedFiles) {
         const { data } = await uploadReceipt(file)
         const aiFailed = data.ai_result?.success === false && !data.ai_result?.pending
@@ -216,6 +223,15 @@ export function ExpensesPage() {
           errors.push(data.ai_result?.error || data.message)
         } else {
           successCount += 1
+        }
+        const conversion = data.ai_result?.currency_conversion
+        if (conversion?.success && conversion.company_amount != null && conversion.company_currency) {
+          const original = data.receipt.original_amount ?? data.receipt.total_amount
+          const originalCurrency =
+            data.receipt.original_currency ?? data.receipt.currency
+          conversionMessages.push(
+            `${formatCurrency(original, originalCurrency)} → ${formatCurrency(String(conversion.company_amount), conversion.company_currency)}`,
+          )
         }
         const violationReason =
           data.ai_result?.violation_reason ||
@@ -230,6 +246,9 @@ export function ExpensesPage() {
       }
       if (violationMessages.length) {
         toast(violationMessages[0])
+      }
+      if (conversionMessages.length) {
+        toast(`Converted: ${conversionMessages[0]}`)
       }
       if (successCount && !errors.length) {
         toast.success(
@@ -255,8 +274,16 @@ export function ExpensesPage() {
   const handleSubmit = async () => {
     setSubmitting(true)
     try {
-      await submitMonthlyReport()
-      toast.success('Monthly report submitted to your manager.')
+      const { data } = await submitMonthlyReport()
+      if (data.auto_approved) {
+        fireImportConfetti()
+        toast.success(data.message || 'Monthly report approved automatically.')
+        if (data.next_action) {
+          toast(data.next_action)
+        }
+      } else {
+        toast.success(data.message || 'Monthly report submitted for approval.')
+      }
       await load()
     } catch (err) {
       toast.error(getApiErrorMessage(err))

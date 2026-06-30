@@ -25,6 +25,8 @@ import type {
   CurrencyListResponse,
   FinanceSettings,
   UploadReceiptResponse,
+  SubmitMonthlyReportResponse,
+  PaymentDashboardResponse,
   User,
   UserProfile,
 } from '@/types'
@@ -398,12 +400,7 @@ export const uploadReceipt = (file: File) => {
 }
 
 export const submitMonthlyReport = () =>
-  api.post<{
-    message: string
-    success?: boolean
-    workflow_started?: boolean
-    report?: ExpenseReport
-  }>('/expenses/reports/submit/')
+  api.post<SubmitMonthlyReportResponse>('/expenses/reports/submit/')
 
 export const getCurrentMonthReport = () =>
   api.get<ExpenseReport>('/expenses/reports/current/')
@@ -504,7 +501,8 @@ export const getEmployeeDashboard = () => api.get('/dashboard/employee/')
 
 export const getApproverDashboard = () => api.get('/dashboard/approver/')
 
-export const getPaymentDashboard = () => api.get('/dashboard/payments/')
+export const getPaymentDashboard = () =>
+  api.get<PaymentDashboardResponse>('/dashboard/payments/')
 
 // Backward-compatible aliases
 export const getCompanyAuditLogs = getAuditLogs

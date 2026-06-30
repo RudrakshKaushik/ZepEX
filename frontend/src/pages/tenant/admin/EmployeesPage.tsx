@@ -217,7 +217,7 @@ export function EmployeesPage() {
         email: form.email,
         password: form.password,
         role: systemRole,
-        department_id: form.department_id || undefined,
+        department_id: isCompanyAdmin ? undefined : form.department_id || undefined,
         company_role_id: isCompanyAdmin ? undefined : parseInt(form.company_role_id, 10),
       })
       resetForm()
@@ -287,7 +287,7 @@ export function EmployeesPage() {
         last_name: editForm.last_name,
         email: editForm.email,
         role: systemRole,
-        department_id: editForm.department_id || null,
+        department_id: isCompanyAdmin ? null : editForm.department_id || null,
         company_role_id: isCompanyAdmin ? null : parseInt(editForm.company_role_id, 10),
         phone_number: editForm.phone_number || undefined,
         address: editForm.address || undefined,
@@ -619,21 +619,23 @@ export function EmployeesPage() {
                 ))}
               </select>
             </div>
-            <div className="space-y-2">
-              <Label>Department</Label>
-              <select
-                className={selectClassName}
-                value={form.department_id}
-                onChange={(e) => setForm({ ...form, department_id: e.target.value })}
-              >
-                <option value="">Select department</option>
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {!isCompanyAdminRoleValue(form.company_role_id) && (
+              <div className="space-y-2">
+                <Label>Department</Label>
+                <select
+                  className={selectClassName}
+                  value={form.department_id}
+                  onChange={(e) => setForm({ ...form, department_id: e.target.value })}
+                >
+                  <option value="">Select department</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             {error && createOpen && <p className="text-sm text-red-600">{error}</p>}
             <AdminModalFooter
               onCancel={() => setCreateOpen(false)}
@@ -698,21 +700,23 @@ export function EmployeesPage() {
                 </p>
               )}
             </div>
-            <div className="space-y-2">
-              <Label>Department</Label>
-              <select
-                className={selectClassName}
-                value={editForm.department_id}
-                onChange={(e) => setEditForm({ ...editForm, department_id: e.target.value })}
-              >
-                <option value="">None</option>
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {!isCompanyAdminRoleValue(editForm.company_role_id) && (
+              <div className="space-y-2">
+                <Label>Department</Label>
+                <select
+                  className={selectClassName}
+                  value={editForm.department_id}
+                  onChange={(e) => setEditForm({ ...editForm, department_id: e.target.value })}
+                >
+                  <option value="">None</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             {error && editOpen && <p className="text-sm text-red-600">{error}</p>}
             <AdminModalFooter
               onCancel={() => setEditOpen(false)}

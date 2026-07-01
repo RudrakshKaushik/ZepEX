@@ -176,7 +176,7 @@ export function LandingWorkspaces() {
       </section>
 
       {/* Blue CTA */}
-      <section id="cta" className="bg-white px-4 pb-20 sm:px-6">
+      <section id="cta" className="bg-white px-4 pb-0 sm:px-6">
         <div className="mx-auto max-w-7xl rounded-[2rem] bg-[#0066FF] px-6 py-14 text-center sm:px-12 sm:py-16">
           <h2 className="text-2xl font-bold text-white sm:text-3xl lg:text-4xl">
             Everything Finance Teams Need, Powered by AI

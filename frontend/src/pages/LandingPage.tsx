@@ -7,6 +7,7 @@ import { LandingComparison } from '@/components/landing/LandingComparison'
 import { LandingCapabilities } from '@/components/landing/LandingCapabilities'
 import { LandingHowItWorks } from '@/components/landing/LandingHowItWorks'
 import { LandingPreview } from '@/components/landing/LandingPreview'
+import { LandingFooter } from '@/components/landing/LandingFooter'
 import { LandingWorkspaces } from '@/components/landing/LandingWorkspaces'
 import {
   dotGridStyle,
@@ -196,6 +197,7 @@ export function LandingPage() {
       <LandingComparison />
       <LandingCapabilities />
       <LandingWorkspaces />
+      <LandingFooter />
     </div>
   )
 }

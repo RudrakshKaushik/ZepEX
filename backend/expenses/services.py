@@ -159,10 +159,67 @@ def check_policy_violations(receipt):
 from .currency_services import convert_currency
 
 
+def classify_ai_error(error_message, status_code=None):
+    error_text = str(error_message).lower()
+
+    retryable_status_codes = [429, 500, 502, 503, 504]
+
+    if status_code in retryable_status_codes:
+        return (
+            ExpenseReceipt.AI_RETRY_REQUIRED,
+            "AI service is temporarily busy. Please try again after some time."
+        )
+
+    retryable_keywords = [
+        "traffic",
+        "overloaded",
+        "quota",
+        "timeout",
+        "temporarily unavailable",
+        "service unavailable",
+        "rate limit",
+    ]
+
+    unreadable_keywords = [
+        "blurry",
+        "blur",
+        "not readable",
+        "cannot read",
+        "unable to read",
+        "image quality",
+        "unclear",
+        "no valid json",
+    ]
+
+    if any(word in error_text for word in retryable_keywords):
+        return (
+            ExpenseReceipt.AI_RETRY_REQUIRED,
+            "AI service is temporarily busy. Please try again."
+        )
+
+    if any(word in error_text for word in unreadable_keywords):
+        return (
+            ExpenseReceipt.AI_FAILED,
+            "Receipt image is not readable. Please upload a clearer receipt."
+        )
+
+    return (
+        ExpenseReceipt.AI_RETRY_REQUIRED,
+        "AI extraction failed. Please try again."
+    )
+
 def extract_receipt_with_gemini(receipt: ExpenseReceipt):
 
     receipt.status = ExpenseReceipt.STATUS_AI_PROCESSING
-    receipt.save(update_fields=["status"])
+    receipt.ai_status = ExpenseReceipt.AI_PROCESSING
+    receipt.ai_error_message = None
+
+    receipt.save(update_fields=[
+        "status",
+        "ai_status",
+        "ai_error_message",
+        "updated_at",
+    ])
 
     prompt = """
 You are an expert expense receipt analyzer.
@@ -236,20 +293,57 @@ Rules:
             ]
         }
 
-        response = requests.post(
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
-            headers={
-                "Content-Type": "application/json",
-                "x-goog-api-key": settings.GEMINI_API_KEY,
-            },
-            data=json.dumps(request_body),
-            timeout=60,
-        )
+        try:
+            response = requests.post(
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+                headers={
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": settings.GEMINI_API_KEY,
+                },
+                data=json.dumps(request_body),
+                timeout=60,
+            )
 
-        response_json = response.json()
+        except requests.exceptions.Timeout:
+            raise Exception("AI request timeout. Please try again.")
+
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"AI service request failed: {str(e)}")
+
+        status_code = response.status_code
+
+        try:
+            response_json = response.json()
+        except Exception:
+            raise Exception(
+                f"AI returned invalid response. Status code: {status_code}"
+            )
 
         if "error" in response_json:
-            raise Exception(response_json["error"].get("message"))
+            error_message = response_json["error"].get(
+                "message",
+                "AI extraction failed."
+            )
+
+            ai_status, user_message = classify_ai_error(
+                error_message,
+                status_code=status_code
+            )
+
+            receipt.ai_status = ai_status
+            receipt.ai_error_message = user_message
+            receipt.save(update_fields=[
+                "ai_status",
+                "ai_error_message",
+                "updated_at",
+            ])
+
+            return {
+                "success": False,
+                "retry_allowed": ai_status == ExpenseReceipt.AI_RETRY_REQUIRED,
+                "ai_status": receipt.ai_status,
+                "error": user_message,
+            }
 
         gemini_text = response_json["candidates"][0]["content"]["parts"][0]["text"]
 
@@ -260,6 +354,11 @@ Rules:
 
         parsed_data = json.loads(match.group(0))
         bills = parsed_data.get("bills", [])
+
+        if not bills:
+            raise Exception("No receipt data found. Receipt may be blurry or unreadable.")
+
+        receipt.line_items.all().delete()
 
         created_items = []
         total_amount = Decimal("0.00")
@@ -306,10 +405,8 @@ Rules:
         ).upper()
 
         receipt.vendor_name = first_bill.get("vendor", "")
-
         receipt.original_amount = total_amount
         receipt.original_currency = extracted_currency
-
         receipt.currency = extracted_currency
 
         if first_bill.get("bill_date"):
@@ -338,8 +435,10 @@ Rules:
                 receipt.exchange_rate_provider = conversion_result[
                     "exchange_rate_provider"
                 ]
+
                 finance_settings.last_exchange_sync = timezone.now()
                 finance_settings.save(update_fields=["last_exchange_sync"])
+
             else:
                 receipt.company_amount = receipt.original_amount
                 receipt.company_currency = receipt.original_currency
@@ -356,7 +455,26 @@ Rules:
 
         receipt.total_amount = receipt.company_amount
         receipt.status = ExpenseReceipt.STATUS_AI_PROCESSED
-        receipt.save()
+        receipt.ai_status = ExpenseReceipt.AI_COMPLETED
+        receipt.ai_error_message = None
+
+        receipt.save(update_fields=[
+            "vendor_name",
+            "invoice_date",
+            "total_amount",
+            "currency",
+            "original_amount",
+            "original_currency",
+            "company_amount",
+            "company_currency",
+            "exchange_rate",
+            "exchange_rate_date",
+            "exchange_rate_provider",
+            "status",
+            "ai_status",
+            "ai_error_message",
+            "updated_at",
+        ])
 
         check_policy_violations(receipt)
 
@@ -372,6 +490,7 @@ Rules:
         return {
             "success": True,
             "receipt_id": str(receipt.id),
+            "ai_status": receipt.ai_status,
             "line_items_created": [str(item_id) for item_id in created_items],
 
             "original_amount": str(receipt.original_amount),
@@ -397,15 +516,23 @@ Rules:
         }
 
     except Exception as e:
-        receipt.status = ExpenseReceipt.STATUS_AI_PROCESSED
-        receipt.policy_violation_reason = f"AI extraction failed: {str(e)}"
+        ai_status, user_message = classify_ai_error(str(e))
+
+        receipt.ai_status = ai_status
+        receipt.ai_error_message = user_message
+        receipt.policy_violation_reason = None
+
         receipt.save(update_fields=[
-            "status",
+            "ai_status",
+            "ai_error_message",
             "policy_violation_reason",
-            "updated_at"
+            "updated_at",
         ])
 
         return {
             "success": False,
-            "error": str(e),
+            "retry_allowed": ai_status == ExpenseReceipt.AI_RETRY_REQUIRED,
+            "ai_status": receipt.ai_status,
+            "error": user_message,
+            "technical_error": str(e),
         }

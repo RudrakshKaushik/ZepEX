@@ -199,6 +199,24 @@ class ExpenseReceipt(models.Model):
         (STATUS_PAID, "Paid"),
     )
 
+    # -----------------------------
+    # AI Processing Status
+    # -----------------------------
+
+    AI_PENDING = "AI_PENDING"
+    AI_PROCESSING = "AI_PROCESSING"
+    AI_COMPLETED = "AI_COMPLETED"
+    AI_RETRY_REQUIRED = "AI_RETRY_REQUIRED"
+    AI_FAILED = "AI_FAILED"
+
+    AI_STATUS_CHOICES = (
+        (AI_PENDING, "AI Pending"),
+        (AI_PROCESSING, "AI Processing"),
+        (AI_COMPLETED, "AI Completed"),
+        (AI_RETRY_REQUIRED, "AI Retry Required"),
+        (AI_FAILED, "AI Failed"),
+    )
+
     id = models.UUIDField(
         primary_key=True,
         default=uuid.uuid4,
@@ -269,6 +287,21 @@ class ExpenseReceipt(models.Model):
         default=STATUS_DRAFT
     )
 
+    ai_status = models.CharField(
+        max_length=40,
+        choices=AI_STATUS_CHOICES,
+        default=AI_PENDING
+    )
+
+    ai_error_message = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    ai_retry_count = models.IntegerField(
+        default=0
+    )
+
     policy_violation_reason = models.TextField(
         blank=True,
         null=True
@@ -297,57 +330,58 @@ class ExpenseReceipt(models.Model):
     updated_at = models.DateTimeField(
         auto_now=True
     )
+
     # -----------------------------
-# Original Receipt Currency
-# -----------------------------
+    # Original Receipt Currency
+    # -----------------------------
 
     original_amount = models.DecimalField(
-    max_digits=12,
-    decimal_places=2,
-    default=0
-)
+        max_digits=12,
+        decimal_places=2,
+        default=0
+    )
 
     original_currency = models.CharField(
-    max_length=3,
-    default="INR"
-)
+        max_length=3,
+        default="INR"
+    )
 
-# -----------------------------
-# Company Reimbursement Currency
-# -----------------------------
+    # -----------------------------
+    # Company Reimbursement Currency
+    # -----------------------------
 
     company_amount = models.DecimalField(
-    max_digits=12,
-    decimal_places=2,
-    default=0
-)
+        max_digits=12,
+        decimal_places=2,
+        default=0
+    )
 
     company_currency = models.CharField(
-    max_length=3,
-    default="INR"
-)
+        max_length=3,
+        default="INR"
+    )
 
-# -----------------------------
-# Exchange Information
-# -----------------------------
+    # -----------------------------
+    # Exchange Information
+    # -----------------------------
 
     exchange_rate = models.DecimalField(
-    max_digits=18,
-    decimal_places=8,
-    null=True,
-    blank=True
-)
+        max_digits=18,
+        decimal_places=8,
+        null=True,
+        blank=True
+    )
 
     exchange_rate_date = models.DateTimeField(
-    null=True,
-    blank=True
-)
+        null=True,
+        blank=True
+    )
 
     exchange_rate_provider = models.CharField(
-    max_length=100,
-    blank=True,
-    null=True
-)
+        max_length=100,
+        blank=True,
+        null=True
+    )
 
     class Meta:
         ordering = [
@@ -355,8 +389,11 @@ class ExpenseReceipt(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.employee.user.email} - {self.vendor_name or 'Receipt'} - {self.total_amount}"
-
+        return (
+            f"{self.employee.user.email} - "
+            f"{self.vendor_name or 'Receipt'} - "
+            f"{self.total_amount}"
+        )
 
 class ExpenseLineItem(models.Model):
     id = models.UUIDField(

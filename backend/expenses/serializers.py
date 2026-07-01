@@ -50,91 +50,94 @@ class ExpenseReceiptSerializer(serializers.ModelSerializer):
         model = ExpenseReceipt
 
         fields = [
-            "id",
-            "report",
-            "submission",
-            "company",
+    "id",
+    "report",
+    "submission",
+    "company",
 
-            "employee",
-            "employee_email",
+    "employee",
+    "employee_email",
 
-            "department",
-            "department_name",
+    "department",
+    "department_name",
 
-            "receipt_file",
+    "receipt_file",
 
-            "vendor_name",
-            "invoice_date",
+    "vendor_name",
+    "invoice_date",
 
-            # Existing (keep for backward compatibility)
-            "total_amount",
-            "currency",
+    "total_amount",
+    "currency",
 
-            # Original Receipt
-            "original_amount",
-            "original_currency",
+    "original_amount",
+    "original_currency",
 
-            # Company Reimbursement
-            "company_amount",
-            "company_currency",
+    "company_amount",
+    "company_currency",
 
-            # Exchange Details
-            "exchange_rate",
-            "exchange_rate_date",
-            "exchange_rate_provider",
+    "exchange_rate",
+    "exchange_rate_date",
+    "exchange_rate_provider",
 
-            # Status
-            "status",
+    "status",
 
-            # Policy
-            "policy_violation_reason",
-            "has_duplicate_violation",
-            "has_old_bill_violation",
-            "has_amount_violation",
-            "has_any_violation",
+    # NEW
+    "ai_status",
+    "ai_error_message",
+    "ai_retry_count",
 
-            "line_items",
+    "policy_violation_reason",
+    "has_duplicate_violation",
+    "has_old_bill_violation",
+    "has_amount_violation",
+    "has_any_violation",
 
-            "created_at",
-            "updated_at",
-        ]
+    "line_items",
 
+    "created_at",
+    "updated_at",
+]
         read_only_fields = [
-            "id",
-            "report",
-            "submission",
-            "company",
+    "id",
+    "report",
+    "submission",
+    "company",
 
-            "employee",
-            "department",
+    "employee",
+    "department",
 
-            "vendor_name",
-            "invoice_date",
+    "vendor_name",
+    "invoice_date",
 
-            "total_amount",
-            "currency",
+    "total_amount",
+    "currency",
 
-            "original_amount",
-            "original_currency",
+    "original_amount",
+    "original_currency",
 
-            "company_amount",
-            "company_currency",
+    "company_amount",
+    "company_currency",
 
-            "exchange_rate",
-            "exchange_rate_date",
-            "exchange_rate_provider",
+    "exchange_rate",
+    "exchange_rate_date",
+    "exchange_rate_provider",
 
-            "status",
+    "status",
 
-            "policy_violation_reason",
-            "has_duplicate_violation",
-            "has_old_bill_violation",
-            "has_amount_violation",
-            "has_any_violation",
+    # NEW
+    "ai_status",
+    "ai_error_message",
+    "ai_retry_count",
 
-            "created_at",
-            "updated_at",
-        ]
+    "policy_violation_reason",
+    "has_duplicate_violation",
+    "has_old_bill_violation",
+    "has_amount_violation",
+    "has_any_violation",
+
+    "created_at",
+    "updated_at",
+]
 
 class ApprovalHistorySerializer(serializers.ModelSerializer):
     action_by_email = serializers.EmailField(

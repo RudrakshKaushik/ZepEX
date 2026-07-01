@@ -105,3 +105,46 @@ def send_company_email(
         )
     except Exception as exc:
         return {"success": False, "error": str(exc)}
+
+from django.conf import settings
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
+
+from .email_utils import send_company_email
+
+
+def send_employee_invite_email(company, employee, raw_password):
+    login_url = getattr(
+        settings,
+        "FRONTEND_LOGIN_URL",
+        "http://localhost:5173/login"
+    )
+
+    html_content = render_to_string(
+        "emails/employee_invite.html",
+        {
+            "employee_name": employee.user.first_name or employee.user.email,
+            "company_name": company.name,
+            "email": employee.user.email,
+            "department": (
+                employee.department.name
+                if employee.department else "Not Assigned"
+            ),
+            "role": (
+                employee.company_role.name
+                if employee.company_role else employee.role
+            ),
+            "temporary_password": raw_password,
+            "login_url": login_url,
+        }
+    )
+
+    text_content = strip_tags(html_content)
+
+    return send_company_email(
+        company,
+        subject=f"Welcome to ZepEx - {company.name}",
+        text_content=text_content,
+        html_content=html_content,
+        to_emails=[employee.user.email],
+    )

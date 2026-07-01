@@ -167,6 +167,21 @@ class UserProfile(models.Model):
     created_at = models.DateTimeField(
         auto_now_add=True
     )
+    invite_email_sent = models.BooleanField(default=False)
+
+    invite_email_sent_at = models.DateTimeField(
+    null=True,
+    blank=True
+)
+    temporary_password = models.CharField(
+    max_length=255,
+    blank=True,
+    null=True
+)
+
+    force_password_change = models.BooleanField(
+    default=True
+)
 
     def __str__(self):
         role_name = (

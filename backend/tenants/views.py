@@ -48,6 +48,37 @@ from django.db.models import Q
 from decimal import Decimal
 from .serializers import CompanyFinanceSettingsSerializer
 
+import secrets
+import string
+from django.db import transaction
+
+from .email_utils import send_employee_invite_email
+import secrets
+import string
+
+
+def generate_employee_password(length=12):
+    alphabet = (
+        string.ascii_uppercase
+        + string.ascii_lowercase
+        + string.digits
+        + "@#$%&!"
+    )
+
+    while True:
+        password = "".join(
+            secrets.choice(alphabet)
+            for _ in range(length)
+        )
+
+        if (
+            any(c.isupper() for c in password)
+            and any(c.islower() for c in password)
+            and any(c.isdigit() for c in password)
+            and any(c in "@#$%&!" for c in password)
+        ):
+            return password
+
 @api_view(["POST"])
 @permission_classes([
     IsAuthenticated,
@@ -141,6 +172,12 @@ def list_departments(request):
         "results": serializer.data
     })
 
+def generate_employee_password(length=10):
+    alphabet = string.ascii_letters + string.digits + "@#$!"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+
 @api_view(["POST"])
 @permission_classes([
     IsAuthenticated,
@@ -164,10 +201,15 @@ def create_employee(request):
 
     email = data["email"].lower().strip()
 
+    raw_password = data.get("password", "").strip()
+
+    if not raw_password:
+        raw_password = generate_employee_password()
+
     user = User.objects.create_user(
         username=email,
         email=email,
-        password=data["password"],
+        password=raw_password,
         first_name=data["first_name"],
         last_name=data.get("last_name", "")
     )
@@ -197,6 +239,8 @@ def create_employee(request):
         )
 
     if not company_role and data["role"] in ("EMPLOYEE", "MANAGER", "ACCOUNTS"):
+        user.delete()
+
         return Response(
             {
                 "error": (
@@ -212,14 +256,18 @@ def create_employee(request):
         company=company,
         department=department,
         role=data["role"],
-        company_role=company_role
+        company_role=company_role,
+        temporary_password=raw_password,
+        force_password_change=True,
+        invite_email_sent=False,
+        invite_email_sent_at=None,
     )
 
     create_audit_log(
         company=company,
-        action="USER_UPDATED",
+        action="USER_CREATED",
         action_by=request.user.profile,
-        message=f"Created user {profile.user.email}",
+        message=f"Created user {profile.user.email}. Invite email pending.",
         metadata={
             "created_user": profile.user.email,
             "role": profile.role,
@@ -231,13 +279,21 @@ def create_employee(request):
                 profile.department.name
                 if profile.department else None
             ),
+            "invite_email_sent": False,
+            "invite_status": "PENDING",
+            "force_password_change": True,
         }
     )
 
     return Response(
         {
-            "message": "Employee created successfully.",
-            "employee": UserProfileSerializer(profile, context={"request": request}).data
+            "message": "Employee created successfully. Invite email is pending.",
+            "invite_email_sent": False,
+            "invite_status": "PENDING",
+            "employee": UserProfileSerializer(
+                profile,
+                context={"request": request}
+            ).data
         },
         status=status.HTTP_201_CREATED
     )
@@ -2283,99 +2339,115 @@ def import_employees(request):
         skipped_count = 0
         errors = []
 
-        for row_number, row in enumerate(csv_data, start=2):
+        with transaction.atomic():
 
-            first_name = row.get("first_name", "").strip()
-            last_name = row.get("last_name", "").strip()
-            email = row.get("email", "").strip().lower()
-            department_name = row.get("department", "").strip()
-            role = row.get("role", "").strip().upper()
-            company_role_name = row.get("company_role", "").strip()
-            password = row.get("password", "Password@123").strip()
+            for row_number, row in enumerate(csv_data, start=2):
 
-            if not email:
-                errors.append({
-                    "row": row_number,
-                    "message": "Email is required."
-                })
-                continue
+                first_name = row.get("first_name", "").strip()
+                last_name = row.get("last_name", "").strip()
+                email = row.get("email", "").strip().lower()
+                department_name = row.get("department", "").strip()
+                role = row.get("role", "").strip().upper()
+                company_role_name = row.get("company_role", "").strip()
 
-            if not first_name:
-                errors.append({
-                    "row": row_number,
-                    "message": "First name is required."
-                })
-                continue
+                raw_password = row.get("password", "").strip()
 
-            if role not in ["COMPANY_ADMIN", "MANAGER", "ACCOUNTS", "EMPLOYEE"]:
-                errors.append({
-                    "row": row_number,
-                    "message": "Invalid role."
-                })
-                continue
+                if not raw_password:
+                    raw_password = generate_employee_password()
 
-            if User.objects.filter(email=email).exists():
-                skipped_count += 1
-                continue
-
-            department = None
-
-            if department_name:
-                department = Department.objects.filter(
-                    company=company,
-                    name__iexact=department_name,
-                    is_active=True
-                ).first()
-
-                if not department:
+                if not email:
                     errors.append({
                         "row": row_number,
-                        "message": f"Department '{department_name}' not found."
+                        "message": "Email is required."
                     })
                     continue
 
-            company_role = None
-
-            if company_role_name:
-                company_role = CompanyRole.objects.filter(
-                    company=company,
-                    name__iexact=company_role_name,
-                    is_active=True
-                ).first()
-
-                if not company_role:
+                if not first_name:
                     errors.append({
                         "row": row_number,
-                        "message": f"Company role '{company_role_name}' not found."
+                        "message": "First name is required."
                     })
                     continue
 
-            user = User.objects.create_user(
-                username=email,
-                email=email,
-                password=password,
-                first_name=first_name,
-                last_name=last_name
-            )
+                if role not in [
+                    "COMPANY_ADMIN",
+                    "MANAGER",
+                    "ACCOUNTS",
+                    "EMPLOYEE"
+                ]:
+                    errors.append({
+                        "row": row_number,
+                        "message": "Invalid role."
+                    })
+                    continue
 
-            UserProfile.objects.create(
-                user=user,
-                company=company,
-                department=department,
-                role=role,
-                company_role=company_role
-            )
+                if User.objects.filter(email=email).exists():
+                    skipped_count += 1
+                    continue
 
-            created_count += 1
+                department = None
+
+                if department_name:
+                    department = Department.objects.filter(
+                        company=company,
+                        name__iexact=department_name,
+                        is_active=True
+                    ).first()
+
+                    if not department:
+                        errors.append({
+                            "row": row_number,
+                            "message": f"Department '{department_name}' not found."
+                        })
+                        continue
+
+                company_role = None
+
+                if company_role_name:
+                    company_role = CompanyRole.objects.filter(
+                        company=company,
+                        name__iexact=company_role_name,
+                        is_active=True
+                    ).first()
+
+                    if not company_role:
+                        errors.append({
+                            "row": row_number,
+                            "message": f"Company role '{company_role_name}' not found."
+                        })
+                        continue
+
+                user = User.objects.create_user(
+                    username=email,
+                    email=email,
+                    password=raw_password,
+                    first_name=first_name,
+                    last_name=last_name
+                )
+
+                UserProfile.objects.create(
+                    user=user,
+                    company=company,
+                    department=department,
+                    role=role,
+                    company_role=company_role,
+                    temporary_password=raw_password,
+                    force_password_change=True,
+                    invite_email_sent=False,
+                    invite_email_sent_at=None,
+                )
+
+                created_count += 1
 
         create_audit_log(
             company=company,
             action="EMPLOYEE_IMPORT",
             action_by=profile,
-            message="Employees imported.",
+            message="Employees imported. Invite emails are pending.",
             metadata={
                 "created": created_count,
                 "skipped": skipped_count,
+                "pending_invites": created_count,
                 "errors": len(errors),
             }
         )
@@ -2384,6 +2456,7 @@ def import_employees(request):
             "success": True,
             "created": created_count,
             "skipped": skipped_count,
+            "pending_invites": created_count,
             "errors": errors,
         })
 
@@ -2819,7 +2892,8 @@ def send_employee_invites(request):
         "company_role"
     ).filter(
         company=company,
-        user__is_active=True
+        user__is_active=True,
+        invite_email_sent=False
     )
 
     if not send_to_all:
@@ -2833,50 +2907,66 @@ def send_employee_invites(request):
             id__in=employee_ids
         )
 
+    skipped_already_sent = 0
+
+    if employee_ids:
+        skipped_already_sent = UserProfile.objects.filter(
+            company=company,
+            id__in=employee_ids,
+            invite_email_sent=True
+        ).count()
+
+    if not employees.exists():
+        return Response(
+            {
+                "success": True,
+                "message": "All selected employees have already received invite emails.",
+                "sent": 0,
+                "failed": 0,
+                "skipped_already_sent": skipped_already_sent,
+                "errors": [],
+            },
+            status=status.HTTP_200_OK
+        )
+
     sent_count = 0
     failed_count = 0
     errors = []
 
-    login_url = getattr(
-        settings,
-        "FRONTEND_LOGIN_URL",
-        "http://localhost:5173/login"
-    )
-
     for employee in employees:
-        temporary_password = "Password@123"
 
-        html_content = render_to_string(
-            "emails/employee_invite.html",
-            {
-                "employee_name": employee.user.first_name or employee.user.email,
-                "company_name": company.name,
-                "email": employee.user.email,
-                "department": (
-                    employee.department.name
-                    if employee.department else "Not Assigned"
-                ),
-                "role": (
-                    employee.company_role.name
-                    if employee.company_role else employee.role
-                ),
-                "temporary_password": temporary_password,
-                "login_url": login_url,
-            }
-        )
+        temporary_password = employee.temporary_password
 
-        text_content = strip_tags(html_content)
+        if not temporary_password:
+            temporary_password = generate_employee_password()
 
-        result = send_company_email(
-            company,
-            subject=f"Welcome to ZepEx - {company.name}",
-            text_content=text_content,
-            html_content=html_content,
-            to_emails=[employee.user.email],
+            employee.temporary_password = temporary_password
+            employee.force_password_change = True
+            employee.user.set_password(temporary_password)
+            employee.user.save(update_fields=["password"])
+
+            employee.save(update_fields=[
+                "temporary_password",
+                "force_password_change",
+            ])
+
+        result = send_employee_invite_email(
+            company=company,
+            employee=employee,
+            raw_password=temporary_password,
         )
 
         if result.get("success"):
+            employee.invite_email_sent = True
+            employee.invite_email_sent_at = timezone.now()
+
+            employee.save(update_fields=[
+                "invite_email_sent",
+                "invite_email_sent_at",
+            ])
+
             sent_count += 1
+
         else:
             failed_count += 1
             errors.append({
@@ -2892,6 +2982,7 @@ def send_employee_invites(request):
         metadata={
             "sent": sent_count,
             "failed": failed_count,
+            "skipped_already_sent": skipped_already_sent,
         }
     )
 
@@ -2899,8 +2990,10 @@ def send_employee_invites(request):
         "success": True,
         "sent": sent_count,
         "failed": failed_count,
+        "skipped_already_sent": skipped_already_sent,
         "errors": errors,
     })
+
 
 from .models import Currency, CompanyFinanceSettings
 from .serializers import CompanyFinanceSettingsSerializer

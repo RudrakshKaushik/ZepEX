@@ -11,7 +11,7 @@ import Admin from '@/assets/admin.png'
 import gemini from '@/assets/gemini.png'
 import policy from '@/assets/policy.png'
 import approval_flow from '@/assets/approval_flow.png'
-import FileSearch from '@/assets/FileSearch.png'
+import FileSearch from '@/assets/FileSearch3.png'
 import blue_arrow from '@/assets/blue_arrow.png'
 import star from '@/assets/star.png'
 
@@ -96,7 +96,7 @@ export function LandingWorkspaces() {
       <section id="workflow" className="bg-white py-16 sm:py-20">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           {/* Light blue header block */}
-          <div className="relative rounded-[2rem] bg-[#e8f0fe] px-6 pb-28 pt-10 sm:px-10 sm:pb-32 sm:pt-12">
+          <div className="relative rounded-[2rem] bg-[#FD882C0D] px-6 pb-28 pt-10 sm:px-10 sm:pb-32 sm:pt-12">
             <div className="text-center">
               <SectionBadge endIcon="⊞">Build For Every Role</SectionBadge>
               <h2 className="mt-4 text-2xl font-bold text-gray-900 sm:text-3xl lg:text-4xl">
@@ -203,7 +203,7 @@ export function LandingWorkspaces() {
             <CtaButton to="/register" icon="arrow">
               Register Your Company
             </CtaButton>
-            <CtaButton to="/login" icon="plus" darkText>
+            <CtaButton to="/login" icon="plus" bgcolor="bg-gray-200" darkText>
               Sign In
             </CtaButton>
           </div>

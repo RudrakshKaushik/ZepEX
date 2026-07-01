@@ -363,7 +363,21 @@ export function EmployeesPage() {
     try {
       const { data } = await sendEmployeeInvites({ send_to_all: true })
       setInviteOpen(false)
-      toast.success(`Invites sent: ${data.sent}${data.failed ? `, ${data.failed} failed` : ''}.`)
+      if (data.sent > 0) {
+        toast.success(
+          data.message ||
+            `Invites sent: ${data.sent}${data.failed ? `, ${data.failed} failed` : ''}.`,
+        )
+      } else if (data.failed > 0) {
+        const firstError = data.errors?.[0]?.error
+        toast.error(firstError || `Failed to send ${data.failed} invite(s).`)
+      } else {
+        toast(
+          data.message ||
+            `No invites sent${data.skipped_already_sent ? ` (${data.skipped_already_sent} already invited)` : ''}.`,
+        )
+      }
+      await load()
     } catch (err) {
       setError(getApiErrorMessage(err))
     } finally {
@@ -799,7 +813,7 @@ export function EmployeesPage() {
         open={inviteOpen}
         onOpenChange={setInviteOpen}
         title="Send employee invites"
-        description="Send login invite emails to all active employees who have not yet received one?"
+        description="Send login invite emails to active employees who have not received one yet?"
         confirmLabel="Send invites"
         onConfirm={handleSendInvites}
         loading={saving}

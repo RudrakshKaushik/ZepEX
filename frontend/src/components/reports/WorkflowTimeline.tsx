@@ -6,9 +6,11 @@ import { cn } from '@/lib/utils'
 const statusStyles: Record<string, string> = {
   COMPLETED: 'text-emerald-600',
   APPROVED: 'text-emerald-600',
+  AUTO_APPROVED: 'text-emerald-600',
   PAID: 'text-emerald-600',
   PENDING: 'text-blue-600',
   PENDING_PAYMENT: 'text-blue-600',
+  VIEW_ONLY: 'text-gray-500',
   WAITING: 'text-gray-400',
   REJECTED: 'text-red-600',
   CANCELLED: 'text-gray-400',
@@ -16,7 +18,7 @@ const statusStyles: Record<string, string> = {
 }
 
 function isCompletedStatus(status: string) {
-  return status === 'COMPLETED' || status === 'APPROVED' || status === 'PAID'
+  return status === 'COMPLETED' || status === 'APPROVED' || status === 'PAID' || status === 'AUTO_APPROVED'
 }
 
 function isActiveStatus(status: string) {
@@ -36,6 +38,19 @@ function StepNode({ status, size = 'md' }: { status: string; size?: 'sm' | 'md' 
         )}
       >
         <X className={iconDim} strokeWidth={3} />
+      </div>
+    )
+  }
+
+  if (status === 'VIEW_ONLY') {
+    return (
+      <div
+        className={cn(
+          dim,
+          'flex shrink-0 items-center justify-center rounded-full border-2 border-gray-300 bg-gray-50 text-gray-500',
+        )}
+      >
+        <Circle className={iconDim} />
       </div>
     )
   }

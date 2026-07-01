@@ -28,6 +28,7 @@ import { Input } from '@/components/ui/input'
 import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
 import { AdminListPanelShimmer } from '@/components/ui/shimmer'
+import { formatDateTime } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import { financeCurrencyLabel as formatFinanceCurrencyLabel } from '@/lib/financeSettings'
 import type { FinanceSettings } from '@/types'
@@ -74,6 +75,7 @@ export function SettingsPage() {
   })
   const [financeLoaded, setFinanceLoaded] = useState(false)
   const [financeCurrencyLabel, setFinanceCurrencyLabel] = useState('')
+  const [lastExchangeSync, setLastExchangeSync] = useState<string | null>(null)
   const [financeSelectedCurrency, setFinanceSelectedCurrency] = useState<{
     id: number
     code: string
@@ -93,7 +95,15 @@ export function SettingsPage() {
       date_format: settings.date_format,
     })
     setFinanceCurrencyLabel(formatFinanceCurrencyLabel(settings))
-    if (settings.base_currency_code) {
+    setLastExchangeSync(settings.last_exchange_sync)
+    if (settings.base_currency_details) {
+      setFinanceSelectedCurrency({
+        id: settings.base_currency_details.id,
+        code: settings.base_currency_details.code,
+        name: settings.base_currency_details.name,
+        flag: settings.base_currency_details.flag || '',
+      })
+    } else if (settings.base_currency_code) {
       setFinanceSelectedCurrency({
         id: settings.base_currency,
         code: settings.base_currency_code,
@@ -571,6 +581,11 @@ export function SettingsPage() {
                 Enable rounding
               </label>
             </div>
+            {lastExchangeSync && (
+              <p className="text-xs text-gray-500">
+                Last exchange rate sync: {formatDateTime(lastExchangeSync)}
+              </p>
+            )}
             {error && activeSection === 'finance' && (
               <p className="text-sm text-red-600">{error}</p>
             )}

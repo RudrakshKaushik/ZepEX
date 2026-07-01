@@ -122,6 +122,33 @@ export function AccountsDashboard() {
         />
       </div>
 
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          title="Approved awaiting payment"
+          value={formatCurrency(String(metrics?.approved_amount ?? 0))}
+          icon={Clock}
+          accent="orange"
+        />
+        <MetricCard
+          title="Rejected reports"
+          value={metrics?.rejected_reports ?? 0}
+          icon={FileText}
+          accent="orange"
+        />
+        <MetricCard
+          title="Rejected amount"
+          value={formatCurrency(String(metrics?.rejected_amount ?? 0))}
+          icon={FileText}
+          accent="orange"
+        />
+        <MetricCard
+          title="Paid reports"
+          value={metrics?.paid_reports ?? 0}
+          icon={CheckCircle2}
+          accent="green"
+        />
+      </div>
+
       <div className="mt-6 space-y-6">
         {(canApproveExpense(user) || canMarkPaid(user)) && (
           <DashboardPanel
@@ -198,6 +225,18 @@ export function AccountsDashboard() {
             />
           )}
         </DashboardPanel>
+
+        {(payment?.recent_auto_approved_reports?.length ?? 0) > 0 && (
+          <DashboardPanel title="Recently auto-approved">
+            <DashboardReportList reports={payment!.recent_auto_approved_reports!.slice(0, 5)} />
+          </DashboardPanel>
+        )}
+
+        {(payment?.recent_manual_approved_reports?.length ?? 0) > 0 && (
+          <DashboardPanel title="Recently manually approved">
+            <DashboardReportList reports={payment!.recent_manual_approved_reports!.slice(0, 5)} />
+          </DashboardPanel>
+        )}
       </div>
     </DashboardLayout>
   )

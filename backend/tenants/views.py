@@ -2870,12 +2870,6 @@ def download_policy_rules_template(request):
 
     return response
 
-from django.conf import settings
-from django.template.loader import render_to_string
-from django.utils.html import strip_tags
-
-from tenants.email_utils import send_company_email
-
 @api_view(["POST"])
 @permission_classes([IsAuthenticated, IsCompanyAdmin])
 def send_employee_invites(request):
@@ -2917,16 +2911,26 @@ def send_employee_invites(request):
         ).count()
 
     if not employees.exists():
+        active_count = UserProfile.objects.filter(
+            company=company,
+            user__is_active=True,
+        ).count()
+
+        if active_count == 0:
+            message = "No active employees to invite."
+        else:
+            message = "All active employees have already received invite emails."
+
         return Response(
             {
                 "success": True,
-                "message": "All selected employees have already received invite emails.",
+                "message": message,
                 "sent": 0,
                 "failed": 0,
-                "skipped_already_sent": skipped_already_sent,
+                "skipped_already_sent": skipped_already_sent or active_count,
                 "errors": [],
             },
-            status=status.HTTP_200_OK
+            status=status.HTTP_200_OK,
         )
 
     sent_count = 0
@@ -2988,6 +2992,11 @@ def send_employee_invites(request):
 
     return Response({
         "success": True,
+        "message": (
+            f"Invites sent to {sent_count} employee(s)."
+            if sent_count
+            else "No invites were sent."
+        ),
         "sent": sent_count,
         "failed": failed_count,
         "skipped_already_sent": skipped_already_sent,

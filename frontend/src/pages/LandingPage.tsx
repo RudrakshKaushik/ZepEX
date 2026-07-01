@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import CreditCard from '@/assets/CreditCard.png'
 import Layers from '@/assets/Layers.png'
-import FileSearch from '@/assets/FileSearch.png'
+import FileSearch from '@/assets/FileSearch2.png'
+import { LandingComparison } from '@/components/landing/LandingComparison'
 import { LandingCapabilities } from '@/components/landing/LandingCapabilities'
 import { LandingHowItWorks } from '@/components/landing/LandingHowItWorks'
 import { LandingPreview } from '@/components/landing/LandingPreview'
@@ -42,7 +43,7 @@ function StatItem({
     <div className="flex items-center">
       {showDivider && (
         <div className="relative mx-4 hidden h-12 w-px bg-gray-200 md:block">
-          <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-[#0066FF]" />
+          <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-[#FD882C]" />
         </div>
       )}
       <div className="min-w-[9rem] shrink-0 px-2 py-2 text-center md:min-w-[10rem] md:px-4">
@@ -83,7 +84,7 @@ export function LandingPage() {
           >
             Try Now
           </Link>
-          <span className="text-xs md:text-base text-white">Manage your Expenses now gets easier</span>
+          <span className="text-xs md:text-base text-white">Managing your Expenses now gets easier</span>
         </div>
       </div>
 
@@ -130,12 +131,8 @@ export function LandingPage() {
             <div className="min-w-0">
               <SectionBadge endIcon="▣">Manage Expenses</SectionBadge>
               <h1 className="mt-4 text-[1.75rem] font-bold leading-[1.15] tracking-tight text-gray-900 sm:mt-5 sm:text-4xl lg:text-5xl">
-                Smart Expenses. Automated Approvals. Zero Complexity.
+              From Receipt to Reimbursement Effortlessly with automated intelligence.
               </h1>
-              <p className="mt-4 max-w-lg text-sm leading-relaxed text-gray-600 sm:mt-5 sm:text-base">
-                Automate expense tracking, approvals, and compliance with intelligent workflows
-                designed for modern finance teams.
-              </p>
               <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:flex-wrap sm:items-center">
                 <PrimaryButton
                   to="/register"
@@ -185,7 +182,7 @@ export function LandingPage() {
 
           <LandingMarquee
             className="mt-10"
-            desktopClassName="mt-10 flex-wrap items-center justify-center"
+            desktopClassName="mt-10 flex-wrap items-center justify-between"
           >
             {stats.map((stat, i) => (
               <StatItem key={stat.label} stat={stat} showDivider={i > 0} />
@@ -196,6 +193,7 @@ export function LandingPage() {
 
       <LandingHowItWorks />
       <LandingPreview />
+      <LandingComparison />
       <LandingCapabilities />
       <LandingWorkspaces />
     </div>

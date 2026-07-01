@@ -267,7 +267,7 @@ export function CompanyDetailPage() {
           <SectionTable
             title="Departments"
             count={data?.departments?.count}
-            columns={['Name', 'Manager', 'Created']}
+            columns={['Name', 'Manager', 'Status', 'Created']}
             page={page}
             totalPages={data?.departments?.total_pages ?? 1}
             onPageChange={setPage}
@@ -277,6 +277,9 @@ export function CompanyDetailPage() {
               <AdminTableRow key={dept.id}>
                 <AdminTableCell className="font-medium">{dept.name}</AdminTableCell>
                 <AdminTableCell>{dept.manager_name ?? '—'}</AdminTableCell>
+                <AdminTableCell>
+                  <StatusBadge status={dept.is_active === false ? 'INACTIVE' : 'ACTIVE'} />
+                </AdminTableCell>
                 <AdminTableCell className="text-gray-500">
                   {formatDate(dept.created_at)}
                 </AdminTableCell>
@@ -289,7 +292,7 @@ export function CompanyDetailPage() {
           <SectionTable
             title="Employees"
             count={data?.employees?.count}
-            columns={['Name', 'Email', 'Role', 'Department']}
+            columns={['Name', 'Email', 'System role', 'Company role', 'Department']}
             page={page}
             totalPages={data?.employees?.total_pages ?? 1}
             onPageChange={setPage}
@@ -302,6 +305,7 @@ export function CompanyDetailPage() {
                 </AdminTableCell>
                 <AdminTableCell>{emp.email}</AdminTableCell>
                 <AdminTableCell>{emp.role}</AdminTableCell>
+                <AdminTableCell>{emp.company_role_name || '—'}</AdminTableCell>
                 <AdminTableCell>{emp.department_name || '—'}</AdminTableCell>
               </AdminTableRow>
             ))}
@@ -343,7 +347,7 @@ export function CompanyDetailPage() {
           <SectionTable
             title="Policy rules"
             count={data?.policy_rules?.count}
-            columns={['Category', 'Max amount', 'Description']}
+            columns={['Category', 'Max amount', 'Description', 'Status']}
             page={page}
             totalPages={data?.policy_rules?.total_pages ?? 1}
             onPageChange={setPage}
@@ -357,6 +361,9 @@ export function CompanyDetailPage() {
                 <AdminTableCell>{rule.max_amount}</AdminTableCell>
                 <AdminTableCell className="text-gray-500">
                   {rule.category_description || '—'}
+                </AdminTableCell>
+                <AdminTableCell>
+                  <StatusBadge status={rule.is_active === false ? 'INACTIVE' : 'ACTIVE'} />
                 </AdminTableCell>
               </AdminTableRow>
             ))}

@@ -21,7 +21,7 @@ const capabilities = [
     img: ai_receipt_img,
     title: 'AI Receipt Extraction',
     description:
-      'Gemini reads invoices and receipts — vendor, date, amount, and line items — so employees stop typing expenses by hand.',
+      'Gemini reads invoices and receipts vendor, date, amount, and line items so employees stop typing expenses by hand.',
   },
   {
     icon: real_time_icon,
@@ -35,7 +35,7 @@ const capabilities = [
     img: role_based_img,
     title: 'Role Based Workspaces',
     description:
-      'Dedicated dashboards for admins, managers, employees, and accounts — each sees only what they need.',
+      'Dedicated dashboards for admins, managers, employees, and accounts each sees only what they need.',
   },
   {
     icon: end_to_end_icon,
@@ -62,7 +62,7 @@ const capabilities = [
 
 export function LandingCapabilities() {
   return (
-    <section id="features" className="bg-[#f9fafb] py-20">
+    <section id="features" className="py-20">
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
         <SectionIntro
           badge="Platform Capabilities"

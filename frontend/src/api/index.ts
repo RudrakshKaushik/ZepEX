@@ -419,6 +419,12 @@ export const getDuplicateReceipts = (params?: { type?: string }) =>
 export const deleteLineItem = (lineItemId: string) =>
   api.delete(`/expenses/line-items/${lineItemId}/delete/`)
 
+export const retryReceiptAi = (receiptId: string) =>
+  api.post<import('@/types').RetryAiResponse>(
+    `/expenses/receipts/${receiptId}/retry-ai/`,
+    {},
+  )
+
 export const getMyPendingApprovals = (params?: {
   employee_id?: number
   employee_email?: string

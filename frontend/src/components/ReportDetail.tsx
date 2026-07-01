@@ -7,7 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import type { ExpenseReport } from '@/types'
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
-import { formatReceiptAmountDisplay, receiptExchangeRateHint } from '@/lib/receiptDisplay'
+import {
+  formatReceiptAmountDisplay,
+  receiptDisplayCurrency,
+  receiptExchangeRateHint,
+} from '@/lib/receiptDisplay'
+import { receiptAiStatusLabel } from '@/lib/receiptAi'
 
 interface ReportDetailProps {
   report: ExpenseReport
@@ -15,11 +20,25 @@ interface ReportDetailProps {
   showAdminOverride?: boolean
 }
 
+function approvalTypeLabel(approvalType: string | null | undefined): string | null {
+  if (!approvalType) return null
+  const labels: Record<string, string> = {
+    SYSTEM_AUTO_APPROVED: 'System auto-approved',
+    MANUAL_APPROVED: 'Manually approved',
+    MANUAL_APPROVAL_REQUIRED: 'Manual approval required',
+    REJECTED: 'Rejected',
+    NOT_SUBMITTED: 'Not submitted',
+  }
+  return labels[approvalType] ?? approvalType.replace(/_/g, ' ').toLowerCase()
+}
+
 export function ReportDetail({
   report,
   showEmployee = true,
   showAdminOverride = false,
 }: ReportDetailProps) {
+  const approvalLabel = approvalTypeLabel(report.approval_type)
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -27,6 +46,11 @@ export function ReportDetail({
         {report.is_auto_approved && (
           <Badge variant="outline" className="border-green-200 bg-green-50 text-green-800">
             Auto-approved
+          </Badge>
+        )}
+        {approvalLabel && !report.is_auto_approved && (
+          <Badge variant="outline" className="capitalize">
+            {approvalLabel}
           </Badge>
         )}
         {showAdminOverride && <CompanyAdminOverrideBadge />}
@@ -56,12 +80,12 @@ export function ReportDetail({
           <p className="font-medium">{formatDateTime(report.submitted_at)}</p>
         </div>
         <div>
-          <p className="text-muted-foreground">Manager action</p>
-          <p className="font-medium">{formatDateTime(report.manager_action_at)}</p>
+          <p className="text-muted-foreground">Auto-approved</p>
+          <p className="font-medium">{formatDateTime(report.auto_approved_at)}</p>
         </div>
         <div>
-          <p className="text-muted-foreground">Accounts action</p>
-          <p className="font-medium">{formatDateTime(report.accounts_action_at)}</p>
+          <p className="text-muted-foreground">Total amount</p>
+          <p className="font-medium">{formatCurrency(report.total_amount)}</p>
         </div>
         <div>
           <p className="text-muted-foreground">Paid at</p>
@@ -69,11 +93,24 @@ export function ReportDetail({
         </div>
       </div>
 
-      {(report.manager_notes || report.accounts_notes || report.paid_notes) && (
+      {report.latest_rejection_reason && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+          <p className="font-medium">
+            Rejected by {report.latest_rejection_reason.rejected_by} (
+            {report.latest_rejection_reason.role})
+          </p>
+          <p className="mt-1">{report.latest_rejection_reason.reason}</p>
+          <p className="mt-1 text-xs text-red-700">
+            {formatDateTime(report.latest_rejection_reason.rejected_at)}
+          </p>
+        </div>
+      )}
+
+      {report.paid_notes && (
         <div className="rounded-lg bg-muted/60 p-4 text-sm">
-          {report.manager_notes && <p><strong>Manager:</strong> {report.manager_notes}</p>}
-          {report.accounts_notes && <p><strong>Accounts:</strong> {report.accounts_notes}</p>}
-          {report.paid_notes && <p><strong>Payment:</strong> {report.paid_notes}</p>}
+          <p>
+            <strong>Payment:</strong> {report.paid_notes}
+          </p>
         </div>
       )}
 
@@ -104,6 +141,12 @@ export function ReportDetail({
               </div>
               {receiptExchangeRateHint(receipt) && (
                 <p className="text-xs text-muted-foreground">{receiptExchangeRateHint(receipt)}</p>
+              )}
+              {receipt.ai_status && receipt.ai_status !== 'AI_COMPLETED' && (
+                <p className="text-xs text-amber-700">
+                  AI: {receiptAiStatusLabel(receipt.ai_status)}
+                  {receipt.ai_error_message ? ` — ${receipt.ai_error_message}` : ''}
+                </p>
               )}
 
               {receipt.has_any_violation && (
@@ -144,7 +187,9 @@ export function ReportDetail({
                               <p className="mt-1 text-xs text-amber-700">{item.violation_reason}</p>
                             )}
                           </td>
-                          <td className="px-3 py-2">{formatCurrency(item.amount, receipt.currency)}</td>
+                          <td className="px-3 py-2">
+                            {formatCurrency(item.amount, receiptDisplayCurrency(receipt))}
+                          </td>
                           <td className="px-3 py-2">{formatDate(item.bill_date)}</td>
                         </tr>
                       ))}

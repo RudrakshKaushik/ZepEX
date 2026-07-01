@@ -1,10 +1,11 @@
-import { AlertTriangle, FileText, Send, Trash2, Upload, X } from 'lucide-react'
+import { AlertTriangle, FileText, RefreshCw, Send, Trash2, Upload, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import {
   deleteLineItem,
   getCurrentMonthReport,
   getMyUploadedExpenses,
+  retryReceiptAi,
   submitMonthlyReport,
   uploadReceipt,
 } from '@/api'
@@ -36,7 +37,8 @@ import {
 import { TableShimmer } from '@/components/ui/shimmer'
 import type { ExpenseReport } from '@/types'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { formatReceiptAmountDisplay, receiptExchangeRateHint } from '@/lib/receiptDisplay'
+import { formatReceiptAmountDisplay, receiptDisplayCurrency, receiptExchangeRateHint } from '@/lib/receiptDisplay'
+import { canRetryReceiptAi, receiptAiStatusLabel } from '@/lib/receiptAi'
 import { fireImportConfetti } from '@/lib/confetti'
 import { normalizeCurrentMonthReport } from '@/lib/expenseReport'
 import {
@@ -64,10 +66,14 @@ function MyExpenseExpandedPanel({
   report,
   canEditReceipts,
   onDeleteLineItem,
+  onRetryReceipt,
+  retryingReceiptId,
 }: {
   report: ExpenseReport
   canEditReceipts: boolean
   onDeleteLineItem: (lineItemId: string) => void
+  onRetryReceipt: (receiptId: string) => void
+  retryingReceiptId: string | null
 }) {
   return (
     <div className="space-y-4">
@@ -95,8 +101,27 @@ function MyExpenseExpandedPanel({
                     <AlertTriangle className="h-4 w-4 text-amber-500" />
                   )}
                   <StatusBadge status={receipt.status} />
+                  {canEditReceipts && canRetryReceiptAi(receipt) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={retryingReceiptId === receipt.id}
+                      onClick={() => onRetryReceipt(receipt.id)}
+                    >
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 ${retryingReceiptId === receipt.id ? 'animate-spin' : ''}`}
+                      />
+                      Retry AI
+                    </Button>
+                  )}
                 </div>
               </div>
+              {receipt.ai_status && receipt.ai_status !== 'AI_COMPLETED' && (
+                <p className="mt-2 text-xs text-amber-700">
+                  AI: {receiptAiStatusLabel(receipt.ai_status)}
+                  {receipt.ai_error_message ? ` — ${receipt.ai_error_message}` : ''}
+                </p>
+              )}
               {receipt.has_any_violation && receipt.policy_violation_reason && (
                 <p className="mt-2 text-sm text-amber-700">{receipt.policy_violation_reason}</p>
               )}
@@ -113,7 +138,7 @@ function MyExpenseExpandedPanel({
                     {item.is_violating && item.violation_reason && (
                       <p className="mt-1 text-xs text-amber-700">{item.violation_reason}</p>
                     )}
-                    <p className="mt-1">{formatCurrency(item.amount, receipt.currency)}</p>
+                    <p className="mt-1">{formatCurrency(item.amount, receiptDisplayCurrency(receipt))}</p>
                   </div>
                   {canEditReceipts && (
                     <Button
@@ -146,6 +171,7 @@ export function ExpensesPage() {
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [retryingReceiptId, setRetryingReceiptId] = useState<string | null>(null)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [dragOver, setDragOver] = useState(false)
@@ -215,20 +241,29 @@ export function ExpensesPage() {
       const errors: string[] = []
       const violationMessages: string[] = []
       let successCount = 0
+      let hadPendingAi = false
       const conversionMessages: string[] = []
       for (const file of selectedFiles) {
         const { data } = await uploadReceipt(file)
         const aiFailed = data.ai_result?.success === false && !data.ai_result?.pending
+        if (data.ai_result?.pending) {
+          hadPendingAi = true
+        }
         if (aiFailed) {
           errors.push(data.ai_result?.error || data.message)
         } else {
           successCount += 1
         }
         const conversion = data.ai_result?.currency_conversion
-        if (conversion?.success && conversion.company_amount != null && conversion.company_currency) {
-          const original = data.receipt.original_amount ?? data.receipt.total_amount
-          const originalCurrency =
-            data.receipt.original_currency ?? data.receipt.currency
+        const original = data.receipt.original_amount ?? data.receipt.total_amount
+        const originalCurrency = data.receipt.original_currency ?? data.receipt.currency
+        const companyAmount = data.receipt.company_amount ?? conversion?.company_amount
+        const companyCurrency = data.receipt.company_currency ?? conversion?.company_currency
+        if (companyAmount != null && companyCurrency && companyCurrency !== originalCurrency) {
+          conversionMessages.push(
+            `${formatCurrency(original, originalCurrency)} → ${formatCurrency(String(companyAmount), companyCurrency)}`,
+          )
+        } else if (conversion?.success && conversion.company_amount != null && conversion.company_currency) {
           conversionMessages.push(
             `${formatCurrency(original, originalCurrency)} → ${formatCurrency(String(conversion.company_amount), conversion.company_currency)}`,
           )
@@ -264,6 +299,11 @@ export function ExpensesPage() {
         resetUploadModal()
       }
       await load()
+      if (hadPendingAi) {
+        window.setTimeout(() => {
+          void load()
+        }, 2500)
+      }
     } catch (err) {
       toast.error(formatUploadError(getApiErrorMessage(err)))
     } finally {
@@ -283,12 +323,47 @@ export function ExpensesPage() {
         }
       } else {
         toast.success(data.message || 'Monthly report submitted for approval.')
+        const step = data.current_approval_step
+        if (step) {
+          const dept =
+            step.routing_type === 'DEPARTMENT' && step.department
+              ? ` (${step.department})`
+              : ''
+          toast(`Awaiting ${step.approver_role}${dept} — step ${step.step_order}`)
+        }
+      }
+      if (data.report) {
+        const normalized = normalizeCurrentMonthReport(data.report)
+        setReports([
+          {
+            ...normalized,
+            employee_email: normalized.employee_email || user?.email || '',
+          },
+        ])
+      } else {
+        await load()
+      }
+    } catch (err) {
+      toast.error(getApiErrorMessage(err))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleRetryReceipt = async (receiptId: string) => {
+    setRetryingReceiptId(receiptId)
+    try {
+      const { data } = await retryReceiptAi(receiptId)
+      if (data.ai_result?.success === false) {
+        toast.error(data.ai_result.error || 'AI extraction failed. Try a clearer receipt.')
+      } else {
+        toast.success(data.message || 'AI extraction completed.')
       }
       await load()
     } catch (err) {
       toast.error(getApiErrorMessage(err))
     } finally {
-      setSubmitting(false)
+      setRetryingReceiptId(null)
     }
   }
 
@@ -396,6 +471,8 @@ export function ExpensesPage() {
                 report={expandedReport}
                 canEditReceipts={canEditReceipts}
                 onDeleteLineItem={handleDeleteLineItem}
+                onRetryReceipt={handleRetryReceipt}
+                retryingReceiptId={retryingReceiptId}
               />
             )
           }}

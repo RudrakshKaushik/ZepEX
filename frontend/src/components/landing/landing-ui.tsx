@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 import logo from '@/assets/logo.png'
 import arrow from '@/assets/white_arrow.png'
 import star from '@/assets/star.png'
+import star2 from '@/assets/star2.png'
 
 export const landingBlue = '#0066FF'
 
@@ -83,10 +84,10 @@ export function SectionBadge({
   endIcon?: string
 }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-medium text-[#0066FF]">
-      <span className="h-1.5 w-1.5 rounded-full bg-[#0066FF]" />
+    <span className="inline-flex items-center gap-1.5 rounded-sm border border-[#FD882C] bg-[#FD882C1A] px-3 py-1 text-xs font-medium text-black">
+      {endIcon && <span className="h-1.5 w-1.5 rounded-full bg-[#FD882C]" />}
       {children}
-      {endIcon && <span className="text-[10px]">{endIcon}</span>}
+      {endIcon && <img src={star2} alt="star2" className="h-4 w-4" />}
     </span>
   )
 }
@@ -106,7 +107,7 @@ export function SectionIntro({
     <div className="text-center">
       <SectionBadge endIcon={badgeEndIcon}>{badge}</SectionBadge>
       <h2 className="mt-4 text-2xl font-bold text-gray-900 sm:text-3xl">{title}</h2>
-      <p className="mx-auto mt-3 max-w-2xl text-sm text-gray-600 sm:text-base">{description}</p>
+      <p className="mx-auto mt-3 max-w-4xl text-sm text-gray-600 sm:text-base">{description}</p>
     </div>
   )
 }

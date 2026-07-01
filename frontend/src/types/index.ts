@@ -187,15 +187,17 @@ export interface Receipt {
   company_amount?: string | null
   company_currency?: string | null
   exchange_rate?: string | null
+  exchange_rate_date?: string | null
   exchange_rate_provider?: string | null
+  ai_status?: string | null
+  ai_error_message?: string | null
+  ai_retry_count?: number
   status: string
   policy_violation_reason: string | null
   has_duplicate_violation: boolean
   has_old_bill_violation: boolean
   has_amount_violation: boolean
   has_any_violation: boolean
-  manager_notes: string | null
-  accounts_notes: string | null
   line_items: LineItem[]
   created_at: string
   updated_at: string
@@ -244,12 +246,8 @@ export interface ExpenseReport {
   approval_required?: boolean
   view_only_for_workflow?: boolean
   submitted_at: string | null
-  manager_action_at?: string | null
-  accounts_action_at?: string | null
   paid_at: string | null
   paid_notes?: string | null
-  manager_notes?: string | null
-  accounts_notes?: string | null
   current_step?: ReportCurrentStep | null
   workflow_timeline?: WorkflowTimelineEntry[]
   latest_rejection_reason?: LatestRejectionReason | null
@@ -427,8 +425,10 @@ export interface PlatformCompanyDetailsResponse {
 
 export interface EmployeeInviteResult {
   success: boolean
+  message?: string
   sent: number
   failed: number
+  skipped_already_sent?: number
   errors?: Array<{ employee: string; error: string }>
 }
 
@@ -437,13 +437,14 @@ export interface UploadPolicyResult {
   has_violations?: boolean
   violations?: string[]
   next_status?: string
+  policy_currency?: string
 }
 
 export interface CurrencyConversionResult {
   success: boolean
-  company_amount?: number
+  company_amount?: number | string
   company_currency?: string
-  exchange_rate?: number
+  exchange_rate?: number | string
   exchange_rate_provider?: string
   error?: string
 }
@@ -451,18 +452,29 @@ export interface CurrencyConversionResult {
 export interface UploadAiResult {
   success?: boolean | null
   pending?: boolean
+  retry_allowed?: boolean
+  ai_status?: string
   error?: string
   receipt_id?: string
   line_items_created?: string[]
-  total_amount?: number
-  original_amount?: number
+  total_amount?: number | string
+  original_amount?: number | string
   original_currency?: string
-  company_amount?: number
+  company_amount?: number | string
   company_currency?: string
+  exchange_rate?: number | string
+  exchange_rate_date?: string
+  exchange_rate_provider?: string
   has_any_violation?: boolean
   violation_reason?: string | null
-  currency_conversion?: CurrencyConversionResult
+  currency_conversion?: CurrencyConversionResult | null
   policy?: UploadPolicyResult
+}
+
+export interface RetryAiResponse {
+  message: string
+  receipt: Receipt
+  ai_result: UploadAiResult
 }
 
 export interface UploadReceiptResponse {
@@ -472,15 +484,20 @@ export interface UploadReceiptResponse {
   ai_result?: UploadAiResult
 }
 
+export interface SubmitApprovalStep {
+  step_order: number
+  approver_role: string
+  routing_type: 'DEPARTMENT' | 'COMPANY'
+  department: string | null
+}
+
 export interface SubmitMonthlyReportResponse {
   message: string
-  success?: boolean
-  workflow_started?: boolean
   auto_approved?: boolean
   approval_required?: boolean
   view_only_for_workflow?: boolean
   next_action?: string
-  current_approval_step?: ReportCurrentStep
+  current_approval_step?: SubmitApprovalStep
   report?: ExpenseReport
 }
 
@@ -552,6 +569,10 @@ export interface FinanceSettings {
   id: number
   company: string
   base_currency: number
+  base_currency_details?: Pick<
+    Currency,
+    'id' | 'code' | 'name' | 'symbol' | 'country' | 'flag' | 'is_active'
+  >
   base_currency_code?: string
   base_currency_name?: string
   base_currency_symbol?: string

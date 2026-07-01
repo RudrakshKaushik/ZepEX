@@ -23,5 +23,13 @@ export function receiptExchangeRateHint(receipt: Receipt): string | null {
   const to = receipt.company_currency
   if (!receipt.exchange_rate || !to || !from || from === to) return null
   const provider = receipt.exchange_rate_provider ? ` (${receipt.exchange_rate_provider})` : ''
-  return `Rate: 1 ${from} = ${receipt.exchange_rate} ${to}${provider}`
+  const date = receipt.exchange_rate_date
+    ? ` · ${new Date(receipt.exchange_rate_date).toLocaleDateString()}`
+    : ''
+  return `Rate: 1 ${from} = ${receipt.exchange_rate} ${to}${provider}${date}`
 }
+
+export function receiptDisplayCurrency(receipt: Receipt): string {
+  return receipt.company_currency ?? receipt.original_currency ?? receipt.currency
+}
+

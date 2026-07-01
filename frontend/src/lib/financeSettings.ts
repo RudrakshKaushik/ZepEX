@@ -1,8 +1,14 @@
 import type { FinanceSettings } from '@/types'
 
 export function financeCurrencyLabel(
-  settings: Pick<FinanceSettings, 'base_currency_code' | 'base_currency_flag'>,
+  settings: Pick<
+    FinanceSettings,
+    'base_currency_code' | 'base_currency_flag' | 'base_currency_details'
+  >,
 ): string {
-  if (!settings.base_currency_code) return ''
-  return `${settings.base_currency_flag || ''} ${settings.base_currency_code}`.trim()
+  const code = settings.base_currency_details?.code ?? settings.base_currency_code
+  const flag = settings.base_currency_details?.flag ?? settings.base_currency_flag
+  if (!code) return ''
+  return `${flag || ''} ${code}`.trim()
 }
+

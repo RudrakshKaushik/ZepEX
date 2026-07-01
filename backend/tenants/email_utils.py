@@ -1,5 +1,7 @@
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives, get_connection
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
 
 from tenants.models import CompanySMTPConfig
 
@@ -106,18 +108,12 @@ def send_company_email(
     except Exception as exc:
         return {"success": False, "error": str(exc)}
 
-from django.conf import settings
-from django.template.loader import render_to_string
-from django.utils.html import strip_tags
-
-from .email_utils import send_company_email
-
 
 def send_employee_invite_email(company, employee, raw_password):
     login_url = getattr(
         settings,
         "FRONTEND_LOGIN_URL",
-        "http://localhost:5173/login"
+        "http://localhost:5173/login",
     )
 
     html_content = render_to_string(
@@ -136,7 +132,7 @@ def send_employee_invite_email(company, employee, raw_password):
             ),
             "temporary_password": raw_password,
             "login_url": login_url,
-        }
+        },
     )
 
     text_content = strip_tags(html_content)

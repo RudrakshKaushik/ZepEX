@@ -2,6 +2,7 @@ import { Badge } from '@/components/ui/badge'
 
 const statusVariant: Record<string, 'default' | 'success' | 'warning' | 'destructive' | 'muted' | 'secondary'> = {
   PENDING: 'warning',
+  PENDING_APPROVAL: 'warning',
   APPROVED: 'success',
   REJECTED: 'destructive',
   SUBMITTED: 'default',
@@ -10,6 +11,10 @@ const statusVariant: Record<string, 'default' | 'success' | 'warning' | 'destruc
   ACCOUNTS_APPROVED: 'success',
   PAID: 'success',
   AI_PROCESSED: 'secondary',
+  AI_PROCESSING: 'warning',
+  AI_FAILED: 'destructive',
+  AI_RETRY_REQUIRED: 'warning',
+  POLICY_VIOLATION: 'destructive',
   DRAFT: 'muted',
   ACTIVE: 'success',
   INACTIVE: 'muted',

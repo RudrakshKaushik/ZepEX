@@ -23,7 +23,8 @@ from .views import (
     reject_report_step,
     duplicate_receipts,
     admin_reports_list,
-    update_workflow_step
+    update_workflow_step,
+    retry_receipt_ai,
     
     
 
@@ -76,5 +77,10 @@ path("duplicates/", duplicate_receipts, name="duplicate-receipts"),
 path("admin/reports/",admin_reports_list,name="admin-reports-list"
 ),
 path("workflow/steps/<int:step_id>/update/", update_workflow_step, name="update-workflow-step"),
+path(
+    "receipts/<uuid:receipt_id>/retry-ai/",
+    retry_receipt_ai,
+    name="retry-receipt-ai"
+),
 
 ]

@@ -131,9 +131,12 @@ export function LandingPage() {
           <div className="mx-auto grid max-w-7xl items-center gap-8 px-4 py-8 sm:px-6 sm:py-12 lg:grid-cols-2 lg:gap-12 lg:py-16">
             <div className="min-w-0">
               <SectionBadge endIcon="▣">Manage Expenses</SectionBadge>
-              <h1 className="mt-4 text-[1.75rem] font-bold leading-[1.15] tracking-tight text-gray-900 sm:mt-5 sm:text-4xl lg:text-5xl">
+              <h1 className="mt-4 text-[1.75rem] font-bold leading-[1.15] tracking-tight text-gray-900 sm:mt-5 sm:text-4xl">
               From Receipt to Reimbursement Effortlessly with automated intelligence.
               </h1>
+              <p className="mt-4 max-w-lg text-sm leading-relaxed text-gray-600 sm:mt-5 sm:text-base">
+              Automate receipt processing, policy validation, approval workflows, multi-currency reimbursements, and payments with AI built for modern enterprises.
+              </p>
               <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:flex-wrap sm:items-center">
                 <PrimaryButton
                   to="/register"
@@ -149,7 +152,7 @@ export function LandingPage() {
 
               <LandingMarquee
                 className="mt-6 sm:mt-8"
-                desktopClassName="mt-8 flex-wrap items-start gap-8"
+                desktopClassName="mt-12 flex-wrap items-start gap-8"
               >
                 {heroHighlights.map((item) => (
                   <HighlightItem key={item.text} icon={item.icon} text={item.text} />

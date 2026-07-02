@@ -10,7 +10,7 @@ import { LandingPreview } from '@/components/landing/LandingPreview'
 import { LandingFooter } from '@/components/landing/LandingFooter'
 import { LandingWorkspaces } from '@/components/landing/LandingWorkspaces'
 import {
-  dotGridStyle,
+  // dotGridStyle,
   LandingMarquee,
   PrimaryButton,
   SecondaryButton,
@@ -19,6 +19,7 @@ import {
 } from '@/components/landing/landing-ui'
 import { cn } from '@/lib/utils'
 import heroImg from '@/assets/heroImg.png'
+import herobg from '@/assets/herobg.png'
 
 const stats = [
   { value: '90%', label: 'Less manual data entry' },
@@ -43,8 +44,8 @@ function StatItem({
   return (
     <div className="relative flex flex-1 items-center justify-center px-4 py-2">
       {showDivider && (
-        <div className="absolute left-0 top-1/2 hidden h-12 w-px -translate-y-1/2 bg-gray-200 md:block">
-          <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-[#FD882C]" />
+        <div className="absolute left-0 top-1/2 hidden h-18 w-px -translate-y-1/2 bg-gray-200 md:block">
+          <div className="absolute left-1/2 top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-[#3600FC]" />
         </div>
       )}
       <div className="text-center">
@@ -57,7 +58,7 @@ function StatItem({
 
 function HighlightItem({ icon, text }: { icon: string; text: string }) {
   return (
-    <span className="flex w-[10.5rem] shrink-0 flex-col gap-2 text-sm text-gray-600 sm:w-auto sm:text-base">
+    <span className="flex w-[10.5rem] shrink-0 flex-col gap-2 text-sm text-white sm:w-auto sm:text-base">
       <img src={icon} alt="" className="h-10 w-10 sm:h-12 sm:w-12" />
       <span className="leading-snug">{text}</span>
     </span>
@@ -75,32 +76,31 @@ export function LandingPage() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-white text-gray-900">
+    <div className="bg-white text-gray-900">
       {/* Banner — scrolls away */}
-      <div className="bg-[#0066FF] px-4 py-2.5">
+      <div className="bg-white px-4 py-2.5">
         <div className="mx-auto flex max-w-7xl items-center justify-center gap-3">
           <Link
             to="/register"
-            className="rounded-full bg-white px-3.5 py-1 text-sm md:text-base font-semibold text-gray-900"
+            className="rounded-full bg-[#15007E] px-3.5 py-1 text-sm md:text-base font-semibold text-white"
           >
             Try Now
           </Link>
-          <span className="text-xs md:text-base text-white">Managing your Expenses now gets easier</span>
+          <span className="text-xs md:text-base text-black font-semibold">Managing your Expenses now gets easier</span>
         </div>
       </div>
 
-      {/* Sticky nav — dotted at top, transparent once scrolled */}
+      {/* Sticky nav — semi-transparent over hero; hero pulled up behind it */}
       <div
         className={cn(
-          'sticky top-0 z-50 px-4 pb-2 pt-4 transition-[background] duration-200 sm:px-6',
-          scrolled ? 'bg-transparent' : '',
+          'sticky top-0 z-50 px-4 pb-2 pt-4 transition-[background-color] duration-200 sm:px-6',
+          scrolled ? 'bg-transparent' : 'bg-[#040419]/40',
         )}
-        style={scrolled ? undefined : dotGridStyle}
       >
         <header className="mx-auto max-w-7xl rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-[0_4px_24px_rgba(0,0,0,0.08)] sm:px-6">
-          <div className="flex items-center justify-between gap-4 md:grid md:grid-cols-[1fr_auto_1fr]">
-            <ZepLogo />
-            <nav className="hidden items-center justify-center gap-8 text-base font-medium text-gray-700 md:flex">
+          <div className="grid grid-cols-[1fr_auto] items-center gap-4 md:grid-cols-[1fr_auto_1fr]">
+            <ZepLogo className="justify-self-start" />
+            <nav className="col-span-2 hidden items-center justify-center gap-8 text-base font-semibold text-gray-700 md:col-span-1 md:flex">
               <a href="#features" className="hover:text-[#0066FF]">
                 Features
               </a>
@@ -111,66 +111,88 @@ export function LandingPage() {
                 Workflow
               </a>
             </nav>
-            <div className="flex justify-end md:justify-end">
-              <div className="flex items-center gap-4">
-                <Link to="/login" className="w-full text-sm font-semibold text-gray-900 hover:text-[#0066FF] justify-center sm:w-auto hidden md:flex items-center gap-2">
-                  Sign In
-                </Link>
-                <PrimaryButton to="/register" icon="arrow">
-                  Get Started
-                </PrimaryButton>
-              </div>
+            <div className="flex items-center justify-end gap-4 justify-self-end">
+              <Link
+                to="/login"
+                className="hidden text-sm font-semibold text-gray-900 hover:text-[#0066FF] md:inline"
+              >
+                Sign In
+              </Link>
+              <PrimaryButton to="/register" icon="arrow">
+                Get Started
+              </PrimaryButton>
             </div>
           </div>
         </header>
       </div>
 
-      {/* Hero */}
-      <div className="overflow-x-clip" style={dotGridStyle}>
-        <section className="relative">
-          <div className="mx-auto grid max-w-7xl items-center gap-8 px-4 py-8 sm:px-6 sm:py-12 lg:grid-cols-2 lg:gap-12 lg:py-16">
-            <div className="min-w-0">
-              <SectionBadge endIcon="▣">Manage Expenses</SectionBadge>
-              <h1 className="mt-4 text-[1.75rem] font-bold leading-[1.15] tracking-tight text-gray-900 sm:mt-5 sm:text-4xl">
-              From Receipt to Reimbursement Effortlessly with automated intelligence.
-              </h1>
-              <p className="mt-4 max-w-lg text-sm leading-relaxed text-gray-600 sm:mt-5 sm:text-base">
-              Automate receipt processing, policy validation, approval workflows, multi-currency reimbursements, and payments with AI built for modern enterprises.
-              </p>
-              <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:flex-wrap sm:items-center">
-                <PrimaryButton
-                  to="/register"
-                  icon="arrow"
-                  className="w-full justify-center sm:w-auto"
+      {/* Hero — herobg extends behind nav via negative margin */}
+      <div className="relative -mt-24 overflow-x-clip bg-[#040419] pt-24">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-cover bg-center bg-no-repeat"
+          style={{ backgroundImage: `url(${herobg})` }}
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-[#040419]/50"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#040419]/40 via-transparent to-[#040419]/10"
+        />
+
+        <section className="relative z-10 pb-12 pt-6 sm:pb-14 sm:pt-8 lg:pb-16 lg:pt-10 ">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6">
+            <div className="grid gap-8 lg:grid-cols-2 lg:items-center lg:gap-10 xl:gap-12">
+              <div className="flex min-w-0 flex-col items-start">
+                <SectionBadge
+                  endIcon="▣"
+                  bgColor="bg-white/30"
+                  borderColor="border-[#FFFFFF]"
+                  textColor="text-white"
+                  iconColor="bg-[#FFFFFF]"
                 >
-                  Get Started Free
-                </PrimaryButton>
-                <SecondaryButton to="/login" className="w-full justify-center sm:w-auto">
-                  Access Workspace
-                </SecondaryButton>
+                  Manage Expenses
+                </SectionBadge>
+                <h1 className="mt-4 text-[1.75rem] font-bold leading-[1.15] tracking-tight text-white sm:mt-5 sm:text-4xl lg:text-[2.5rem] lg:leading-[1.12]">
+                  From Receipt to Reimbursement Effortlessly with automated intelligence.
+                </h1>
+                <p className="mt-4 max-w-lg text-sm leading-relaxed text-gray-200 sm:mt-5 sm:text-base">
+                  Automate receipt processing, policy validation, approval workflows, multi-currency
+                  reimbursements, and payments with AI built for modern enterprises.
+                </p>
+                <div className="mt-6 flex w-full flex-col gap-3 sm:mt-8 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+                  <PrimaryButton to="/register" icon="arrow">
+                    Get Started Free
+                  </PrimaryButton>
+                  <SecondaryButton to="/login">Access Workspace</SecondaryButton>
+                </div>
+
+                <LandingMarquee
+                  className="mt-8 w-full sm:mt-10"
+                  desktopClassName="mt-10 flex-wrap items-start gap-8 lg:mt-12"
+                >
+                  {heroHighlights.map((item) => (
+                    <HighlightItem key={item.text} icon={item.icon} text={item.text} />
+                  ))}
+                </LandingMarquee>
               </div>
 
-              <LandingMarquee
-                className="mt-6 sm:mt-8"
-                desktopClassName="mt-12 flex-wrap items-start gap-8"
-              >
-                {heroHighlights.map((item) => (
-                  <HighlightItem key={item.text} icon={item.icon} text={item.text} />
-                ))}
-              </LandingMarquee>
-            </div>
-            <div className="mx-auto w-full max-w-sm min-w-0 sm:max-w-md lg:max-w-none">
-              <div
-                className={cn(
-                  'aspect-square w-full max-h-[min(80vw,20rem)] overflow-hidden rounded-3xl shadow-xl sm:max-h-none',
-                  'bg-gradient-to-br from-[#0066FF] via-[#3b82f6] to-[#67e8f9]',
-                )}
-              >
-                <img
-                  src={heroImg}
-                  alt="ZepEX expense management dashboard"
-                  className="h-full w-full"
-                />
+              <div className="mx-auto w-full max-w-sm min-w-0 sm:max-w-md lg:mx-0 lg:max-w-none">
+                <div
+                  className={cn(
+                    'flex w-full items-center justify-center overflow-hidden rounded-3xl shadow-xl',
+                    'min-h-[24rem] lg:min-h-[30rem]',
+                    'bg-gradient-to-br from-[#0066FF] via-[#3b82f6] to-[#67e8f9]',
+                  )}
+                >
+                  <img
+                    src={heroImg}
+                    alt="ZepEX expense management"
+                    className="h-full w-full object-contain"
+                  />
+                </div>
               </div>
             </div>
           </div>

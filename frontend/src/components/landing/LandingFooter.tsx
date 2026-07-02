@@ -38,7 +38,7 @@ export function LandingFooter() {
               <img
                 src={footerLogo}
                 alt="ZepEX x Bitloom"
-                className="h-11 w-auto sm:h-12"
+                className="h-11 w-auto sm:h-22"
               />
             </Link>
 

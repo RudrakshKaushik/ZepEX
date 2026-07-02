@@ -96,7 +96,7 @@ export function LandingWorkspaces() {
       <section id="workflow" className="bg-white py-16 sm:py-20">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           {/* Light blue header block */}
-          <div className="relative rounded-[2rem] bg-[#FD882C0D] px-6 pb-28 pt-10 sm:px-10 sm:pb-32 sm:pt-12">
+          <div className="relative rounded-[2rem] bg-[#7147FB0D] px-6 pb-28 pt-10 sm:px-10 sm:pb-32 sm:pt-12">
             <div className="text-center">
               <SectionBadge endIcon="⊞">Build For Every Role</SectionBadge>
               <h2 className="mt-4 text-2xl font-bold text-gray-900 sm:text-3xl lg:text-4xl">
@@ -177,7 +177,7 @@ export function LandingWorkspaces() {
 
       {/* Blue CTA */}
       <section id="cta" className="bg-white px-4 pb-0 sm:px-6">
-        <div className="mx-auto max-w-7xl rounded-[2rem] bg-[#0066FF] px-6 py-14 text-center sm:px-12 sm:py-16">
+        <div className="mx-auto max-w-7xl rounded-[2rem] bg-[#3600FC] px-6 py-14 text-center sm:px-12 sm:py-16">
           <h2 className="text-2xl font-bold text-white sm:text-3xl lg:text-4xl">
             Everything Finance Teams Need, Powered by AI
           </h2>
@@ -200,7 +200,7 @@ export function LandingWorkspaces() {
           </div>
 
           <div className="mt-10 flex flex-col items-stretch gap-3 sm:mt-12 sm:flex-row sm:flex-wrap sm:items-center sm:justify-center sm:gap-4">
-            <CtaButton to="/register" icon="arrow">
+            <CtaButton to="/register" icon="arrow" darkText>
               Register Your Company
             </CtaButton>
             <CtaButton to="/login" icon="plus" bgcolor="bg-gray-200" darkText>

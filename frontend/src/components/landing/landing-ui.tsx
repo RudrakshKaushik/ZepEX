@@ -4,7 +4,8 @@ import { cn } from '@/lib/utils'
 import logo from '@/assets/logo.png'
 import arrow from '@/assets/white_arrow.png'
 import star from '@/assets/star.png'
-import star2 from '@/assets/star2.png'
+// import star2 from '@/assets/star2.png'
+import star3 from '@/assets/star3.png'
 
 export const landingBlue = '#0066FF'
 
@@ -37,15 +38,15 @@ export function PrimaryButton({
     <Link
       to={to}
       className={cn(
-        'inline-flex items-stretch overflow-hidden rounded-lg bg-[#0066FF] text-base font-semibold text-white shadow-sm transition hover:bg-[#0052cc]',
+        'inline-flex w-fit max-w-full items-center overflow-hidden rounded-lg bg-[#3600FC] text-base font-semibold text-white shadow-sm transition hover:cursor-pointer',
         className,
       )}
     >
-      <span className="flex items-center px-4 py-2">{children}</span>
+      <span className="px-4 py-2">{children}</span>
       {icon === 'arrow' && (
-        <div className="flex items-center justify-center p-2">
-          <img src={arrow} alt="" className="h-8 w-8" />
-        </div>
+        <span className="flex shrink-0 items-center justify-center border-l border-white/20 px-2 py-2">
+          <img src={arrow} alt="" className="h-6 w-6" />
+        </span>
       )}
     </Link>
   )
@@ -64,14 +65,12 @@ export function SecondaryButton({
     <Link
       to={to}
       className={cn(
-        'inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-100 px-5 py-2.5 text-sm font-semibold text-gray-800 transition hover:bg-gray-200',
+        'inline-flex w-fit max-w-full items-center gap-1.5 rounded-lg border border-gray-200 bg-[#E8EAE9] py-2.5 pl-5 pr-3 text-sm font-semibold text-gray-800 transition hover:bg-gray-200',
         className,
       )}
     >
       {children}
-      <div className="flex items-center justify-center">
-        <img src={star} alt="" className="h-8 w-8" />
-      </div>
+      <img src={star} alt="" className="h-6 w-6 shrink-0" />
     </Link>
   )
 }
@@ -79,15 +78,30 @@ export function SecondaryButton({
 export function SectionBadge({
   children,
   endIcon,
+  bgColor = 'bg-[#7147FB1A]',
+  borderColor = 'border-[#9E48F9]',
+  textColor = 'text-black',
+  iconColor = 'bg-[#9E48F9]',
 }: {
   children: string
   endIcon?: string
+  bgColor?: string
+  borderColor?: string
+  textColor?: string
+  iconColor?: string
 }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-sm border border-[#FD882C] bg-[#FD882C1A] px-3 py-1 text-xs font-medium text-black">
-      {endIcon && <span className="h-1.5 w-1.5 rounded-full bg-[#FD882C]" />}
+    <span
+      className={cn(
+        'inline-flex w-fit shrink-0 items-center gap-1.5 rounded-sm border px-3 py-1 text-xs font-medium',
+        bgColor,
+        borderColor,
+        textColor,
+      )}
+    >
+      {endIcon && <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', iconColor)} />}
       {children}
-      {endIcon && <img src={star2} alt="star2" className="h-4 w-4" />}
+      {endIcon && <img src={star3} alt="" className="h-4 w-4 shrink-0" />}
     </span>
   )
 }

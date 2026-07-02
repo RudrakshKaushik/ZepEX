@@ -142,9 +142,9 @@ export function LandingPage() {
           className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#040419]/40 via-transparent to-[#040419]/10"
         />
 
-        <section className="relative z-10 pb-12 pt-6 sm:pb-14 sm:pt-8 lg:pb-16 lg:pt-10 ">
+        <section className="relative z-10 pb-10 pt-6 sm:pb-12 sm:pt-8 lg:pb-14 lg:pt-8">
           <div className="mx-auto max-w-7xl px-4 sm:px-6">
-            <div className="grid gap-8 lg:grid-cols-2 lg:items-center lg:gap-10 xl:gap-12">
+            <div className="grid gap-8 lg:grid-cols-2 lg:items-start lg:gap-x-10 xl:gap-x-12">
               <div className="flex min-w-0 flex-col items-start">
                 <SectionBadge
                   endIcon="▣"
@@ -171,7 +171,7 @@ export function LandingPage() {
 
                 <LandingMarquee
                   className="mt-8 w-full sm:mt-10"
-                  desktopClassName="mt-10 flex-wrap items-start gap-8 lg:mt-12"
+                  desktopClassName="mt-10 flex-wrap items-start gap-8 lg:mt-12 lg:gap-10"
                 >
                   {heroHighlights.map((item) => (
                     <HighlightItem key={item.text} icon={item.icon} text={item.text} />
@@ -179,20 +179,12 @@ export function LandingPage() {
                 </LandingMarquee>
               </div>
 
-              <div className="mx-auto w-full max-w-sm min-w-0 sm:max-w-md lg:mx-0 lg:max-w-none">
-                <div
-                  className={cn(
-                    'flex w-full items-center justify-center overflow-hidden rounded-3xl shadow-xl',
-                    'min-h-[24rem] lg:min-h-[30rem]',
-                    'bg-gradient-to-br from-[#0066FF] via-[#3b82f6] to-[#67e8f9]',
-                  )}
-                >
-                  <img
-                    src={heroImg}
-                    alt="ZepEX expense management"
-                    className="h-full w-full object-contain"
-                  />
-                </div>
+              <div className="w-full min-w-0">
+                <img
+                  src={heroImg}
+                  alt="ZepEX expense management"
+                  className="block w-full rounded-[1.35rem] object-contain max-h-[min(28rem,calc(100svh-13rem))] sm:max-h-[min(32rem,calc(100svh-13rem))] lg:max-h-[min(36rem,calc(100svh-13rem))]"
+                />
               </div>
             </div>
           </div>

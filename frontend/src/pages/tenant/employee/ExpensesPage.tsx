@@ -38,7 +38,7 @@ import { TableShimmer } from '@/components/ui/shimmer'
 import type { ExpenseReport } from '@/types'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { formatReceiptAmountDisplay, receiptDisplayCurrency, receiptExchangeRateHint } from '@/lib/receiptDisplay'
-import { canRetryReceiptAi, receiptAiStatusLabel } from '@/lib/receiptAi'
+import { canRetryReceiptAi, isAiExtractionFailed, receiptAiStatusLabel, receiptDisplayTitle } from '@/lib/receiptAi'
 import { fireImportConfetti } from '@/lib/confetti'
 import { normalizeCurrentMonthReport } from '@/lib/expenseReport'
 import {
@@ -86,9 +86,11 @@ function MyExpenseExpandedPanel({
             <div key={receipt.id} className="rounded-xl border bg-white p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <p className="font-medium">{receipt.vendor_name || 'Processing...'}</p>
+                  <p className="font-medium">{receiptDisplayTitle(receipt)}</p>
                   <p className="text-sm text-muted-foreground">
-                    {formatReceiptAmountDisplay(receipt)} · {formatDate(receipt.invoice_date)}
+                    {isAiExtractionFailed(receipt)
+                      ? 'Amount pending extraction'
+                      : `${formatReceiptAmountDisplay(receipt)} · ${formatDate(receipt.invoice_date)}`}
                   </p>
                   {receiptExchangeRateHint(receipt) && (
                     <p className="text-xs text-muted-foreground">
@@ -291,13 +293,13 @@ export function ExpensesPage() {
             ? 'Receipt(s) uploaded with policy violations flagged.'
             : 'Receipt(s) uploaded and processed by AI.',
         )
-        setUploadOpen(false)
-        resetUploadModal()
       } else if (successCount && errors.length) {
         toast.success(`${successCount} receipt(s) uploaded. Some AI extractions failed.`)
-        setUploadOpen(false)
-        resetUploadModal()
+      } else if (hadPendingAi) {
+        toast.success('Receipt(s) uploaded. AI processing started.')
       }
+      setUploadOpen(false)
+      resetUploadModal()
       await load()
       if (hadPendingAi) {
         window.setTimeout(() => {
@@ -355,7 +357,12 @@ export function ExpensesPage() {
     try {
       const { data } = await retryReceiptAi(receiptId)
       if (data.ai_result?.success === false) {
-        toast.error(data.ai_result.error || 'AI extraction failed. Try a clearer receipt.')
+        const message = data.ai_result.error || 'AI extraction failed. Try a clearer receipt.'
+        if (data.ai_result.retry_allowed) {
+          toast.error(message)
+        } else {
+          toast.error(`${message} Upload a clearer receipt to try again.`)
+        }
       } else {
         toast.success(data.message || 'AI extraction completed.')
       }

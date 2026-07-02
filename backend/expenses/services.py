@@ -159,10 +159,116 @@ def check_policy_violations(receipt):
 from .currency_services import convert_currency
 
 
+def _classify_ai_error(error: str):
+    message = str(error)
+    lowered = message.lower()
+
+    if any(
+        phrase in lowered
+        for phrase in (
+            "not readable",
+            "blurry",
+            "unclear",
+            "no valid json",
+            "unsupported file type",
+        )
+    ):
+        return (
+            ExpenseReceipt.AI_FAILED,
+            "Receipt image is not readable. Please upload a clearer receipt.",
+            False,
+        )
+
+    if any(
+        phrase in lowered
+        for phrase in (
+            "429",
+            "rate limit",
+            "busy",
+            "overload",
+            "resource_exhausted",
+            "heavy traffic",
+            "temporarily unavailable",
+        )
+    ):
+        return (
+            ExpenseReceipt.AI_RETRY_REQUIRED,
+            "AI service is temporarily busy. Please try again.",
+            True,
+        )
+
+    return (
+        ExpenseReceipt.AI_RETRY_REQUIRED,
+        message,
+        True,
+    )
+
+
+def _apply_ai_failure(receipt: ExpenseReceipt, error: str):
+    ai_status, user_message, retry_allowed = _classify_ai_error(error)
+
+    receipt.ai_status = ai_status
+    receipt.ai_error_message = user_message
+    receipt.status = ExpenseReceipt.STATUS_AI_PROCESSING
+    receipt.policy_violation_reason = ""
+    receipt.has_duplicate_violation = False
+    receipt.has_old_bill_violation = False
+    receipt.has_amount_violation = False
+    receipt.has_any_violation = False
+    receipt.save(
+        update_fields=[
+            "ai_status",
+            "ai_error_message",
+            "status",
+            "policy_violation_reason",
+            "has_duplicate_violation",
+            "has_old_bill_violation",
+            "has_amount_violation",
+            "has_any_violation",
+            "updated_at",
+        ]
+    )
+
+    if receipt.report_id:
+        recalculate_report_total(receipt.report)
+
+    return {
+        "success": False,
+        "retry_allowed": retry_allowed,
+        "ai_status": ai_status,
+        "error": user_message,
+        "receipt_id": str(receipt.id),
+    }
+
+
+def recalculate_report_total(report):
+    total = Decimal("0.00")
+
+    for receipt in report.receipts.filter(
+        ai_status=ExpenseReceipt.AI_COMPLETED
+    ):
+        amount = receipt.company_amount
+        if amount is None:
+            amount = receipt.total_amount
+        total += amount or Decimal("0.00")
+
+    report.total_amount = total
+    report.save(update_fields=["total_amount", "updated_at"])
+
+
 def extract_receipt_with_gemini(receipt: ExpenseReceipt):
 
     receipt.status = ExpenseReceipt.STATUS_AI_PROCESSING
-    receipt.save(update_fields=["status"])
+    receipt.ai_status = ExpenseReceipt.AI_PROCESSING
+    receipt.ai_error_message = None
+    receipt.save(
+        update_fields=[
+            "status",
+            "ai_status",
+            "ai_error_message",
+            "updated_at",
+        ]
+    )
 
     prompt = """
 You are an expert expense receipt analyzer.
@@ -261,6 +367,11 @@ Rules:
         parsed_data = json.loads(match.group(0))
         bills = parsed_data.get("bills", [])
 
+        if not bills:
+            raise Exception(
+                "Receipt image is not readable. Please upload a clearer receipt."
+            )
+
         created_items = []
         total_amount = Decimal("0.00")
 
@@ -290,6 +401,12 @@ Rules:
             )
 
             created_items.append(line_item.id)
+
+        if total_amount <= Decimal("0.00"):
+            ExpenseLineItem.objects.filter(receipt=receipt).delete()
+            raise Exception(
+                "Receipt image is not readable. Please upload a clearer receipt."
+            )
 
         first_bill = bills[0] if bills else {}
 
@@ -356,6 +473,8 @@ Rules:
 
         receipt.total_amount = receipt.company_amount
         receipt.status = ExpenseReceipt.STATUS_AI_PROCESSED
+        receipt.ai_status = ExpenseReceipt.AI_COMPLETED
+        receipt.ai_error_message = None
         receipt.save()
 
         check_policy_violations(receipt)
@@ -363,15 +482,12 @@ Rules:
         receipt.refresh_from_db()
 
         if receipt.report:
-            report = receipt.report
-            report.total_amount = sum(
-                r.company_amount for r in report.receipts.all()
-            )
-            report.save(update_fields=["total_amount", "updated_at"])
+            recalculate_report_total(receipt.report)
 
         return {
             "success": True,
             "receipt_id": str(receipt.id),
+            "ai_status": ExpenseReceipt.AI_COMPLETED,
             "line_items_created": [str(item_id) for item_id in created_items],
 
             "original_amount": str(receipt.original_amount),
@@ -397,15 +513,4 @@ Rules:
         }
 
     except Exception as e:
-        receipt.status = ExpenseReceipt.STATUS_AI_PROCESSED
-        receipt.policy_violation_reason = f"AI extraction failed: {str(e)}"
-        receipt.save(update_fields=[
-            "status",
-            "policy_violation_reason",
-            "updated_at"
-        ])
-
-        return {
-            "success": False,
-            "error": str(e),
-        }
+        return _apply_ai_failure(receipt, str(e))

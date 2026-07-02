@@ -15,6 +15,9 @@ class CompanyRegistrationRequestSerializer(serializers.ModelSerializer):
             "admin_email",
             "status",
             "created_at",
+            "expected_employee_count",
+            "otp",
+            "is_email_verified",
         ]
         read_only_fields = [
             "id",

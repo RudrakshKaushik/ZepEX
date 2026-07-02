@@ -41,13 +41,13 @@ function StatItem({
   showDivider?: boolean
 }) {
   return (
-    <div className="flex items-center">
+    <div className="relative flex flex-1 items-center justify-center px-4 py-2">
       {showDivider && (
-        <div className="relative mx-4 hidden h-12 w-px bg-gray-200 md:block">
+        <div className="absolute left-0 top-1/2 hidden h-12 w-px -translate-y-1/2 bg-gray-200 md:block">
           <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-[#FD882C]" />
         </div>
       )}
-      <div className="min-w-[9rem] shrink-0 px-2 py-2 text-center md:min-w-[10rem] md:px-4">
+      <div className="text-center">
         <p className="text-3xl font-bold text-[#0066FF] md:text-4xl">{stat.value}</p>
         <p className="mt-1 text-sm text-gray-600">{stat.label}</p>
       </div>
@@ -186,7 +186,7 @@ export function LandingPage() {
 
           <LandingMarquee
             className="mt-10"
-            desktopClassName="mt-10 flex-wrap items-center justify-between"
+            desktopClassName="mt-10 flex w-full items-stretch"
           >
             {stats.map((stat, i) => (
               <StatItem key={stat.label} stat={stat} showDivider={i > 0} />

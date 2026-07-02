@@ -28,9 +28,8 @@ from .serializers import ApprovalWorkflowSerializer, ApprovalWorkflowStepSeriali
 from django.utils import timezone
 from .models import ApprovalHistory
 from .serializers import ExpenseReportSerializer
-from django.conf import settings
 from django.utils import timezone
-from .tasks import process_receipt_ai_task
+from .ai_queue import queue_receipt_ai_processing
 from .report_utils import (
     can_approve_report,
     get_or_create_current_month_report,
@@ -134,46 +133,16 @@ def upload_receipt(request):
         }
     )
 
-    if settings.CELERY_TASK_ALWAYS_EAGER:
-        ai_result = process_receipt_ai_task(str(receipt.id))
-        receipt.refresh_from_db()
-        if ai_result.get("success"):
-            create_audit_log(
-                company=profile.company,
-                action="AI_PROCESSING_COMPLETED",
-                action_by=profile,
-                message="AI extraction completed for uploaded receipt.",
-                metadata={
-                    "receipt_id": str(receipt.id),
-                    "report_id": str(report.id),
-                    "vendor": receipt.vendor_name,
-                    "total_amount": str(receipt.total_amount),
-                },
-            )
-        else:
-            create_audit_log(
-                company=profile.company,
-                action="AI_PROCESSING_FAILED",
-                action_by=profile,
-                message=ai_result.get("error", "AI extraction failed."),
-                metadata={
-                    "receipt_id": str(receipt.id),
-                    "report_id": str(report.id),
-                    "error": ai_result.get("error"),
-                },
-            )
-    else:
-        process_receipt_ai_task.delay(str(receipt.id))
-        ai_result = {"success": None, "pending": True}
+    queue_receipt_ai_processing(
+        receipt_id=str(receipt.id),
+        company=profile.company,
+        action_by=profile,
+        report_id=str(report.id),
+    )
+    ai_result = {"success": None, "pending": True}
 
     serializer = ExpenseReceiptSerializer(receipt)
-    message = (
-        "Receipt uploaded and processed successfully."
-        if ai_result.get("success")
-        else "Receipt uploaded. AI processing started."
-        if ai_result.get("pending")
-        else "Receipt uploaded but AI extraction failed."
-    )
+    message = "Receipt uploaded. AI processing started in the background."
 
     return Response(
         {
@@ -388,7 +357,12 @@ def email_ingest_receipt(request):
         status=ExpenseReceipt.STATUS_AI_PROCESSING
     )
 
-    process_receipt_ai_task.delay(str(receipt.id))
+    queue_receipt_ai_processing(
+        receipt_id=str(receipt.id),
+        company=company,
+        action_by=employee,
+        report_id=str(report.id),
+    )
 
     create_audit_log(
         company=company,

@@ -1,4 +1,4 @@
-import type { Receipt } from '@/types'
+import type { ExpenseReport, Receipt } from '@/types'
 
 const RETRYABLE_AI_STATUSES = new Set(['AI_FAILED', 'AI_RETRY_REQUIRED'])
 
@@ -18,7 +18,19 @@ export function isAiExtractionFailed(receipt: Receipt): boolean {
 }
 
 export function isAiExtractionPending(receipt: Receipt): boolean {
-  return receipt.ai_status === 'AI_PENDING' || receipt.ai_status === 'AI_PROCESSING'
+  if (receipt.ai_status === 'AI_PENDING' || receipt.ai_status === 'AI_PROCESSING') {
+    return true
+  }
+
+  return receipt.status === 'AI_PROCESSING' && !receipt.line_items?.length && !isAiExtractionFailed(receipt)
+}
+
+export function countPendingAiReceipts(reports: ExpenseReport[]): number {
+  return reports.reduce(
+    (total, report) =>
+      total + (report.receipts?.filter((receipt) => isAiExtractionPending(receipt)).length ?? 0),
+    0,
+  )
 }
 
 export function canRetryReceiptAi(receipt: Receipt): boolean {

@@ -46,21 +46,68 @@ from tenants.serializers import (
     PolicyCategoryRuleSerializer,
 )
 from expenses.serializers import ApprovalWorkflowSerializer
+from django.utils import timezone
+from tenants.email_utils import send_company_registration_otp
 
 @api_view(["POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
 def create_company_request(request):
 
+    required_fields = [
+        "company_name",
+        "company_domain",
+        "admin_name",
+        "admin_email",
+        "expected_employee_count",
+        "otp",
+    ]
+
+    for field in required_fields:
+        if not request.data.get(field):
+            return Response(
+                {"error": f"{field} is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    admin_email = request.data.get("admin_email", "").lower().strip()
+    otp = request.data.get("otp", "").strip()
+
+    try:
+        company_request = CompanyRegistrationRequest.objects.get(
+            admin_email__iexact=admin_email,
+            otp=otp,
+            is_email_verified=False
+        )
+
+    except CompanyRegistrationRequest.DoesNotExist:
+        return Response(
+            {"error": "Invalid OTP or email does not exist."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if company_request.otp_expires_at < timezone.now():
+        return Response(
+            {"error": "OTP expired. Please request a new OTP."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
     serializer = CompanyRegistrationRequestSerializer(
-        data=request.data
+        company_request,
+        data=request.data,
+        partial=True
     )
 
     if serializer.is_valid():
+        company_request.is_email_verified = True
+        company_request.status = "PENDING"
         serializer.save()
 
         return Response(
-            serializer.data,
+            {
+                "message": "Company registration request submitted successfully.",
+                "data": serializer.data
+            },
             status=status.HTTP_201_CREATED
         )
 
@@ -506,3 +553,131 @@ def platform_company_details(request, company_id):
         )
 
     return Response(response_data)
+
+import random
+from datetime import timedelta
+
+from django.utils import timezone
+from django.core.validators import validate_email
+from django.core.exceptions import ValidationError
+
+from tenants.email_utils import send_company_registration_otp
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def request_company_registration_otp(request):
+
+    admin_email = request.data.get("admin_email", "").lower().strip()
+
+    if not admin_email:
+        return Response(
+            {"error": "admin_email is required."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        validate_email(admin_email)
+    except ValidationError:
+        return Response(
+            {"error": "Email does not exist."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    otp = str(random.randint(100000, 999999))
+
+    company_request, created = CompanyRegistrationRequest.objects.get_or_create(
+        admin_email=admin_email,
+        defaults={
+            "company_name": "PENDING",
+            "company_domain": "pending.com",
+            "admin_name": "PENDING",
+            "expected_employee_count": 1,
+        }
+    )
+
+    company_request.otp = otp
+    company_request.otp_expires_at = timezone.now() + timedelta(minutes=10)
+    company_request.is_email_verified = False
+
+    company_request.save(update_fields=[
+        "otp",
+        "otp_expires_at",
+        "is_email_verified",
+    ])
+
+    result = send_company_registration_otp(
+        email=admin_email,
+        otp=otp,
+    )
+
+    if not result.get("success"):
+        return Response(
+            {
+                "success": False,
+                "error": result.get(
+                    "error",
+                    "Unable to send OTP email."
+                )
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+    return Response({
+        "success": True,
+        "message": "OTP sent successfully."
+    })
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def verify_company_registration_otp(request):
+
+    admin_email = request.data.get("admin_email", "").lower().strip()
+    otp = request.data.get("otp", "").strip()
+
+    if not admin_email:
+        return Response(
+            {"error": "admin_email is required."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not otp:
+        return Response(
+            {"error": "otp is required."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        company_request = CompanyRegistrationRequest.objects.get(
+            admin_email__iexact=admin_email,
+            otp=otp,
+        )
+
+    except CompanyRegistrationRequest.DoesNotExist:
+        return Response(
+            {"error": "Invalid OTP or email does not exist."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if company_request.otp_expires_at and company_request.otp_expires_at < timezone.now():
+        return Response(
+            {"error": "OTP expired. Please request a new OTP."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    company_request.is_email_verified = True
+    company_request.otp = None
+    company_request.otp_expires_at = None
+
+    company_request.save(update_fields=[
+        "is_email_verified",
+        "otp",
+        "otp_expires_at",
+    ])
+
+    return Response({
+        "success": True,
+        "message": "OTP verified successfully."
+    })

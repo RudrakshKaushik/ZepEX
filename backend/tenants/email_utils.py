@@ -4,7 +4,7 @@ from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 
 from tenants.models import CompanySMTPConfig
-
+from django.utils import timezone
 
 def _send_with_connection(
     *,
@@ -143,4 +143,34 @@ def send_employee_invite_email(company, employee, raw_password):
         text_content=text_content,
         html_content=html_content,
         to_emails=[employee.user.email],
+    )
+
+from django.conf import settings
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
+
+def send_company_registration_otp(email, otp):
+
+    html_content = render_to_string(
+        "emails/company_registration_otp.html",
+        {
+            "otp": otp,
+            "year": timezone.now().year,
+        }
+    )
+
+    text_content = strip_tags(html_content)
+
+    return _send_with_connection(
+        subject="Verify your company registration - ZepEx",
+        text_content=text_content,
+        html_content=html_content,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to_emails=[email],
+        cc_emails=None,
+        host=settings.EMAIL_HOST,
+        port=settings.EMAIL_PORT,
+        username=settings.EMAIL_HOST_USER,
+        password=settings.EMAIL_HOST_PASSWORD,
+        use_tls=settings.EMAIL_USE_TLS,
     )

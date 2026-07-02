@@ -354,7 +354,10 @@ def email_ingest_receipt(request):
         employee=employee,
         department=employee.department,
         receipt_file=receipt_file,
-        status=ExpenseReceipt.STATUS_AI_PROCESSING
+        status=ExpenseReceipt.STATUS_AI_PROCESSING,
+        ai_status=ExpenseReceipt.AI_PENDING,
+        ai_error_message=None,
+        ai_retry_count=0,
     )
 
     queue_receipt_ai_processing(
@@ -376,17 +379,19 @@ def email_ingest_receipt(request):
             "email_subject": email_subject,
             "source": ExpenseSubmission.SOURCE_EMAIL,
             "company_role": employee.company_role.name,
+            "ai_status": receipt.ai_status,
         }
     )
 
     create_audit_log(
         company=company,
-        action="AI_PROCESSING_STARTED",
+        action="AI_PROCESSING_QUEUED",
         action_by=employee,
-        message="AI extraction started for email receipt.",
+        message="AI extraction queued for email receipt.",
         metadata={
             "receipt_id": str(receipt.id),
             "report_id": str(report.id),
+            "ai_status": receipt.ai_status,
         }
     )
 
@@ -394,10 +399,13 @@ def email_ingest_receipt(request):
 
     return Response(
         {
-            "message": "Email receipt ingested successfully. AI processing started.",
+            "message": "Email receipt ingested successfully. AI extraction has been queued.",
             "report_id": str(report.id),
             "receipt": serializer.data,
-            "ai_processing": "started"
+            "ai": {
+                "status": receipt.ai_status,
+                "message": "Receipt received. AI extraction has been queued."
+            }
         },
         status=status.HTTP_201_CREATED
     )

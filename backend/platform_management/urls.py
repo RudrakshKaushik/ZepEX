@@ -10,7 +10,9 @@ from .views import (
     deactivate_company,
     activate_company,
     delete_company,
-    platform_company_details
+    platform_company_details,
+    verify_company_registration_otp,
+    request_company_registration_otp,
 )
 
 urlpatterns = [
@@ -62,6 +64,16 @@ path(
     "companies/<uuid:company_id>/details/",
     platform_company_details,
     name="platform-company-details"
+),
+path(
+    "company-registration/verify-otp/",
+    verify_company_registration_otp,
+    name="verify-company-registration-otp"
+),
+path(
+    "company-requests/request-otp/",
+    request_company_registration_otp,
+    name="request-company-registration-otp"
 ),
 
 

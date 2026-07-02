@@ -42,6 +42,23 @@ class CompanyRegistrationRequest(models.Model):
         default="PENDING"
     )
 
+    expected_employee_count = models.PositiveIntegerField()
+
+    otp = models.CharField(
+    max_length=6,
+    blank=True,
+    null=True
+)
+
+    otp_expires_at = models.DateTimeField(
+    blank=True,
+    null=True
+)
+
+    is_email_verified = models.BooleanField(
+    default=False
+)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

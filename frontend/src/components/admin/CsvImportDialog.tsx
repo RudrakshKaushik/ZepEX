@@ -155,6 +155,10 @@ export function CsvImportDialog({
         fireImportConfetti()
         toast.success(`Import complete: ${summary}.`)
         onSuccess?.()
+        window.setTimeout(() => {
+          reset()
+          onOpenChange(false)
+        }, 1200)
       } else {
         setStage('error')
         setErrorMessage('Import completed with errors. Review the details below.')

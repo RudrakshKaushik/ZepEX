@@ -86,6 +86,11 @@ class ExpenseReceiptSerializer(serializers.ModelSerializer):
             # Status
             "status",
 
+            # AI extraction
+            "ai_status",
+            "ai_error_message",
+            "ai_retry_count",
+
             # Policy
             "policy_violation_reason",
             "has_duplicate_violation",
@@ -125,6 +130,10 @@ class ExpenseReceiptSerializer(serializers.ModelSerializer):
             "exchange_rate_provider",
 
             "status",
+
+            "ai_status",
+            "ai_error_message",
+            "ai_retry_count",
 
             "policy_violation_reason",
             "has_duplicate_violation",

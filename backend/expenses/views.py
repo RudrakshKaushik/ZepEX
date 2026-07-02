@@ -28,9 +28,8 @@ from .serializers import ApprovalWorkflowSerializer, ApprovalWorkflowStepSeriali
 from django.utils import timezone
 from .models import ApprovalHistory
 from .serializers import ExpenseReportSerializer
-from django.conf import settings
 from django.utils import timezone
-from .tasks import process_receipt_ai_task
+from .ai_queue import queue_receipt_ai_processing
 from .report_utils import (
     can_approve_report,
     get_or_create_current_month_report,
@@ -134,46 +133,16 @@ def upload_receipt(request):
         }
     )
 
-    if settings.CELERY_TASK_ALWAYS_EAGER:
-        ai_result = process_receipt_ai_task(str(receipt.id))
-        receipt.refresh_from_db()
-        if ai_result.get("success"):
-            create_audit_log(
-                company=profile.company,
-                action="AI_PROCESSING_COMPLETED",
-                action_by=profile,
-                message="AI extraction completed for uploaded receipt.",
-                metadata={
-                    "receipt_id": str(receipt.id),
-                    "report_id": str(report.id),
-                    "vendor": receipt.vendor_name,
-                    "total_amount": str(receipt.total_amount),
-                },
-            )
-        else:
-            create_audit_log(
-                company=profile.company,
-                action="AI_PROCESSING_FAILED",
-                action_by=profile,
-                message=ai_result.get("error", "AI extraction failed."),
-                metadata={
-                    "receipt_id": str(receipt.id),
-                    "report_id": str(report.id),
-                    "error": ai_result.get("error"),
-                },
-            )
-    else:
-        process_receipt_ai_task.delay(str(receipt.id))
-        ai_result = {"success": None, "pending": True}
+    queue_receipt_ai_processing(
+        receipt_id=str(receipt.id),
+        company=profile.company,
+        action_by=profile,
+        report_id=str(report.id),
+    )
+    ai_result = {"success": None, "pending": True}
 
     serializer = ExpenseReceiptSerializer(receipt)
-    message = (
-        "Receipt uploaded and processed successfully."
-        if ai_result.get("success")
-        else "Receipt uploaded. AI processing started."
-        if ai_result.get("pending")
-        else "Receipt uploaded but AI extraction failed."
-    )
+    message = "Receipt uploaded. AI processing started in the background."
 
     return Response(
         {
@@ -184,6 +153,109 @@ def upload_receipt(request):
         },
         status=status.HTTP_201_CREATED
     )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def retry_receipt_ai(request, receipt_id):
+
+    profile = request.user.profile
+
+    try:
+        receipt = ExpenseReceipt.objects.select_related("report").get(
+            id=receipt_id,
+            company=profile.company,
+            employee=profile,
+        )
+    except ExpenseReceipt.DoesNotExist:
+        return Response(
+            {"error": "Receipt not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if receipt.ai_status not in (
+        ExpenseReceipt.AI_FAILED,
+        ExpenseReceipt.AI_RETRY_REQUIRED,
+    ):
+        return Response(
+            {
+                "error": "This receipt is not eligible for AI retry.",
+                "ai_status": receipt.ai_status,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if receipt.report and receipt.report.status != ExpenseReport.STATUS_DRAFT:
+        return Response(
+            {
+                "error": "You can retry AI extraction only before submitting the monthly report."
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    receipt.ai_retry_count += 1
+    receipt.save(update_fields=["ai_retry_count", "updated_at"])
+
+    create_audit_log(
+        company=profile.company,
+        action="AI_PROCESSING_STARTED",
+        action_by=profile,
+        message="AI extraction retry started for receipt.",
+        metadata={
+            "receipt_id": str(receipt.id),
+            "report_id": str(receipt.report_id) if receipt.report_id else None,
+            "ai_retry_count": receipt.ai_retry_count,
+        },
+    )
+
+    ai_result = extract_receipt_with_gemini(receipt)
+    receipt.refresh_from_db()
+
+    if ai_result.get("success"):
+        from .policy_services import validate_receipt_policy
+
+        policy_result = validate_receipt_policy(receipt)
+        ai_result["policy"] = policy_result
+
+        create_audit_log(
+            company=profile.company,
+            action="AI_PROCESSING_COMPLETED",
+            action_by=profile,
+            message="AI extraction retry completed successfully.",
+            metadata={
+                "receipt_id": str(receipt.id),
+                "report_id": str(receipt.report_id) if receipt.report_id else None,
+                "vendor": receipt.vendor_name,
+                "total_amount": str(receipt.total_amount),
+                "ai_retry_count": receipt.ai_retry_count,
+            },
+        )
+    else:
+        create_audit_log(
+            company=profile.company,
+            action="AI_PROCESSING_FAILED",
+            action_by=profile,
+            message=ai_result.get("error", "AI extraction failed."),
+            metadata={
+                "receipt_id": str(receipt.id),
+                "report_id": str(receipt.report_id) if receipt.report_id else None,
+                "error": ai_result.get("error"),
+                "ai_retry_count": receipt.ai_retry_count,
+                "retry_allowed": ai_result.get("retry_allowed"),
+            },
+        )
+
+    serializer = ExpenseReceiptSerializer(receipt)
+
+    return Response(
+        {
+            "message": "AI retry completed.",
+            "receipt": serializer.data,
+            "ai_result": ai_result,
+        },
+        status=status.HTTP_200_OK,
+    )
+
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -288,7 +360,12 @@ def email_ingest_receipt(request):
         ai_retry_count=0,
     )
 
-    process_receipt_ai_task.delay(str(receipt.id))
+    queue_receipt_ai_processing(
+        receipt_id=str(receipt.id),
+        company=company,
+        action_by=employee,
+        report_id=str(report.id),
+    )
 
     create_audit_log(
         company=company,

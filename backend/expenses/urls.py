@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     upload_receipt,
+    retry_receipt_ai,
     email_ingest_receipt,
     submit_current_month_report,
     
@@ -31,6 +32,11 @@ from .views import (
 
 urlpatterns = [
     path("upload/", upload_receipt, name="upload-receipt"),
+    path(
+        "receipts/<uuid:receipt_id>/retry-ai/",
+        retry_receipt_ai,
+        name="retry-receipt-ai",
+    ),
     path("email-ingest/", email_ingest_receipt, name="email-ingest-receipt"),
     path("reports/submit/", submit_current_month_report, name="submit-current-month-report"),
     

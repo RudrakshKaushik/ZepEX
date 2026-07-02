@@ -102,7 +102,7 @@ export function LandingComparison() {
     <section className="bg-white py-20">
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
         <SectionIntro
-          badge="View The Dashboards"
+          badge="Comparison"
           badgeEndIcon="⊞"
           title="Approve Only When Needed"
           description="Every reimbursement is automatically checked against your company policies. If everything is correct, it goes directly to the payment team. Only reimbursements with policy violations are sent for approval helping employees get reimbursed faster and saving valuable time for finance teams."

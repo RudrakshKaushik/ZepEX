@@ -1,5 +1,5 @@
 import { AlertTriangle, FileText, RefreshCw, Send, Trash2, Upload, X } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import {
   deleteLineItem,
@@ -38,7 +38,7 @@ import { TableShimmer } from '@/components/ui/shimmer'
 import type { ExpenseReport } from '@/types'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { formatReceiptAmountDisplay, receiptDisplayCurrency, receiptExchangeRateHint } from '@/lib/receiptDisplay'
-import { canRetryReceiptAi, receiptAiStatusLabel } from '@/lib/receiptAi'
+import { canRetryReceiptAi, countPendingAiReceipts, isAiExtractionFailed, isAiExtractionPending, receiptAiStatusLabel, receiptDisplayTitle } from '@/lib/receiptAi'
 import { fireImportConfetti } from '@/lib/confetti'
 import { normalizeCurrentMonthReport } from '@/lib/expenseReport'
 import {
@@ -86,9 +86,11 @@ function MyExpenseExpandedPanel({
             <div key={receipt.id} className="rounded-xl border bg-white p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <p className="font-medium">{receipt.vendor_name || 'Processing...'}</p>
+                  <p className="font-medium">{receiptDisplayTitle(receipt)}</p>
                   <p className="text-sm text-muted-foreground">
-                    {formatReceiptAmountDisplay(receipt)} · {formatDate(receipt.invoice_date)}
+                    {isAiExtractionFailed(receipt)
+                      ? 'Amount pending extraction'
+                      : `${formatReceiptAmountDisplay(receipt)} · ${formatDate(receipt.invoice_date)}`}
                   </p>
                   {receiptExchangeRateHint(receipt) && (
                     <p className="text-xs text-muted-foreground">
@@ -118,8 +120,14 @@ function MyExpenseExpandedPanel({
               </div>
               {receipt.ai_status && receipt.ai_status !== 'AI_COMPLETED' && (
                 <p className="mt-2 text-xs text-amber-700">
-                  AI: {receiptAiStatusLabel(receipt.ai_status)}
-                  {receipt.ai_error_message ? ` — ${receipt.ai_error_message}` : ''}
+                  {isAiExtractionPending(receipt) ? (
+                    <>AI extraction in progress…</>
+                  ) : (
+                    <>
+                      AI: {receiptAiStatusLabel(receipt.ai_status)}
+                      {receipt.ai_error_message ? ` — ${receipt.ai_error_message}` : ''}
+                    </>
+                  )}
                 </p>
               )}
               {receipt.has_any_violation && receipt.policy_violation_reason && (
@@ -169,7 +177,7 @@ export function ExpensesPage() {
 
   const [reports, setReports] = useState<ExpenseReport[]>([])
   const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
+  const [backgroundUploads, setBackgroundUploads] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [retryingReceiptId, setRetryingReceiptId] = useState<string | null>(null)
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -178,8 +186,11 @@ export function ExpensesPage() {
   const [draftFilters, setDraftFilters] = useState<EmployeeExpenseFilters>({})
   const [appliedFilters, setAppliedFilters] = useState<EmployeeExpenseFilters>({})
   const fileRef = useRef<HTMLInputElement>(null)
+  const hadPendingAiRef = useRef(false)
 
   const filtersActive = hasEmployeeExpenseFilters(appliedFilters)
+  const pendingAiCount = useMemo(() => countPendingAiReceipts(reports), [reports])
+  const isProcessingInBackground = backgroundUploads > 0 || pendingAiCount > 0
 
   const resetUploadModal = () => {
     setSelectedFiles([])
@@ -197,8 +208,8 @@ export function ExpensesPage() {
     if (fileRef.current) fileRef.current.value = ''
   }
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) setLoading(true)
     try {
       if (filtersActive) {
         const { data } = await getMyUploadedExpenses(toEmployeeExpenseApiParams(appliedFilters))
@@ -226,7 +237,7 @@ export function ExpensesPage() {
     } catch {
       setReports([])
     } finally {
-      setLoading(false)
+      if (!options?.silent) setLoading(false)
     }
   }, [appliedFilters, filtersActive, user?.email])
 
@@ -234,50 +245,76 @@ export function ExpensesPage() {
     load()
   }, [load])
 
-  const handleConfirmUpload = async () => {
-    if (!selectedFiles.length) return
-    setUploading(true)
+  useEffect(() => {
+    if (pendingAiCount > 0) {
+      hadPendingAiRef.current = true
+      return
+    }
+
+    if (hadPendingAiRef.current) {
+      hadPendingAiRef.current = false
+      toast.success('AI extraction finished for your receipt(s).')
+    }
+  }, [pendingAiCount])
+
+  useEffect(() => {
+    if (pendingAiCount === 0) return
+
+    const intervalId = window.setInterval(() => {
+      void load({ silent: true })
+    }, 3000)
+
+    return () => window.clearInterval(intervalId)
+  }, [pendingAiCount, load])
+
+  const runBackgroundUploads = async (files: File[]) => {
+    setBackgroundUploads((count) => count + files.length)
+
+    const errors: string[] = []
+    const violationMessages: string[] = []
+    let uploadedCount = 0
+    const conversionMessages: string[] = []
+
     try {
-      const errors: string[] = []
-      const violationMessages: string[] = []
-      let successCount = 0
-      let hadPendingAi = false
-      const conversionMessages: string[] = []
-      for (const file of selectedFiles) {
-        const { data } = await uploadReceipt(file)
-        const aiFailed = data.ai_result?.success === false && !data.ai_result?.pending
-        if (data.ai_result?.pending) {
-          hadPendingAi = true
-        }
-        if (aiFailed) {
-          errors.push(data.ai_result?.error || data.message)
-        } else {
-          successCount += 1
-        }
-        const conversion = data.ai_result?.currency_conversion
-        const original = data.receipt.original_amount ?? data.receipt.total_amount
-        const originalCurrency = data.receipt.original_currency ?? data.receipt.currency
-        const companyAmount = data.receipt.company_amount ?? conversion?.company_amount
-        const companyCurrency = data.receipt.company_currency ?? conversion?.company_currency
-        if (companyAmount != null && companyCurrency && companyCurrency !== originalCurrency) {
-          conversionMessages.push(
-            `${formatCurrency(original, originalCurrency)} → ${formatCurrency(String(companyAmount), companyCurrency)}`,
-          )
-        } else if (conversion?.success && conversion.company_amount != null && conversion.company_currency) {
-          conversionMessages.push(
-            `${formatCurrency(original, originalCurrency)} → ${formatCurrency(String(conversion.company_amount), conversion.company_currency)}`,
-          )
-        }
-        const violationReason =
-          data.ai_result?.violation_reason ||
-          data.receipt?.policy_violation_reason ||
-          data.ai_result?.policy?.violations?.join('; ')
-        if (data.receipt?.has_any_violation || data.ai_result?.has_any_violation) {
-          violationMessages.push(violationReason || 'Policy violation detected on uploaded receipt.')
+      for (const file of files) {
+        try {
+          const { data } = await uploadReceipt(file)
+          uploadedCount += 1
+
+          const aiFailed = data.ai_result?.success === false && !data.ai_result?.pending
+          if (aiFailed) {
+            errors.push(data.ai_result?.error || data.message)
+          }
+
+          const conversion = data.ai_result?.currency_conversion
+          const original = data.receipt.original_amount ?? data.receipt.total_amount
+          const originalCurrency = data.receipt.original_currency ?? data.receipt.currency
+          const companyAmount = data.receipt.company_amount ?? conversion?.company_amount
+          const companyCurrency = data.receipt.company_currency ?? conversion?.company_currency
+          if (companyAmount != null && companyCurrency && companyCurrency !== originalCurrency) {
+            conversionMessages.push(
+              `${formatCurrency(original, originalCurrency)} → ${formatCurrency(String(companyAmount), companyCurrency)}`,
+            )
+          } else if (conversion?.success && conversion.company_amount != null && conversion.company_currency) {
+            conversionMessages.push(
+              `${formatCurrency(original, originalCurrency)} → ${formatCurrency(String(conversion.company_amount), conversion.company_currency)}`,
+            )
+          }
+
+          const violationReason =
+            data.ai_result?.violation_reason ||
+            data.receipt?.policy_violation_reason ||
+            data.ai_result?.policy?.violations?.join('; ')
+          if (data.receipt?.has_any_violation || data.ai_result?.has_any_violation) {
+            violationMessages.push(violationReason || 'Policy violation detected on uploaded receipt.')
+          }
+        } catch (err) {
+          errors.push(formatUploadError(getApiErrorMessage(err)))
         }
       }
+
       if (errors.length) {
-        toast.error(formatUploadError(errors[0]))
+        toast.error(errors[0])
       }
       if (violationMessages.length) {
         toast(violationMessages[0])
@@ -285,30 +322,27 @@ export function ExpensesPage() {
       if (conversionMessages.length) {
         toast(`Converted: ${conversionMessages[0]}`)
       }
-      if (successCount && !errors.length) {
+      if (uploadedCount > 0) {
         toast.success(
-          violationMessages.length
-            ? 'Receipt(s) uploaded with policy violations flagged.'
-            : 'Receipt(s) uploaded and processed by AI.',
+          uploadedCount === 1
+            ? 'Receipt uploaded. AI is extracting details in the background.'
+            : `${uploadedCount} receipts uploaded. AI is extracting details in the background.`,
         )
-        setUploadOpen(false)
-        resetUploadModal()
-      } else if (successCount && errors.length) {
-        toast.success(`${successCount} receipt(s) uploaded. Some AI extractions failed.`)
-        setUploadOpen(false)
-        resetUploadModal()
       }
-      await load()
-      if (hadPendingAi) {
-        window.setTimeout(() => {
-          void load()
-        }, 2500)
-      }
-    } catch (err) {
-      toast.error(formatUploadError(getApiErrorMessage(err)))
+
+      await load({ silent: true })
     } finally {
-      setUploading(false)
+      setBackgroundUploads((count) => Math.max(0, count - files.length))
     }
+  }
+
+  const handleConfirmUpload = () => {
+    if (!selectedFiles.length) return
+
+    const files = [...selectedFiles]
+    setUploadOpen(false)
+    resetUploadModal()
+    void runBackgroundUploads(files)
   }
 
   const handleSubmit = async () => {
@@ -355,7 +389,12 @@ export function ExpensesPage() {
     try {
       const { data } = await retryReceiptAi(receiptId)
       if (data.ai_result?.success === false) {
-        toast.error(data.ai_result.error || 'AI extraction failed. Try a clearer receipt.')
+        const message = data.ai_result.error || 'AI extraction failed. Try a clearer receipt.'
+        if (data.ai_result.retry_allowed) {
+          toast.error(message)
+        } else {
+          toast.error(`${message} Upload a clearer receipt to try again.`)
+        }
       } else {
         toast.success(data.message || 'AI extraction completed.')
       }
@@ -411,10 +450,17 @@ export function ExpensesPage() {
           setDraftFilters({})
           setAppliedFilters({})
         }}
-        disabled={uploading || submitting}
+        disabled={submitting}
       />
 
       <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
+        {isProcessingInBackground && (
+          <p className="text-sm text-muted-foreground">
+            {backgroundUploads > 0
+              ? `Uploading ${backgroundUploads} receipt${backgroundUploads === 1 ? '' : 's'}…`
+              : `Processing ${pendingAiCount} receipt${pendingAiCount === 1 ? '' : 's'} with AI…`}
+          </p>
+        )}
         {canSubmitDraft && (
           <Button variant="success" disabled={submitting} onClick={handleSubmit}>
             <Send className="h-4 w-4" />
@@ -554,18 +600,15 @@ export function ExpensesPage() {
               type="button"
               variant="outline"
               onClick={() => setUploadOpen(false)}
-              disabled={uploading}
             >
               Cancel
             </Button>
             <Button
               type="button"
-              disabled={uploading || selectedFiles.length === 0}
+              disabled={selectedFiles.length === 0}
               onClick={handleConfirmUpload}
             >
-              {uploading
-                ? 'Uploading...'
-                : `Upload${selectedFiles.length > 1 ? ` (${selectedFiles.length})` : ''}`}
+              {`Upload${selectedFiles.length > 1 ? ` (${selectedFiles.length})` : ''}`}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -12,7 +12,11 @@ import {
   receiptDisplayCurrency,
   receiptExchangeRateHint,
 } from '@/lib/receiptDisplay'
-import { receiptAiStatusLabel } from '@/lib/receiptAi'
+import {
+  isAiExtractionFailed,
+  receiptAiStatusLabel,
+  receiptDisplayTitle,
+} from '@/lib/receiptAi'
 
 interface ReportDetailProps {
   report: ExpenseReport
@@ -121,7 +125,7 @@ export function ReportDetail({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <FileText className="h-4 w-4 text-primary" />
-                  {receipt.vendor_name || 'Unknown vendor'}
+                  {receiptDisplayTitle(receipt)}
                 </CardTitle>
                 <div className="flex flex-wrap items-center gap-2">
                   {receipt.has_any_violation && (
@@ -136,8 +140,14 @@ export function ReportDetail({
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex flex-wrap gap-4 text-sm">
-                <span>{formatReceiptAmountDisplay(receipt)}</span>
-                <span className="text-muted-foreground">{formatDate(receipt.invoice_date)}</span>
+                {isAiExtractionFailed(receipt) ? (
+                  <span className="text-muted-foreground">Amount pending extraction</span>
+                ) : (
+                  <span>{formatReceiptAmountDisplay(receipt)}</span>
+                )}
+                {!isAiExtractionFailed(receipt) && (
+                  <span className="text-muted-foreground">{formatDate(receipt.invoice_date)}</span>
+                )}
               </div>
               {receiptExchangeRateHint(receipt) && (
                 <p className="text-xs text-muted-foreground">{receiptExchangeRateHint(receipt)}</p>
@@ -196,6 +206,11 @@ export function ReportDetail({
                     </tbody>
                   </table>
                 </div>
+              ) : isAiExtractionFailed(receipt) ? (
+                <p className="text-sm text-amber-700">
+                  {receipt.ai_error_message ||
+                    'Could not extract expense details. Retry AI or upload a clearer receipt.'}
+                </p>
               ) : (
                 <p className="text-sm text-muted-foreground">No line items extracted yet.</p>
               )}

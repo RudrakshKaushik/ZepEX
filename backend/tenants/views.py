@@ -263,11 +263,35 @@ def create_employee(request):
         invite_email_sent_at=None,
     )
 
+    email_sent = False
+    email_error = None
+
+    try:
+        result = send_employee_invite_email(
+            company=company,
+            employee=profile,
+            raw_password=raw_password,
+        )
+
+        if result.get("success"):
+            email_sent = True
+            profile.invite_email_sent = True
+            profile.invite_email_sent_at = timezone.now()
+            profile.save(update_fields=[
+                "invite_email_sent",
+                "invite_email_sent_at",
+            ])
+        else:
+            email_error = result.get("error", "Invite email failed.")
+
+    except Exception as e:
+        email_error = str(e)
+
     create_audit_log(
         company=company,
         action="USER_CREATED",
         action_by=request.user.profile,
-        message=f"Created user {profile.user.email}. Invite email pending.",
+        message=f"Created user {profile.user.email}.",
         metadata={
             "created_user": profile.user.email,
             "role": profile.role,
@@ -279,17 +303,29 @@ def create_employee(request):
                 profile.department.name
                 if profile.department else None
             ),
-            "invite_email_sent": False,
-            "invite_status": "PENDING",
+            "invite_email_sent": email_sent,
+            "invite_status": (
+                "SENT"
+                if email_sent else "FAILED"
+            ),
+            "email_error": email_error,
             "force_password_change": True,
         }
     )
 
     return Response(
         {
-            "message": "Employee created successfully. Invite email is pending.",
-            "invite_email_sent": False,
-            "invite_status": "PENDING",
+            "message": (
+                "Employee created successfully. Invite email sent successfully."
+                if email_sent
+                else "Employee created successfully, but invite email failed."
+            ),
+            "invite_email_sent": email_sent,
+            "invite_status": (
+                "SENT"
+                if email_sent else "FAILED"
+            ),
+            "email_error": email_error,
             "employee": UserProfileSerializer(
                 profile,
                 context={"request": request}

@@ -23,4 +23,6 @@ class CompanyRegistrationRequestSerializer(serializers.ModelSerializer):
             "id",
             "status",
             "created_at",
+            "otp",
+            "is_email_verified",
         ]

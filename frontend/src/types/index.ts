@@ -94,7 +94,17 @@ export interface CompanyRegistrationRequest {
   admin_name: string
   admin_email: string
   status: 'PENDING' | 'APPROVED' | 'REJECTED'
+  expected_employee_count?: number
+  is_email_verified?: boolean
   created_at: string
+}
+
+export interface CreateEmployeeResponse {
+  message: string
+  invite_email_sent: boolean
+  invite_status: 'SENT' | 'FAILED'
+  email_error?: string | null
+  employee: EmployeeRecord
 }
 
 export interface DepartmentRecord {

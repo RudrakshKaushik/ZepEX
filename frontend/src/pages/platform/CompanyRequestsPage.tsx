@@ -63,6 +63,12 @@ export function CompanyRequestsPage() {
   }
 
   const pendingCount = requests.filter((request) => request.status === 'PENDING').length
+  const verifiedPendingCount = requests.filter(
+    (request) =>
+      request.status === 'PENDING' &&
+      request.is_email_verified &&
+      request.company_name !== 'PENDING',
+  ).length
 
   return (
     <DashboardLayout
@@ -86,7 +92,11 @@ export function CompanyRequestsPage() {
               Registration Requests ({requests.length})
             </h2>
             <p className="mt-1 text-sm text-gray-500">
-              {pendingCount} request(s) awaiting your review.
+              {verifiedPendingCount} request(s) ready for review
+              {pendingCount > verifiedPendingCount
+                ? ` · ${pendingCount - verifiedPendingCount} awaiting OTP verification`
+                : ''}
+              .
             </p>
           </div>
 

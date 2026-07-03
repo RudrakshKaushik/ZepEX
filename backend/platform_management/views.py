@@ -60,7 +60,6 @@ def create_company_request(request):
         "admin_name",
         "admin_email",
         "expected_employee_count",
-        "otp",
     ]
 
     for field in required_fields:
@@ -76,44 +75,67 @@ def create_company_request(request):
     try:
         company_request = CompanyRegistrationRequest.objects.get(
             admin_email__iexact=admin_email,
-            otp=otp,
-            is_email_verified=False
         )
-
     except CompanyRegistrationRequest.DoesNotExist:
         return Response(
-            {"error": "Invalid OTP or email does not exist."},
-            status=status.HTTP_400_BAD_REQUEST
+            {"error": "Please request an OTP first."},
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
-    if company_request.otp_expires_at < timezone.now():
+    if company_request.status == "APPROVED":
         return Response(
-            {"error": "OTP expired. Please request a new OTP."},
-            status=status.HTTP_400_BAD_REQUEST
+            {"error": "This email is already registered and approved."},
+            status=status.HTTP_400_BAD_REQUEST,
         )
+
+    if not company_request.is_email_verified:
+        if not otp:
+            return Response(
+                {"error": "otp is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if company_request.otp != otp:
+            return Response(
+                {"error": "Invalid OTP or email does not exist."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if (
+            company_request.otp_expires_at
+            and company_request.otp_expires_at < timezone.now()
+        ):
+            return Response(
+                {"error": "OTP expired. Please request a new OTP."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        company_request.is_email_verified = True
 
     serializer = CompanyRegistrationRequestSerializer(
         company_request,
         data=request.data,
-        partial=True
+        partial=True,
     )
 
     if serializer.is_valid():
         company_request.is_email_verified = True
         company_request.status = "PENDING"
+        company_request.otp = None
+        company_request.otp_expires_at = None
         serializer.save()
 
         return Response(
             {
                 "message": "Company registration request submitted successfully.",
-                "data": serializer.data
+                "data": serializer.data,
             },
-            status=status.HTTP_201_CREATED
+            status=status.HTTP_201_CREATED,
         )
 
     return Response(
         serializer.errors,
-        status=status.HTTP_400_BAD_REQUEST
+        status=status.HTTP_400_BAD_REQUEST,
     )
 
 @api_view(["GET"])
@@ -123,7 +145,10 @@ def create_company_request(request):
 ])
 def list_company_requests(request):
 
-    requests_data = CompanyRegistrationRequest.objects.all().order_by(
+    requests_data = CompanyRegistrationRequest.objects.exclude(
+        company_name="PENDING",
+        company_domain="pending.com",
+    ).order_by(
         "-created_at"
     )
 
@@ -155,6 +180,18 @@ def approve_company_request(request, request_id):
         return Response(
             {"error": "Request already processed"},
             status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not company_request.is_email_verified:
+        return Response(
+            {"error": "Admin email is not verified yet. OTP verification is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if company_request.company_name == "PENDING":
+        return Response(
+            {"error": "Registration details are incomplete. Awaiting full submission."},
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
     temp_password = "Admin@123"
@@ -570,11 +607,43 @@ from tenants.email_utils import send_company_registration_otp
 def request_company_registration_otp(request):
 
     admin_email = request.data.get("admin_email", "").lower().strip()
+    company_name = request.data.get("company_name", "").strip()
+    company_domain = request.data.get("company_domain", "").strip().lower()
+    admin_name = request.data.get("admin_name", "").strip()
+    expected_employee_count = request.data.get("expected_employee_count")
 
     if not admin_email:
         return Response(
             {"error": "admin_email is required."},
             status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not company_name:
+        return Response(
+            {"error": "company_name is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not company_domain:
+        return Response(
+            {"error": "company_domain is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not admin_name:
+        return Response(
+            {"error": "admin_name is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        expected_employee_count = int(expected_employee_count)
+        if expected_employee_count < 1:
+            raise ValueError
+    except (TypeError, ValueError):
+        return Response(
+            {"error": "expected_employee_count must be a positive number."},
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
     try:
@@ -585,27 +654,45 @@ def request_company_registration_otp(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    if CompanyRegistrationRequest.objects.filter(
+        company_domain__iexact=company_domain,
+    ).exclude(
+        admin_email__iexact=admin_email,
+    ).exists():
+        return Response(
+            {"error": "This company domain is already registered or pending approval."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     otp = str(random.randint(100000, 999999))
 
     company_request, created = CompanyRegistrationRequest.objects.get_or_create(
         admin_email=admin_email,
         defaults={
-            "company_name": "PENDING",
-            "company_domain": "pending.com",
-            "admin_name": "PENDING",
-            "expected_employee_count": 1,
+            "company_name": company_name,
+            "company_domain": company_domain,
+            "admin_name": admin_name,
+            "expected_employee_count": expected_employee_count,
         }
     )
+
+    if not created:
+        if company_request.status == "APPROVED":
+            return Response(
+                {"error": "This email is already registered and approved."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        company_request.company_name = company_name
+        company_request.company_domain = company_domain
+        company_request.admin_name = admin_name
+        company_request.expected_employee_count = expected_employee_count
 
     company_request.otp = otp
     company_request.otp_expires_at = timezone.now() + timedelta(minutes=10)
     company_request.is_email_verified = False
 
-    company_request.save(update_fields=[
-        "otp",
-        "otp_expires_at",
-        "is_email_verified",
-    ])
+    company_request.save()
 
     result = send_company_registration_otp(
         email=admin_email,

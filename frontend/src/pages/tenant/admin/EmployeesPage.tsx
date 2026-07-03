@@ -211,18 +211,26 @@ export function EmployeesPage() {
     setSaving(true)
     setError('')
     try {
-      await createEmployee({
+      const { data } = await createEmployee({
         first_name: form.first_name,
         last_name: form.last_name,
         email: form.email,
-        password: form.password,
+        password: form.password.trim() || undefined,
         role: systemRole,
         department_id: isCompanyAdmin ? undefined : form.department_id || undefined,
         company_role_id: isCompanyAdmin ? undefined : parseInt(form.company_role_id, 10),
       })
       resetForm()
       setCreateOpen(false)
-      toast.success('Employee created successfully.')
+      if (data.invite_email_sent) {
+        toast.success(data.message || 'Employee created and invite email sent.')
+      } else {
+        toast.error(
+          data.email_error ||
+            data.message ||
+            'Employee created, but the invite email could not be sent.',
+        )
+      }
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -613,8 +621,10 @@ export function EmployeesPage() {
               <PasswordInput
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
-                required
               />
+              <p className="text-xs text-muted-foreground">
+                Leave blank to auto-generate a password and send it in the invite email.
+              </p>
             </div>
             <div className="space-y-2">
               <Label>Role</Label>

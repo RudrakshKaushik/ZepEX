@@ -1,7 +1,7 @@
 import { CheckCircle2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { registerCompany } from '@/api'
+import { registerCompany, requestCompanyRegistrationOtp } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
 import registerImg from '@/assets/register_img.png'
 import { AuthSplitLayout } from '@/components/layout/AuthSplitLayout'
@@ -10,24 +10,97 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import logo from '@/assets/logo.png'
+import { toast } from '@/lib/toast'
+
+type Step = 'details' | 'otp'
 
 export function RegisterPage() {
+  const [step, setStep] = useState<Step>('details')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [otp, setOtp] = useState('')
   const [form, setForm] = useState({
     company_name: '',
     company_domain: '',
     admin_name: '',
     admin_email: '',
+    expected_employee_count: '',
   })
 
-  const handleSubmit = async (e: FormEvent) => {
+  const buildOtpPayload = () => {
+    const expectedCount = Number(form.expected_employee_count)
+    return {
+      company_name: form.company_name.trim(),
+      company_domain: form.company_domain.trim().toLowerCase(),
+      admin_name: form.admin_name.trim(),
+      admin_email: form.admin_email.trim().toLowerCase(),
+      expected_employee_count: expectedCount,
+    }
+  }
+
+  const handleSendOtp = async (e: FormEvent) => {
     e.preventDefault()
+    if (!form.admin_email.trim()) {
+      setError('Admin email is required to send an OTP.')
+      return
+    }
+    const expectedCount = Number(form.expected_employee_count)
+    if (!Number.isFinite(expectedCount) || expectedCount < 1) {
+      setError('Expected employee count must be at least 1.')
+      return
+    }
     setLoading(true)
     setError('')
     try {
-      await registerCompany(form)
+      const { data } = await requestCompanyRegistrationOtp(buildOtpPayload())
+      toast.success(data.message || 'OTP sent successfully.')
+      setStep('otp')
+      setOtp('')
+    } catch (err) {
+      setError(getApiErrorMessage(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleResendOtp = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const { data } = await requestCompanyRegistrationOtp(buildOtpPayload())
+      toast.success(data.message || 'OTP sent successfully.')
+      setOtp('')
+    } catch (err) {
+      setError(getApiErrorMessage(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (otp.trim().length !== 6) {
+      setError('Enter the 6-digit OTP from your email.')
+      return
+    }
+    const expectedCount = Number(form.expected_employee_count)
+    if (!Number.isFinite(expectedCount) || expectedCount < 1) {
+      setError('Expected employee count must be at least 1.')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+    try {
+      await registerCompany({
+        company_name: form.company_name.trim(),
+        company_domain: form.company_domain.trim(),
+        admin_name: form.admin_name.trim(),
+        admin_email: form.admin_email.trim().toLowerCase(),
+        expected_employee_count: expectedCount,
+        otp: otp.trim(),
+      })
       setSuccess(true)
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -69,59 +142,119 @@ export function RegisterPage() {
           </div>
           <CardTitle>Register your company</CardTitle>
           <CardDescription>
-            Submit a registration request. Our team will review and approve your account.
+            {step === 'details'
+              ? 'Submit your company details. We will email a verification OTP to the admin address.'
+              : `Enter the OTP sent to ${form.admin_email} to complete registration.`}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="company_name">Company name</Label>
-                <Input
-                  id="company_name"
-                  required
-                  value={form.company_name}
-                  onChange={(e) => setForm({ ...form, company_name: e.target.value })}
-                  placeholder="ZepEX Technologies"
-                />
+          {step === 'details' ? (
+            <form onSubmit={handleSendOtp} className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="company_name">Company name</Label>
+                  <Input
+                    id="company_name"
+                    required
+                    value={form.company_name}
+                    onChange={(e) => setForm({ ...form, company_name: e.target.value })}
+                    placeholder="ZepEX Technologies"
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="company_domain">Company domain</Label>
+                  <Input
+                    id="company_domain"
+                    required
+                    value={form.company_domain}
+                    onChange={(e) => setForm({ ...form, company_domain: e.target.value })}
+                    placeholder="zepex.com"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="admin_name">Admin name</Label>
+                  <Input
+                    id="admin_name"
+                    required
+                    value={form.admin_name}
+                    onChange={(e) => setForm({ ...form, admin_name: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="admin_email">Admin email</Label>
+                  <Input
+                    id="admin_email"
+                    type="email"
+                    required
+                    value={form.admin_email}
+                    onChange={(e) => setForm({ ...form, admin_email: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="expected_employee_count">Expected employee count</Label>
+                  <Input
+                    id="expected_employee_count"
+                    type="number"
+                    min={1}
+                    required
+                    value={form.expected_employee_count}
+                    onChange={(e) =>
+                      setForm({ ...form, expected_employee_count: e.target.value })
+                    }
+                    placeholder="25"
+                  />
+                </div>
               </div>
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="company_domain">Company domain</Label>
-                <Input
-                  id="company_domain"
-                  required
-                  value={form.company_domain}
-                  onChange={(e) => setForm({ ...form, company_domain: e.target.value })}
-                  placeholder="zepEX.com"
-                />
-              </div>
+              {error && (
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+              )}
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? 'Sending OTP...' : 'Send verification OTP'}
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="admin_name">Admin name</Label>
+                <Label htmlFor="otp">Verification OTP</Label>
                 <Input
-                  id="admin_name"
+                  id="otp"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
                   required
-                  value={form.admin_name}
-                  onChange={(e) => setForm({ ...form, admin_name: e.target.value })}
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="6-digit code"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="admin_email">Admin email</Label>
-                <Input
-                  id="admin_email"
-                  type="email"
-                  required
-                  value={form.admin_email}
-                  onChange={(e) => setForm({ ...form, admin_email: e.target.value })}
-                />
+              {error && (
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+              )}
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? 'Submitting...' : 'Submit registration'}
+              </Button>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <button
+                  type="button"
+                  className="font-medium text-primary hover:underline"
+                  onClick={() => {
+                    setStep('details')
+                    setError('')
+                  }}
+                >
+                  Edit details
+                </button>
+                <button
+                  type="button"
+                  className="font-medium text-primary hover:underline disabled:opacity-50"
+                  disabled={loading}
+                  onClick={handleResendOtp}
+                >
+                  Resend OTP
+                </button>
               </div>
-            </div>
-            {error && (
-              <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-            )}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Submitting...' : 'Submit registration'}
-            </Button>
-          </form>
+            </form>
+          )}
           <p className="mt-6 text-center text-sm text-muted-foreground">
             Already have an account?{' '}
             <Link to="/login" className="font-medium text-primary hover:underline">

@@ -11,6 +11,7 @@ import type {
   DepartmentRecord,
   DuplicateReceiptsResponse,
   EmployeeRecord,
+  CreateEmployeeResponse,
   ExpenseReport,
   LoginResponse,
   MarkPaidReportResponse,
@@ -55,12 +56,35 @@ export const editProfile = (data: FormData) =>
   })
 
 // Platform
+export const requestCompanyRegistrationOtp = (payload: {
+  admin_email: string
+  company_name: string
+  company_domain: string
+  admin_name: string
+  expected_employee_count: number
+}) =>
+  api.post<{ success: boolean; message: string }>(
+    '/platform/company-requests/request-otp/',
+    payload,
+  )
+
+export const verifyCompanyRegistrationOtp = (admin_email: string, otp: string) =>
+  api.post<{ success: boolean; message: string }>(
+    '/platform/company-registration/verify-otp/',
+    { admin_email, otp },
+  )
+
 export const registerCompany = (data: {
   company_name: string
   company_domain: string
   admin_name: string
   admin_email: string
-}) => api.post<CompanyRegistrationRequest>('/platform/register-company/', data)
+  expected_employee_count: number
+  otp?: string
+}) => api.post<{ message: string; data: CompanyRegistrationRequest }>(
+  '/platform/register-company/',
+  data,
+)
 
 export const listCompanyRequests = () =>
   api.get<CompanyRegistrationRequest[]>('/platform/requests/')
@@ -96,11 +120,11 @@ export const createEmployee = (data: {
   first_name: string
   last_name: string
   email: string
-  password: string
+  password?: string
   role: string
   department_id?: string
   company_role_id?: number
-}) => api.post('/tenants/employees/', data)
+}) => api.post<CreateEmployeeResponse>('/tenants/employees/', data)
 
 export const listEmployees = (params?: {
   page?: number

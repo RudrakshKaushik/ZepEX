@@ -1,6 +1,12 @@
 import { Calendar, User } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import type { CompanyRegistrationRequest } from '@/types'
 import { cn } from '@/lib/utils'
 
@@ -45,15 +51,28 @@ export function CompanyRequestCard({
   onReject,
 }: CompanyRequestCardProps) {
   const isPending = request.status === 'PENDING'
+  const emailVerified = request.is_email_verified === true
+  const canApprove = isPending && emailVerified && request.company_name !== 'PENDING'
   const busy = actionId === request.id
+  const approveTooltip =
+    isPending && !canApprove
+      ? !emailVerified
+        ? 'Email not verified. Approve is available after the admin verifies their email.'
+        : 'Registration details are incomplete.'
+      : undefined
 
   return (
     <article className="rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 flex-1">
-          <Badge variant={requestStatusVariant[request.status]}>
-            {requestStatusLabel[request.status]}
-          </Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={requestStatusVariant[request.status]}>
+              {requestStatusLabel[request.status]}
+            </Badge>
+            <Badge variant={emailVerified ? 'success' : 'destructive'}>
+              {emailVerified ? 'Email verified' : 'Email not verified'}
+            </Badge>
+          </div>
           <h3 className="mt-3 text-xl font-bold text-gray-900">{request.company_name}</h3>
           <p className="mt-1 text-sm text-gray-500">{request.admin_email}</p>
           <p className="mt-1 text-sm text-gray-500">{request.company_domain}</p>
@@ -75,17 +94,43 @@ export function CompanyRequestCard({
 
           {isPending && (
             <div className="flex flex-wrap gap-3 lg:justify-end">
-              <Button
-                type="button"
-                variant="secondary"
-                className={cn(
-                  'min-w-[7.5rem] rounded-lg bg-[#E8EAE9] text-gray-900 hover:bg-gray-200',
-                )}
-                disabled={busy}
-                onClick={() => onApprove(request.id)}
-              >
-                Approve
-              </Button>
+              {approveTooltip ? (
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex cursor-not-allowed">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          aria-disabled
+                          className={cn(
+                            'min-w-[7.5rem] rounded-lg bg-[#E8EAE9] text-gray-900 opacity-50 hover:bg-[#E8EAE9]',
+                            'cursor-not-allowed',
+                          )}
+                          onClick={(event) => event.preventDefault()}
+                        >
+                          Approve
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-xs text-center">
+                      {approveTooltip}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ) : (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className={cn(
+                    'min-w-[7.5rem] rounded-lg bg-[#E8EAE9] text-gray-900 hover:bg-gray-200',
+                  )}
+                  disabled={busy}
+                  onClick={() => onApprove(request.id)}
+                >
+                  Approve
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="destructive"

@@ -508,6 +508,8 @@ class CompanySerializer(serializers.ModelSerializer):
             "reimbursement_email_prefix",
             "is_verified",
             "created_at",
+            "reimbursement_email",
+            "inbound_forwarding_email",
         ]
 
 

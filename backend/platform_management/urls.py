@@ -13,6 +13,8 @@ from .views import (
     platform_company_details,
     verify_company_registration_otp,
     request_company_registration_otp,
+    platform_settings,
+    update_platform_settings
 )
 
 urlpatterns = [
@@ -74,6 +76,18 @@ path(
     "company-requests/request-otp/",
     request_company_registration_otp,
     name="request-company-registration-otp"
+),
+
+path(
+    "settings/",
+    platform_settings,
+    name="platform-settings"
+),
+
+path(
+    "settings/update/",
+    update_platform_settings,
+    name="update-platform-settings"
 ),
 
 

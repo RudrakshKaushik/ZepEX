@@ -43,3 +43,7 @@ class CompanyRegistrationRequestAdmin(admin.ModelAdmin):
         "admin_email",
         "company_domain"
     )
+
+from .models import PlatformSettings
+
+admin.site.register(PlatformSettings)    

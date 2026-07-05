@@ -338,3 +338,8 @@ EXCHANGE_RATE_API_URL = os.getenv(
     "EXCHANGE_RATE_API_URL",
     "https://v6.exchangerate-api.com/v6"
 )
+
+PLATFORM_RECEIPT_EMAIL = os.getenv(
+    "PLATFORM_RECEIPT_EMAIL",
+    "receipts@zepex.ai"
+)

@@ -44,10 +44,18 @@ from tenants.serializers import (
     UserProfileSerializer,
     CompanyRoleSerializer,
     PolicyCategoryRuleSerializer,
+    
 )
+from .serializers import CompanyRegistrationRequestSerializer, PlatformSettingsSerializer
 from expenses.serializers import ApprovalWorkflowSerializer
 from django.utils import timezone
 from tenants.email_utils import send_company_registration_otp
+from django.conf import settings
+
+from platform_management.email_service import (
+    send_company_approved_email,
+    send_company_rejected_email,
+)
 
 @api_view(["POST"])
 @authentication_classes([])
@@ -158,6 +166,9 @@ def list_company_requests(request):
     )
 
     return Response(serializer.data)
+from django.conf import settings
+from .utils import generate_inbound_email_code
+from tenants.views import generate_employee_password
 
 @api_view(["POST"])
 @permission_classes([
@@ -170,15 +181,20 @@ def approve_company_request(request, request_id):
         company_request = CompanyRegistrationRequest.objects.get(
             id=request_id
         )
+
     except CompanyRegistrationRequest.DoesNotExist:
         return Response(
-            {"error": "Request not found"},
+            {
+                "error": "Request not found"
+            },
             status=status.HTTP_404_NOT_FOUND
         )
 
     if company_request.status != "PENDING":
         return Response(
-            {"error": "Request already processed"},
+            {
+                "error": "Request already processed."
+            },
             status=status.HTTP_400_BAD_REQUEST
         )
 
@@ -207,7 +223,7 @@ def approve_company_request(request, request_id):
         owner=request.user.platform_owner,
         name=company_request.company_name,
         domain=company_request.company_domain,
-        reimbursement_email_prefix=company_request.company_name.lower().replace(" ", ""),
+        reimbursement_email=company_request.reimbursement_email,
         is_verified=True
     )
 
@@ -215,20 +231,71 @@ def approve_company_request(request, request_id):
 
     ensure_default_company_roles(company)
 
-    UserProfile.objects.create(
+    profile = UserProfile.objects.create(
         user=user,
         company=company,
-        role="COMPANY_ADMIN"
+        role="COMPANY_ADMIN",
+        temporary_password=temp_password,
+        force_password_change=True,
+        invite_email_sent=False,
+        invite_email_sent_at=None,
     )
 
     company_request.status = "APPROVED"
-    company_request.save()
+
+    company_request.save(update_fields=[
+        "status"
+    ])
+
+    platform_receipt_email = getattr(
+        settings,
+        "PLATFORM_RECEIPT_EMAIL",
+        "receipts@zepex.ai"
+    )
+
+    # Send Welcome Email
+    try:
+
+        send_company_approved_email(
+            company=company,
+            company_request=company_request,
+            temporary_password=temp_password,
+            platform_receipt_email=platform_receipt_email,
+        )
+
+        profile.invite_email_sent = True
+        profile.invite_email_sent_at = timezone.now()
+
+        profile.save(update_fields=[
+            "invite_email_sent",
+            "invite_email_sent_at",
+        ])
+
+    except Exception as e:
+
+        print("Company approval email failed:", e)
 
     return Response({
-        "message": "Company approved successfully",
-        "company_id": company.id,
+
+        "success": True,
+
+        "message": "Company approved successfully.",
+
+        "company_id": str(company.id),
+
         "admin_email": user.email,
-        "temporary_password": temp_password
+
+        "temporary_password": temp_password,
+
+        "reimbursement_email": company.reimbursement_email,
+
+        "platform_receipt_email": platform_receipt_email,
+
+        "forwarding_instruction": (
+            f"Forward all reimbursement emails from "
+            f"{company.reimbursement_email} "
+            f"to {platform_receipt_email}"
+        )
     })
 
 @api_view(["POST"])
@@ -242,17 +309,70 @@ def reject_company_request(request, request_id):
         company_request = CompanyRegistrationRequest.objects.get(
             id=request_id
         )
+
     except CompanyRegistrationRequest.DoesNotExist:
+
         return Response(
-            {"error": "Request not found"},
+            {
+                "error": "Request not found"
+            },
             status=status.HTTP_404_NOT_FOUND
         )
 
+    if company_request.status != "PENDING":
+
+        return Response(
+            {
+                "error": "Request already processed."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    reject_reason = request.data.get(
+        "reject_reason",
+        ""
+    ).strip()
+
+    if not reject_reason:
+
+        return Response(
+            {
+                "error": "reject_reason is required."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
     company_request.status = "REJECTED"
-    company_request.save()
+
+    company_request.reject_reason = reject_reason
+
+    company_request.save(update_fields=[
+        "status",
+        "reject_reason",
+    ])
+
+    try:
+
+        send_company_rejected_email(
+            company_request=company_request
+        )
+
+    except Exception as e:
+
+        print("Company rejection email failed:", e)
 
     return Response({
-        "message": "Request rejected"
+
+        "success": True,
+
+        "message": "Company request rejected successfully.",
+
+        "company_name": company_request.company_name,
+
+        "admin_email": company_request.admin_email,
+
+        "reject_reason": reject_reason,
+
     })
 
 from tenants.serializers import CompanySerializer
@@ -768,3 +888,51 @@ def verify_company_registration_otp(request):
         "success": True,
         "message": "OTP verified successfully."
     })
+
+from .models import PlatformSettings        
+
+
+@api_view(["GET"])
+@permission_classes([
+    IsAuthenticated,
+    IsPlatformOwner
+])
+def platform_settings(request):
+
+    settings_obj, created = PlatformSettings.objects.get_or_create(
+        id=1
+    )
+
+    serializer = PlatformSettingsSerializer(settings_obj)
+
+    return Response(serializer.data)
+
+@api_view(["PATCH"])
+@permission_classes([
+    IsAuthenticated,
+    IsPlatformOwner
+])
+def update_platform_settings(request):
+
+    settings_obj, created = PlatformSettings.objects.get_or_create(
+        id=1
+    )
+
+    serializer = PlatformSettingsSerializer(
+        settings_obj,
+        data=request.data,
+        partial=True
+    )
+
+    if serializer.is_valid():
+        serializer.save()
+        return Response({
+            "success": True,
+            "message": "Platform settings updated successfully.",
+            "settings": serializer.data
+        })
+
+    return Response(
+        serializer.errors,
+        status=status.HTTP_400_BAD_REQUEST
+    )

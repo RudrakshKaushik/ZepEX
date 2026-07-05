@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Company Registration Update</title>
+</head>
+
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,sans-serif;">
+
+<table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
+<tr>
+<td align="center">
+
+<table width="650" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 3px 12px rgba(0,0,0,.08);">
+
+<tr>
+<td style="background:#dc2626;padding:30px;text-align:center;color:white;">
+
+<h1 style="margin:0;">
+Company Registration Update
+</h1>
+
+<p style="margin-top:10px;">
+Your registration request could not be approved.
+</p>
+
+</td>
+</tr>
+
+<tr>
+<td style="padding:35px;">
+
+<p style="font-size:16px;">
+Hello <strong>{{ admin_name }}</strong>,
+</p>
+
+<p style="line-height:28px;color:#555;">
+Thank you for your interest in ZepEx.
+After reviewing your registration request, we are unable to approve it at this time.
+</p>
+
+<hr style="margin:30px 0;border:none;border-top:1px solid #eee;">
+
+<h3 style="color:#dc2626;">
+Reason for Rejection
+</h3>
+
+<div style="
+background:#fff5f5;
+border-left:5px solid #dc2626;
+padding:20px;
+margin-top:15px;
+font-size:15px;
+line-height:26px;
+color:#444;
+">
+
+{{ reject_reason }}
+
+</div>
+
+<hr style="margin:35px 0;border:none;border-top:1px solid #eee;">
+
+<p style="line-height:28px;color:#555;">
+If you believe this decision was made in error or you have updated information, you're welcome to submit another registration request or contact our support team.
+</p>
+
+<div style="text-align:center;margin-top:35px;">
+
+<a href="{{ support_url }}"
+style="
+background:#2563eb;
+color:white;
+padding:14px 35px;
+border-radius:8px;
+text-decoration:none;
+display:inline-block;
+">
+Contact Support
+</a>
+
+</div>
+
+<p style="margin-top:45px;text-align:center;color:#888;font-size:14px;">
+Thank you for considering ZepEx.
+</p>
+
+</td>
+</tr>
+
+<tr>
+<td style="background:#f4f6f9;padding:20px;text-align:center;color:#888;font-size:13px;">
+
+© {{ year }} ZepEx. All rights reserved.
+
+</td>
+</tr>
+
+</table>
+
+</td>
+</tr>
+</table>
+
+</body>
+</html>

@@ -3,8 +3,8 @@ import uuid
 from django.db import models
 from django.contrib.auth.models import User
 
-from platform_management.models import PlatformOwner
 
+from platform_management.models import PlatformOwner
 
 class Company(models.Model):
     id = models.UUIDField(
@@ -26,9 +26,33 @@ class Company(models.Model):
         unique=True
     )
 
+    # Old field kept for backward compatibility
     reimbursement_email_prefix = models.SlugField(
         max_length=100,
-        unique=True
+        unique=True,
+        null=True,
+        blank=True
+    )
+
+    # Company real reimbursement email
+    reimbursement_email = models.EmailField(
+        unique=True,
+        null=True,
+        blank=True
+    )
+
+    # ZepEx forwarding email setup
+    inbound_email_code = models.CharField(
+        max_length=100,
+        unique=True,
+        null=True,
+        blank=True
+    )
+
+    inbound_forwarding_email = models.EmailField(
+        unique=True,
+        null=True,
+        blank=True
     )
 
     is_verified = models.BooleanField(default=False)
@@ -40,11 +64,9 @@ class Company(models.Model):
     created_at = models.DateTimeField(
         auto_now_add=True
     )
-  
 
     def __str__(self):
         return self.name
-
 
 class Department(models.Model):
     id = models.UUIDField(

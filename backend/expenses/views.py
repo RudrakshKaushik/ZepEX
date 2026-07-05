@@ -261,16 +261,23 @@ def retry_receipt_ai(request, receipt_id):
 @permission_classes([AllowAny])
 @parser_classes([MultiPartParser, FormParser])
 def email_ingest_receipt(request):
-    sender_email = request.data.get("sender_email")
-    reimbursement_email_prefix = request.data.get("reimbursement_email_prefix")
-    email_subject = request.data.get("subject", "")
+
+    sender_email = request.data.get(
+        "sender_email",
+        ""
+    ).lower().strip()
+
+    email_subject = request.data.get(
+        "subject",
+        ""
+    )
 
     receipt_file = request.FILES.get("receipt_file")
 
-    if not sender_email or not reimbursement_email_prefix:
+    if not sender_email:
         return Response(
             {
-                "error": "sender_email and reimbursement_email_prefix are required."
+                "error": "sender_email is required."
             },
             status=status.HTTP_400_BAD_REQUEST
         )
@@ -284,48 +291,63 @@ def email_ingest_receipt(request):
         )
 
     try:
-        company = Company.objects.get(
-            reimbursement_email_prefix=reimbursement_email_prefix,
-            is_verified=True
-        )
-
-    except Company.DoesNotExist:
-        return Response(
-            {"error": "Company not found or not verified."},
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-    try:
         employee = UserProfile.objects.select_related(
+            "company",
             "company_role",
             "department",
             "user"
         ).get(
             user__email__iexact=sender_email,
-            company=company
+            user__is_active=True
         )
 
     except UserProfile.DoesNotExist:
         return Response(
-            {"error": "Sender is not a registered user of this company."},
+            {
+                "error": "Sender is not a registered employee."
+            },
             status=status.HTTP_404_NOT_FOUND
+        )
+
+    company = employee.company
+
+    if not company.is_verified:
+        return Response(
+            {
+                "error": "Company is not verified."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not company.is_active:
+        return Response(
+            {
+                "error": "Company is inactive."
+            },
+            status=status.HTTP_400_BAD_REQUEST
         )
 
     if not employee.company_role:
         return Response(
-            {"error": "Sender company role is not assigned."},
+            {
+                "error": "Sender company role is not assigned."
+            },
             status=status.HTTP_400_BAD_REQUEST
         )
 
     if not employee.company_role.can_upload_receipt:
         return Response(
-            {"error": "Sender role is not allowed to upload receipts."},
+            {
+                "error": "Sender role is not allowed to upload receipts."
+            },
             status=status.HTTP_403_FORBIDDEN
         )
 
     if not employee.department:
         return Response(
-            {"error": "User is not assigned to any department."},
+            {
+                "error": "User is not assigned to any department."
+            },
             status=status.HTTP_400_BAD_REQUEST
         )
 
@@ -371,13 +393,15 @@ def email_ingest_receipt(request):
         company=company,
         action="EMAIL_RECEIPT_RECEIVED",
         action_by=employee,
-        message=f"Receipt received via reimbursement email from {sender_email}",
+        message=f"Receipt email received from {sender_email}",
         metadata={
             "receipt_id": str(receipt.id),
             "report_id": str(report.id),
             "submission_id": str(submission.id),
             "email_subject": email_subject,
             "source": ExpenseSubmission.SOURCE_EMAIL,
+            "sender_email": sender_email,
+            "company": company.name,
             "company_role": employee.company_role.name,
             "ai_status": receipt.ai_status,
         }
@@ -399,17 +423,19 @@ def email_ingest_receipt(request):
 
     return Response(
         {
-            "message": "Email receipt ingested successfully. AI extraction has been queued.",
+            "success": True,
+            "message": "Receipt received successfully. AI extraction has been queued.",
+            "company": company.name,
+            "employee": employee.user.email,
             "report_id": str(report.id),
             "receipt": serializer.data,
             "ai": {
                 "status": receipt.ai_status,
-                "message": "Receipt received. AI extraction has been queued."
+                "message": "Receipt has been queued for AI processing."
             }
         },
         status=status.HTTP_201_CREATED
     )
-
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])

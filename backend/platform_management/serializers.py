@@ -5,6 +5,9 @@ from rest_framework import serializers
 from .models import CompanyRegistrationRequest, PlatformSettings
 
 
+
+
+
 class CompanyRegistrationRequestSerializer(serializers.ModelSerializer):
 
     class Meta:

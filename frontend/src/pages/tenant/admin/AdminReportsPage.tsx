@@ -248,8 +248,7 @@ export function AdminReportsPage() {
     setActionId(reportId)
     try {
       const { data } = await approveReport(reportId, notes[reportId] || 'Approved by company admin.')
-      showReportActionToast(data)
-      toast.success('Report approved.')
+      showReportActionToast(data, 'approve')
       await load()
     } catch (err) {
       toast.error(getApiErrorMessage(err))
@@ -267,8 +266,7 @@ export function AdminReportsPage() {
     setActionId(reportId)
     try {
       const { data } = await rejectReport(reportId, reason)
-      showReportActionToast(data)
-      toast.success('Report rejected.')
+      showReportActionToast(data, 'reject')
       await load()
     } catch (err) {
       toast.error(getApiErrorMessage(err))
@@ -284,8 +282,7 @@ export function AdminReportsPage() {
         reportId,
         notes[reportId] || 'Paid by company admin.',
       )
-      showReportActionToast(data)
-      toast.success('Report marked as paid.')
+      showReportActionToast(data, 'paid')
       await load()
     } catch (err) {
       toast.error(getApiErrorMessage(err))

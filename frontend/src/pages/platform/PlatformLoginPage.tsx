@@ -94,16 +94,6 @@ export function PlatformLoginPage() {
           />
         </div>
 
-        <label className="flex cursor-pointer items-center gap-2.5 text-sm text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={remember}
-            onChange={(e) => setRemember(e.target.checked)}
-            className="h-4 w-4 rounded border-input accent-primary"
-          />
-          Remember this device
-        </label>
-
         {error && (
           <p className="rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">{error}</p>
         )}
@@ -112,21 +102,6 @@ export function PlatformLoginPage() {
           {loading ? 'Signing in...' : 'Sign In to platform'}
         </Button>
       </form>
-
-      <div className="mt-8 flex items-center gap-3">
-        <div className="h-px flex-1 bg-border" />
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Or
-        </span>
-        <div className="h-px flex-1 bg-border" />
-      </div>
-
-      <p className="mt-6 text-center text-sm text-muted-foreground">
-        New Company?{' '}
-        <Link to="/register" className="font-semibold text-primary hover:underline">
-          Register Here
-        </Link>
-      </p>
     </AuthSplitLayout>
   )
 }

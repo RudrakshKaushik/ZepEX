@@ -103,16 +103,6 @@ export function LoginPage() {
           />
         </div>
 
-        <label className="flex cursor-pointer items-center gap-2.5 text-sm text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={remember}
-            onChange={(e) => setRemember(e.target.checked)}
-            className="h-4 w-4 rounded border-input accent-primary"
-          />
-          Remember this device
-        </label>
-
         {error && (
           <p className="rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">{error}</p>
         )}

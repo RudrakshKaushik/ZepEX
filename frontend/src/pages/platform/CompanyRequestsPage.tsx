@@ -8,6 +8,7 @@ import {
 import { getApiErrorMessage } from '@/api/client'
 import { CompanyRequestCard } from '@/components/platform/CompanyRequestCard'
 import { CompanyRequestCardsShimmer } from '@/components/platform/CompanyRequestCardsShimmer'
+import { RejectCompanyRequestDialog } from '@/components/platform/RejectCompanyRequestDialog'
 import { DashboardLayout, platformNavWithAudit } from '@/components/layout/DashboardLayout'
 import type { CompanyRegistrationRequest } from '@/types'
 import { toast } from '@/lib/toast'
@@ -16,6 +17,7 @@ export function CompanyRequestsPage() {
   const [requests, setRequests] = useState<CompanyRegistrationRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [actionId, setActionId] = useState<number | null>(null)
+  const [rejectTarget, setRejectTarget] = useState<CompanyRegistrationRequest | null>(null)
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
@@ -38,7 +40,7 @@ export function CompanyRequestsPage() {
     try {
       const { data } = await approveCompanyRequest(id)
       toast.success(
-        `Approved! Admin: ${data.admin_email} · Temp password: ${data.temporary_password}`,
+        `Approved ${data.admin_email}. Welcome email sent with login credentials. Temp password: ${data.temporary_password}`,
       )
       await load()
     } catch (err) {
@@ -48,12 +50,20 @@ export function CompanyRequestsPage() {
     }
   }
 
-  const handleReject = async (id: number) => {
+  const handleRejectClick = (id: number) => {
+    const request = requests.find((item) => item.id === id) ?? null
+    setRejectTarget(request)
+  }
+
+  const handleRejectConfirm = async (id: number, rejectReason: string) => {
     setActionId(id)
     setError('')
     try {
-      await rejectCompanyRequest(id)
-      toast.success('Request rejected.')
+      const { data } = await rejectCompanyRequest(id, rejectReason)
+      setRejectTarget(null)
+      toast.success(
+        `Rejected ${data.company_name}. Notification email sent to ${data.admin_email}.`,
+      )
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -96,7 +106,7 @@ export function CompanyRequestsPage() {
               {pendingCount > verifiedPendingCount
                 ? ` · ${pendingCount - verifiedPendingCount} awaiting OTP verification`
                 : ''}
-              .
+              . Approving or rejecting sends an email to the applicant.
             </p>
           </div>
 
@@ -112,13 +122,25 @@ export function CompanyRequestsPage() {
                   request={request}
                   actionId={actionId}
                   onApprove={handleApprove}
-                  onReject={handleReject}
+                  onReject={handleRejectClick}
                 />
               ))}
             </div>
           )}
         </div>
       )}
+
+      <RejectCompanyRequestDialog
+        request={rejectTarget}
+        open={rejectTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && actionId === null) {
+            setRejectTarget(null)
+          }
+        }}
+        onConfirm={handleRejectConfirm}
+        loading={actionId !== null}
+      />
     </DashboardLayout>
   )
 }

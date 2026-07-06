@@ -31,6 +31,7 @@ import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -589,6 +590,10 @@ export function EmployeesPage() {
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Create Employee</DialogTitle>
+            <DialogDescription>
+              An invite email with login credentials is sent automatically when the employee is
+              created.
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreate} className="space-y-3">
             <div className="space-y-2">

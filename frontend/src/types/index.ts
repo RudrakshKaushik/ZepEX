@@ -96,7 +96,27 @@ export interface CompanyRegistrationRequest {
   status: 'PENDING' | 'APPROVED' | 'REJECTED'
   expected_employee_count?: number
   is_email_verified?: boolean
+  reject_reason?: string | null
   created_at: string
+}
+
+export interface ApproveCompanyRequestResponse {
+  success: boolean
+  message: string
+  company_id: string
+  admin_email: string
+  temporary_password: string
+  reimbursement_email?: string
+  platform_receipt_email?: string
+  forwarding_instruction?: string
+}
+
+export interface RejectCompanyRequestResponse {
+  success: boolean
+  message: string
+  company_name: string
+  admin_email: string
+  reject_reason: string
 }
 
 export interface CreateEmployeeResponse {

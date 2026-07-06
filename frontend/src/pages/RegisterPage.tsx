@@ -214,6 +214,16 @@ export function RegisterPage() {
             </form>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
+                <p className="font-medium text-foreground">{form.company_name}</p>
+                <p className="mt-1 text-muted-foreground">{form.company_domain}</p>
+                <p className="mt-2 text-muted-foreground">
+                  Admin: {form.admin_name} · {form.admin_email}
+                </p>
+                <p className="mt-1 text-muted-foreground">
+                  Expected employees: {form.expected_employee_count}
+                </p>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="otp">Verification OTP</Label>
                 <Input
@@ -255,6 +265,13 @@ export function RegisterPage() {
               </div>
             </form>
           )}
+          <div className="mt-8 flex items-center gap-3">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Or
+            </span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
           <p className="mt-6 text-center text-sm text-muted-foreground">
             Already have an account?{' '}
             <Link to="/login" className="font-medium text-primary hover:underline">

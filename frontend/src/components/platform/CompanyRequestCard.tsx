@@ -76,6 +76,11 @@ export function CompanyRequestCard({
           <h3 className="mt-3 text-xl font-bold text-gray-900">{request.company_name}</h3>
           <p className="mt-1 text-sm text-gray-500">{request.admin_email}</p>
           <p className="mt-1 text-sm text-gray-500">{request.company_domain}</p>
+          {request.status === 'REJECTED' && request.reject_reason && (
+            <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
+              <span className="font-medium">Rejection reason:</span> {request.reject_reason}
+            </p>
+          )}
         </div>
 
         <div className="flex w-full flex-col gap-4 lg:w-auto lg:min-w-[15rem] lg:items-end">

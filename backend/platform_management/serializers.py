@@ -23,6 +23,7 @@ class CompanyRegistrationRequestSerializer(serializers.ModelSerializer):
             "expected_employee_count",
             "otp",
             "is_email_verified",
+            "reject_reason",
         ]
         read_only_fields = [
             "id",

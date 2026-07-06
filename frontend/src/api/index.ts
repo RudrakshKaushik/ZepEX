@@ -90,10 +90,12 @@ export const listCompanyRequests = () =>
   api.get<CompanyRegistrationRequest[]>('/platform/requests/')
 
 export const approveCompanyRequest = (requestId: number) =>
-  api.post(`/platform/approve/${requestId}/`)
+  api.post<import('@/types').ApproveCompanyRequestResponse>(`/platform/approve/${requestId}/`)
 
-export const rejectCompanyRequest = (requestId: number) =>
-  api.post(`/platform/reject/${requestId}/`)
+export const rejectCompanyRequest = (requestId: number, reject_reason: string) =>
+  api.post<import('@/types').RejectCompanyRequestResponse>(`/platform/reject/${requestId}/`, {
+    reject_reason,
+  })
 
 export const getPlatformDashboard = () => api.get('/dashboard/platform-owner/')
 

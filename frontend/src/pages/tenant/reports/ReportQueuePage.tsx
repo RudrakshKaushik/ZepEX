@@ -85,8 +85,7 @@ export function ReportQueuePage({ mode }: ReportQueuePageProps) {
     setActionId(reportId)
     try {
       const { data } = await approveReport(reportId, notes[reportId] || 'Approved')
-      showReportActionToast(data)
-      toast.success('Report approved.')
+      showReportActionToast(data, 'approve')
       await load()
     } catch (err) {
       toast.error(getApiErrorMessage(err))
@@ -104,8 +103,7 @@ export function ReportQueuePage({ mode }: ReportQueuePageProps) {
     setActionId(reportId)
     try {
       const { data } = await rejectReport(reportId, reason)
-      showReportActionToast(data)
-      toast.success('Report rejected.')
+      showReportActionToast(data, 'reject')
       await load()
     } catch (err) {
       toast.error(getApiErrorMessage(err))
@@ -121,8 +119,7 @@ export function ReportQueuePage({ mode }: ReportQueuePageProps) {
         reportId,
         notes[reportId] || 'Payment completed successfully',
       )
-      showReportActionToast(data)
-      toast.success('Report marked as paid.')
+      showReportActionToast(data, 'paid')
       await load()
     } catch (err) {
       toast.error(getApiErrorMessage(err))

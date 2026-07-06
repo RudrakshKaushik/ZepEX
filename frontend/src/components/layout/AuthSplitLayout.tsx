@@ -39,7 +39,7 @@ export function AuthSplitLayout({
             <img
               src={heroImage}
               alt=""
-              className="absolute inset-0 h-full w-full object-cover object-center"
+              className="absolute inset-0 h-full w-full object-center"
             />
             {heroOverlay ? (
               <div className="relative flex h-full min-h-[420px] flex-col justify-between p-8 text-white sm:p-10 lg:min-h-0 lg:p-12">

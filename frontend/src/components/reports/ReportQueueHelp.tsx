@@ -38,6 +38,12 @@ export function ReportQueueHelp({ mode, user }: ReportQueueHelpProps) {
               You can switch between Pending and Approved in the sidebar to view each queue.
             </p>
           )}
+          {showApproval && mode === 'pending' && (
+            <p className="text-blue-800/80">
+              Approving or rejecting sends a status email to the employee. Rejection requires a
+              reason in the notes field.
+            </p>
+          )}
         </div>
       </div>
     </div>

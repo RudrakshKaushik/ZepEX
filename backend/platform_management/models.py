@@ -87,4 +87,6 @@ class PlatformSettings(models.Model):
     )
 
     def __str__(self):
-        return self.platform_receipt_email        
+        return self.platform_receipt_email  
+
+

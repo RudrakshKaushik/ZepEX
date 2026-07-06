@@ -1,6 +1,8 @@
 from rest_framework import serializers
 
 from .models import CompanyRegistrationRequest
+from rest_framework import serializers
+from .models import CompanyRegistrationRequest, PlatformSettings
 
 
 class CompanyRegistrationRequestSerializer(serializers.ModelSerializer):
@@ -26,3 +28,19 @@ class CompanyRegistrationRequestSerializer(serializers.ModelSerializer):
             "otp",
             "is_email_verified",
         ]
+
+class PlatformSettingsSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = PlatformSettings
+
+        fields = [
+            "id",
+            "platform_receipt_email",
+            "updated_at",
+        ]
+
+        read_only_fields = [
+            "id",
+            "updated_at",
+        ]        

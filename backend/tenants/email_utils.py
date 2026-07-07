@@ -2,52 +2,58 @@ from django.conf import settings
 from django.core.mail import EmailMultiAlternatives, get_connection
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
-
-from tenants.models import CompanySMTPConfig
 from django.utils import timezone
+
 
 def _send_with_connection(
     *,
     subject,
     text_content,
-    html_content,
-    from_email,
-    to_emails,
-    cc_emails,
-    host,
-    port,
-    username,
-    password,
-    use_tls,
+    html_content=None,
+    from_email=None,
+    to_emails=None,
+    cc_emails=None,
 ):
-    email = EmailMultiAlternatives(
+    to_emails = [email for email in (to_emails or []) if email]
+
+    if not to_emails:
+        return {
+            "success": False,
+            "error": "No recipient email provided."
+        }
+
+    connection = get_connection(
+        host=settings.EMAIL_HOST,
+        port=settings.EMAIL_PORT,
+        username=settings.EMAIL_HOST_USER,
+        password=settings.EMAIL_HOST_PASSWORD,
+        use_tls=settings.EMAIL_USE_TLS,
+    )
+
+    email_message = EmailMultiAlternatives(
         subject=subject,
         body=text_content,
-        from_email=from_email,
+        from_email=from_email or settings.DEFAULT_FROM_EMAIL,
         to=to_emails,
         cc=cc_emails or [],
+        connection=connection,
     )
 
     if html_content:
-        email.attach_alternative(html_content, "text/html")
+        email_message.attach_alternative(
+            html_content,
+            "text/html"
+        )
 
-    connection = get_connection(
-        host=host,
-        port=port,
-        username=username,
-        password=password,
-        use_tls=use_tls,
-    )
-    connection.open()
-    email.connection = connection
-    email.send()
-    connection.close()
+    email_message.send()
 
-    return {"success": True}
+    return {
+        "success": True
+    }
 
 
 def send_company_email(
-    company,
+    company=None,
     *,
     subject,
     text_content,
@@ -55,58 +61,21 @@ def send_company_email(
     to_emails,
     cc_emails=None,
 ):
-    to_emails = [email for email in to_emails if email]
-    if not to_emails:
-        return {"success": False, "error": "No recipient email provided."}
-
     try:
-        smtp_config = CompanySMTPConfig.objects.get(
-            company=company,
-            is_active=True,
-        )
-        from_email = (
-            f"{smtp_config.from_email_name} "
-            f"<{smtp_config.smtp_email}>"
-        )
         return _send_with_connection(
             subject=subject,
             text_content=text_content,
             html_content=html_content,
-            from_email=from_email,
+            from_email=settings.DEFAULT_FROM_EMAIL,
             to_emails=to_emails,
             cc_emails=cc_emails,
-            host=smtp_config.smtp_host,
-            port=smtp_config.smtp_port,
-            username=smtp_config.smtp_email,
-            password=smtp_config.smtp_password,
-            use_tls=smtp_config.use_tls,
         )
-    except CompanySMTPConfig.DoesNotExist:
-        if not settings.EMAIL_HOST or not settings.EMAIL_HOST_USER:
-            return {
-                "success": False,
-                "error": (
-                    "SMTP is not configured. Add SMTP under Admin → Settings, "
-                    "or set EMAIL_HOST / SMTP_HOST in the server environment."
-                ),
-            }
 
-        from_email = settings.DEFAULT_FROM_EMAIL or settings.EMAIL_HOST_USER
-        return _send_with_connection(
-            subject=subject,
-            text_content=text_content,
-            html_content=html_content,
-            from_email=from_email,
-            to_emails=to_emails,
-            cc_emails=cc_emails,
-            host=settings.EMAIL_HOST,
-            port=settings.EMAIL_PORT,
-            username=settings.EMAIL_HOST_USER,
-            password=settings.EMAIL_HOST_PASSWORD,
-            use_tls=settings.EMAIL_USE_TLS,
-        )
     except Exception as exc:
-        return {"success": False, "error": str(exc)}
+        return {
+            "success": False,
+            "error": str(exc)
+        }
 
 
 def send_employee_invite_email(company, employee, raw_password):
@@ -138,19 +107,15 @@ def send_employee_invite_email(company, employee, raw_password):
     text_content = strip_tags(html_content)
 
     return send_company_email(
-        company,
+        company=company,
         subject=f"Welcome to ZepEx - {company.name}",
         text_content=text_content,
         html_content=html_content,
         to_emails=[employee.user.email],
     )
 
-from django.conf import settings
-from django.template.loader import render_to_string
-from django.utils.html import strip_tags
 
 def send_company_registration_otp(email, otp):
-
     html_content = render_to_string(
         "emails/company_registration_otp.html",
         {
@@ -167,10 +132,4 @@ def send_company_registration_otp(email, otp):
         html_content=html_content,
         from_email=settings.DEFAULT_FROM_EMAIL,
         to_emails=[email],
-        cc_emails=None,
-        host=settings.EMAIL_HOST,
-        port=settings.EMAIL_PORT,
-        username=settings.EMAIL_HOST_USER,
-        password=settings.EMAIL_HOST_PASSWORD,
-        use_tls=settings.EMAIL_USE_TLS,
     )

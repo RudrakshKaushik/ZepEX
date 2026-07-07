@@ -204,6 +204,13 @@ class UserProfile(models.Model):
     force_password_change = models.BooleanField(
     default=True
 )
+    reporting_manager = models.ForeignKey(
+    "self",
+    on_delete=models.SET_NULL,
+    null=True,
+    blank=True,
+    related_name="team_members"
+)
 
     def __str__(self):
         role_name = (

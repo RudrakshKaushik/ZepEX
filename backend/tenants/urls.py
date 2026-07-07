@@ -15,7 +15,7 @@ from .views import (
     get_reimbursement_email_config,
     save_reimbursement_email_config,
     get_smtp_config,
-    save_smtp_config,
+    
     edit_company_user,
     deactivate_company_user,
     activate_company_user,
@@ -101,7 +101,7 @@ urlpatterns = [
     path("reimbursement-email/save/", save_reimbursement_email_config, name="save-reimbursement-email-config"),
 
     path("smtp-config/", get_smtp_config, name="get-smtp-config"),
-    path("smtp-config/save/", save_smtp_config, name="save-smtp-config"),
+    
     path("database/sync-logs/",database_sync_logs,name="database-sync-logs"),
     path(
     "database/sync-dashboard/",

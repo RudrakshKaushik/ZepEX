@@ -10,7 +10,7 @@ from .views import (
    
     accounts_mark_paid,
     delete_expense_line_item,
-    trigger_reimbursement_email_fetch,
+ 
     my_uploaded_expenses,
     admin_employee_expenses,
     
@@ -44,7 +44,7 @@ urlpatterns = [
     
     path("accounts/reports/<uuid:report_id>/paid/", accounts_mark_paid, name="accounts-mark-paid"),
     path("line-items/<uuid:line_item_id>/delete/",delete_expense_line_item,name="delete-expense-line-item"),
-    path("emails/fetch/",trigger_reimbursement_email_fetch,name="trigger-reimbursement-email-fetch"),
+   
     path("my-uploaded-expenses/",my_uploaded_expenses,name="my-uploaded-expenses"),
     path("admin/employee/<uuid:employee_id>/expenses/",admin_employee_expenses,name="admin-employee-expenses"),
     

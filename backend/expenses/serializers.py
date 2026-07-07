@@ -177,6 +177,7 @@ class ApprovalHistorySerializer(serializers.ModelSerializer):
 
 
 class ApprovalWorkflowStepSerializer(serializers.ModelSerializer):
+
     approver_role_name = serializers.CharField(
         source="approver_role.name",
         read_only=True
@@ -187,16 +188,43 @@ class ApprovalWorkflowStepSerializer(serializers.ModelSerializer):
         read_only=True
     )
 
+    approver_type_name = serializers.CharField(
+        source="get_approver_type_display",
+        read_only=True
+    )
+
+    specific_user_name = serializers.CharField(
+        source="specific_user.user.get_full_name",
+        read_only=True
+    )
+
+    specific_user_email = serializers.EmailField(
+        source="specific_user.user.email",
+        read_only=True
+    )
+
     class Meta:
         model = ApprovalWorkflowStep
+
         fields = [
             "id",
             "step_order",
+
+            "approver_type",
+            "approver_type_name",
+
             "approver_role",
             "approver_role_name",
+
+            "specific_user",
+            "specific_user_name",
+            "specific_user_email",
+
             "department",
             "department_name",
+
             "routing_type",
+
             "is_active",
             "created_at",
         ]
@@ -639,17 +667,26 @@ class ReceiptUploadSerializer(serializers.Serializer):
 
 
 class ApprovalWorkflowSerializer(serializers.ModelSerializer):
+
     steps = ApprovalWorkflowStepSerializer(
         many=True,
         read_only=True
     )
 
+    start_role_name = serializers.CharField(
+        source="start_role.name",
+        read_only=True
+    )
+
     class Meta:
         model = ApprovalWorkflow
+
         fields = [
             "id",
             "company",
             "name",
+            "start_role",
+            "start_role_name",
             "is_active",
             "steps",
             "created_at",

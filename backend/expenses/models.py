@@ -104,6 +104,13 @@ class ExpenseReport(models.Model):
     updated_at = models.DateTimeField(
         auto_now=True
     )
+    current_approver = models.ForeignKey(
+    UserProfile,
+    on_delete=models.SET_NULL,
+    null=True,
+    blank=True,
+    related_name="pending_expense_reports"
+)
 
     class Meta:
         unique_together = (
@@ -514,19 +521,27 @@ class ApprovalHistory(models.Model):
     def __str__(self):
         target = self.report_id or self.receipt_id
         return f"{target} - {self.action}"
-
+from tenants.models import CompanyRole
 class ApprovalWorkflow(models.Model):
 
-    company = models.OneToOneField(
+    company = models.ForeignKey(
         Company,
         on_delete=models.CASCADE,
-        related_name="approval_workflow"
+        related_name="approval_workflows"
     )
 
     name = models.CharField(
         max_length=100,
-        default="Default Workflow"
+        default="Workflow"
     )
+
+    start_role = models.ForeignKey(
+    CompanyRole,
+    on_delete=models.CASCADE,
+    related_name="starting_workflows",
+    null=True,
+    blank=True
+)
 
     is_active = models.BooleanField(
         default=True
@@ -540,8 +555,17 @@ class ApprovalWorkflow(models.Model):
         auto_now=True
     )
 
+    class Meta:
+        unique_together = (
+            "company",
+            "start_role",
+        )
+
     def __str__(self):
-        return f"{self.company.name} - {self.name}"
+        return (
+            f"{self.company.name} - "
+            f"{self.start_role.name}"
+        )
 
 
 class ApprovalWorkflowStep(models.Model):
@@ -554,6 +578,18 @@ class ApprovalWorkflowStep(models.Model):
         (ROUTING_COMPANY, "Company Wide"),
     )
 
+    APPROVER_REPORTING_MANAGER = "REPORTING_MANAGER"
+    APPROVER_DEPARTMENT_MANAGER = "DEPARTMENT_MANAGER"
+    APPROVER_COMPANY_ROLE = "COMPANY_ROLE"
+    APPROVER_SPECIFIC_USER = "SPECIFIC_USER"
+
+    APPROVER_TYPE_CHOICES = (
+        (APPROVER_REPORTING_MANAGER, "Reporting Manager"),
+        (APPROVER_DEPARTMENT_MANAGER, "Department Manager"),
+        (APPROVER_COMPANY_ROLE, "Company Role"),
+        (APPROVER_SPECIFIC_USER, "Specific User"),
+    )
+
     workflow = models.ForeignKey(
         ApprovalWorkflow,
         on_delete=models.CASCADE,
@@ -562,13 +598,28 @@ class ApprovalWorkflowStep(models.Model):
 
     step_order = models.PositiveIntegerField()
 
+    approver_type = models.CharField(
+        max_length=30,
+        choices=APPROVER_TYPE_CHOICES,
+        default=APPROVER_COMPANY_ROLE
+    )
+
     approver_role = models.ForeignKey(
         "tenants.CompanyRole",
         on_delete=models.PROTECT,
-        related_name="workflow_steps"
+        related_name="workflow_steps",
+        null=True,
+        blank=True
     )
 
-    # NEW FIELD
+    specific_user = models.ForeignKey(
+        "tenants.UserProfile",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="specific_workflow_steps"
+    )
+
     department = models.ForeignKey(
         Department,
         on_delete=models.CASCADE,
@@ -601,9 +652,9 @@ class ApprovalWorkflowStep(models.Model):
 
     def __str__(self):
         return (
-            f"{self.workflow.company.name} - "
-            f"Step {self.step_order} - "
-            f"{self.approver_role.name}"
+            f"{self.workflow.company.name} | "
+            f"{self.workflow.start_role.name} | "
+            f"Step {self.step_order}"
         )
 
 class DuplicateReceiptLog(models.Model):

@@ -1,16 +1,24 @@
-from django.core.mail import EmailMultiAlternatives
+from django.conf import settings
+from django.core.mail import EmailMultiAlternatives, get_connection
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 
-from tenants.models import CompanySMTPConfig
 from .models import ApprovalHistory
 
 
-def send_report_status_email(
+def send_workflow_status_email(
+    *,
     report,
     subject,
     message,
-    notify_previous_approvers=False
+    action,
+    action_by,
+    current_step=None,
+    notes="",
+    next_step=None,
+    next_approver=None,
+    steps_skipped=0,
+    notify_previous_approvers=False,
 ):
     employee_email = report.employee.user.email
 
@@ -35,79 +43,101 @@ def send_report_status_email(
             if email and email != employee_email
         ]
 
+    employee_name = (
+        report.employee.user.get_full_name()
+        or report.employee.user.email
+    )
+
+    action_by_name = (
+        action_by.user.get_full_name()
+        or action_by.user.email
+    )
+
+    action_by_role = (
+        "COMPANY_ADMIN"
+        if action_by.role == "COMPANY_ADMIN"
+        else action_by.company_role.name
+        if action_by.company_role
+        else action_by.role
+    )
+
+    html_content = render_to_string(
+        "emails/workflow_status.html",
+        {
+            "subject": subject,
+            "message": message,
+
+            "company_name": report.company.name,
+            "employee_name": employee_name,
+            "report_id": report.id,
+            "month": report.month,
+            "status": report.status,
+            "total_amount": report.total_amount,
+
+            "action": action,
+            "action_by_name": action_by_name,
+            "action_by_email": action_by.user.email,
+            "action_by_role": action_by_role,
+
+            "step_order": (
+                current_step.step_order
+                if current_step else None
+            ),
+            "approver_type": (
+                current_step.get_approver_type_display()
+                if current_step else None
+            ),
+
+            "notes": notes,
+
+            "next_step_order": (
+                next_step.step_order
+                if next_step else None
+            ),
+            "next_approver_name": (
+                next_approver.user.get_full_name()
+                if next_approver else None
+            ),
+            "next_approver_email": (
+                next_approver.user.email
+                if next_approver else None
+            ),
+
+            "steps_skipped": steps_skipped,
+        }
+    )
+
+    text_content = strip_tags(html_content)
+
     try:
-        smtp_config = CompanySMTPConfig.objects.get(
-            company=report.company,
-            is_active=True
+        connection = get_connection(
+            host=settings.EMAIL_HOST,
+            port=settings.EMAIL_PORT,
+            username=settings.EMAIL_HOST_USER,
+            password=settings.EMAIL_HOST_PASSWORD,
+            use_tls=settings.EMAIL_USE_TLS,
         )
-
-        from_email = (
-            f"{smtp_config.from_email_name} "
-            f"<{smtp_config.smtp_email}>"
-        )
-
-        employee_name = (
-            f"{report.employee.user.first_name} "
-            f"{report.employee.user.last_name}"
-        ).strip() or employee_email
-
-        html_content = render_to_string(
-            "emails/report_status.html",
-            {
-                "company_name": report.company.name,
-                "employee_name": employee_name,
-                "subject": subject,
-                "message": message,
-                "report_id": report.id,
-                "month": report.month,
-                "status": report.status,
-                "total_amount": report.total_amount,
-            }
-        )
-
-        text_content = strip_tags(html_content)
 
         email = EmailMultiAlternatives(
             subject=subject,
             body=text_content,
-            from_email=from_email,
+            from_email=settings.DEFAULT_FROM_EMAIL,
             to=[employee_email],
             cc=cc_emails,
+            connection=connection,
         )
 
-        email.attach_alternative(
-            html_content,
-            "text/html"
-        )
-
-        connection = email.get_connection(
-            host=smtp_config.smtp_host,
-            port=smtp_config.smtp_port,
-            username=smtp_config.smtp_email,
-            password=smtp_config.smtp_password,
-            use_tls=smtp_config.use_tls,
-        )
-
-        connection.open()
-        email.connection = connection
+        email.attach_alternative(html_content, "text/html")
         email.send()
-        connection.close()
 
         return {
             "success": True,
-            "message": "Email sent successfully.",
             "to": employee_email,
             "cc": cc_emails,
         }
 
-    except CompanySMTPConfig.DoesNotExist:
+    except Exception as exc:
         return {
             "success": False,
-            "error": "SMTP configuration not found."
-        }
-
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
+            "error": str(exc),
         }

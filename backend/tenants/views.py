@@ -56,6 +56,12 @@ from .email_utils import send_employee_invite_email
 import secrets
 import string
 
+from django.conf import settings
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+
 
 def generate_employee_password(length=12):
     alphabet = (
@@ -345,6 +351,7 @@ def list_employees(request):
     search = request.GET.get("search")
     department_id = request.GET.get("department_id")
     role = request.GET.get("role")
+    company_role_id = request.GET.get("company_role_id")
 
     employees = UserProfile.objects.select_related(
         "user",
@@ -371,6 +378,11 @@ def list_employees(request):
     if role:
         employees = employees.filter(
             role=role
+        )
+
+    if company_role_id:
+        employees = employees.filter(
+            company_role_id=company_role_id
         )
 
     employees = employees.order_by(
@@ -400,6 +412,7 @@ def list_employees(request):
             "search": search,
             "department_id": department_id,
             "role": role,
+            "company_role_id": company_role_id,
         },
         "results": serializer.data
     })
@@ -672,7 +685,7 @@ def list_policy_rules(request):
         "results": serializer.data
     })
 
-from .models import ReimbursementEmailConfig
+
 from .serializers import ReimbursementEmailConfigSerializer
 
 @api_view(["GET"])
@@ -680,96 +693,116 @@ from .serializers import ReimbursementEmailConfigSerializer
 def get_reimbursement_email_config(request):
     company = request.user.profile.company
 
-    try:
-        config = ReimbursementEmailConfig.objects.get(company=company)
-    except ReimbursementEmailConfig.DoesNotExist:
-        return Response(
-            {"message": "Reimbursement email config not found."},
-            status=status.HTTP_404_NOT_FOUND
-        )
+    platform_receipt_email = getattr(
+        settings,
+        "PLATFORM_RECEIPT_EMAIL",
+        "receipts@zepex.ai"
+    )
 
-    serializer = ReimbursementEmailConfigSerializer(config)
-    return Response(serializer.data)
-
+    return Response({
+        "success": True,
+        "data": {
+            "company_name": company.name,
+            "reimbursement_email": company.reimbursement_email,
+            "platform_receipt_email": platform_receipt_email,
+            "forwarding_instruction": (
+                f"Forward all reimbursement emails from "
+                f"{company.reimbursement_email or 'your company reimbursement email'} "
+                f"to {platform_receipt_email}"
+            ),
+            "imap_required": False,
+            "imap_removed": True
+        }
+    })
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated, IsCompanyAdmin])
 def save_reimbursement_email_config(request):
     company = request.user.profile.company
 
-    config, created = ReimbursementEmailConfig.objects.get_or_create(
-        company=company
-    )
+    reimbursement_email = request.data.get(
+        "reimbursement_email",
+        ""
+    ).lower().strip()
 
-    serializer = ReimbursementEmailConfigSerializer(
-        config,
-        data=request.data,
-        partial=True
-    )
-
-    if serializer.is_valid():
-        serializer.save(company=company)
-
+    if not reimbursement_email:
         return Response(
             {
-                "message": "Reimbursement email configuration saved successfully.",
-                "data": serializer.data
+                "error": "reimbursement_email is required."
             },
-            status=status.HTTP_200_OK
+            status=status.HTTP_400_BAD_REQUEST
         )
 
-    return Response(
-        serializer.errors,
-        status=status.HTTP_400_BAD_REQUEST
+    company.reimbursement_email = reimbursement_email
+
+    company.save(update_fields=[
+        "reimbursement_email",
+        "updated_at"
+    ])
+
+    platform_receipt_email = getattr(
+        settings,
+        "PLATFORM_RECEIPT_EMAIL",
+        "receipts@zepex.ai"
     )
 
-from .models import CompanySMTPConfig
+    return Response({
+        "success": True,
+        "message": "Reimbursement email saved successfully.",
+        "data": {
+            "company_name": company.name,
+            "reimbursement_email": company.reimbursement_email,
+            "platform_receipt_email": platform_receipt_email,
+            "forwarding_instruction": (
+                f"Forward all reimbursement emails from "
+                f"{company.reimbursement_email} "
+                f"to {platform_receipt_email}"
+            ),
+            "imap_required": False,
+            "imap_removed": True
+        }
+    })
+
+
+
 from .serializers import CompanySMTPConfigSerializer
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated, IsCompanyAdmin])
 def get_smtp_config(request):
-    company = request.user.profile.company
+    return Response({
+        "success": True,
+        "message": "Company SMTP configuration is no longer required.",
+        "data": {
+            "smtp_source": "PLATFORM_ENV",
+            "company_smtp_required": False,
+            "company_smtp_removed": True,
+            "from_email": getattr(
+                settings,
+                "DEFAULT_FROM_EMAIL",
+                getattr(settings, "EMAIL_HOST_USER", "")
+            )
+        }
+    })
 
-    try:
-        config = CompanySMTPConfig.objects.get(company=company)
-    except CompanySMTPConfig.DoesNotExist:
-        return Response(
-            {"message": "SMTP configuration not found."},
-            status=status.HTTP_404_NOT_FOUND
-        )
 
-    serializer = CompanySMTPConfigSerializer(config)
-    return Response(serializer.data)
-
-
-@api_view(["POST"])
+@api_view(["GET"])
 @permission_classes([IsAuthenticated, IsCompanyAdmin])
-def save_smtp_config(request):
-    company = request.user.profile.company
-
-    config, created = CompanySMTPConfig.objects.get_or_create(
-        company=company
-    )
-
-    serializer = CompanySMTPConfigSerializer(
-        config,
-        data=request.data,
-        partial=True
-    )
-
-    if serializer.is_valid():
-        serializer.save(company=company)
-
-        return Response({
-            "message": "SMTP configuration saved successfully.",
-            "data": serializer.data
-        })
-
-    return Response(
-        serializer.errors,
-        status=status.HTTP_400_BAD_REQUEST
-    )
+def get_smtp_config(request):
+    return Response({
+        "success": True,
+        "message": "Company SMTP configuration is no longer required.",
+        "data": {
+            "smtp_source": "PLATFORM_ENV",
+            "company_smtp_required": False,
+            "company_smtp_removed": True,
+            "from_email": getattr(
+                settings,
+                "DEFAULT_FROM_EMAIL",
+                getattr(settings, "EMAIL_HOST_USER", "")
+            )
+        }
+    })
 
 from django.contrib.auth.models import User
 from .serializers import CompanyUserUpdateSerializer

@@ -1,0 +1,391 @@
+from django.utils import timezone
+
+from tenants.models import UserProfile
+from expenses.models import (
+    ApprovalWorkflow,
+    ApprovalWorkflowStep,
+    ApprovalHistory,
+    ExpenseReport,
+    ExpenseReceipt,
+)
+
+
+def get_workflow(employee):
+    try:
+        return ApprovalWorkflow.objects.get(
+            company=employee.company,
+            start_role=employee.company_role,
+            is_active=True,
+        )
+    except ApprovalWorkflow.DoesNotExist:
+        return None
+
+
+def get_first_step(workflow):
+    return workflow.steps.filter(
+        is_active=True
+    ).select_related(
+        "approver_role",
+        "department",
+        "specific_user",
+        "specific_user__user",
+    ).order_by("step_order").first()
+
+
+def get_next_step(current_step):
+    return ApprovalWorkflowStep.objects.filter(
+        workflow=current_step.workflow,
+        is_active=True,
+        step_order__gt=current_step.step_order,
+    ).select_related(
+        "approver_role",
+        "department",
+        "specific_user",
+        "specific_user__user",
+    ).order_by("step_order").first()
+
+def get_next_valid_step(
+    employee,
+    workflow,
+    current_step,
+    previous_approver,
+):
+    """
+    Finds the next valid workflow step.
+
+    Automatically skips:
+    - Missing approver
+    - Inactive approver
+    - Duplicate approver (same person approving twice)
+    """
+
+    steps_skipped = 0
+
+    remaining_steps = workflow.steps.filter(
+        is_active=True,
+        step_order__gt=current_step.step_order
+    ).order_by("step_order")
+
+    for step in remaining_steps:
+
+        approver, error = resolve_step_approver(
+            employee=employee,
+            workflow_step=step,
+        )
+
+        # -----------------------------------
+        # Skip if approver cannot be resolved
+        # -----------------------------------
+        if error or approver is None:
+            steps_skipped += 1
+            continue
+
+        # -----------------------------------
+        # Skip inactive users
+        # -----------------------------------
+        if not approver.user.is_active:
+            steps_skipped += 1
+            continue
+
+        # -----------------------------------
+        # Skip duplicate approver
+        # -----------------------------------
+        if (
+            previous_approver
+            and approver.id == previous_approver.id
+        ):
+            steps_skipped += 1
+            continue
+
+        return (
+            step,
+            approver,
+            steps_skipped,
+        )
+
+    return (
+        None,
+        None,
+        steps_skipped,
+    )
+
+
+def resolve_step_approver(employee, workflow_step):
+    if workflow_step.approver_type == ApprovalWorkflowStep.APPROVER_REPORTING_MANAGER:
+        if not employee.reporting_manager:
+            return None, "Reporting manager is not assigned."
+        return employee.reporting_manager, None
+
+    if workflow_step.approver_type == ApprovalWorkflowStep.APPROVER_DEPARTMENT_MANAGER:
+        if not employee.department:
+            return None, "Employee department is not assigned."
+        if not employee.department.manager:
+            return None, "Department manager is not assigned."
+        return employee.department.manager, None
+
+    if workflow_step.approver_type == ApprovalWorkflowStep.APPROVER_SPECIFIC_USER:
+        if not workflow_step.specific_user:
+            return None, "Specific approver is not configured."
+        return workflow_step.specific_user, None
+
+    if workflow_step.approver_type == ApprovalWorkflowStep.APPROVER_COMPANY_ROLE:
+        if not workflow_step.approver_role:
+            return None, "Approver role is not configured."
+
+        approver = UserProfile.objects.filter(
+            company=employee.company,
+            company_role=workflow_step.approver_role,
+            user__is_active=True,
+        ).exclude(
+            id=employee.id
+        ).select_related("user").first()
+
+        if not approver:
+            return None, f"No active user found with role '{workflow_step.approver_role.name}'."
+
+        return approver, None
+
+    return None, "Invalid approver type."
+
+
+def can_user_approve_step(user_profile, report, workflow_step):
+    if user_profile.role == "COMPANY_ADMIN":
+        return True, None
+
+    if report.current_approver_id and report.current_approver_id != user_profile.id:
+        return False, "You are not the current approver for this report."
+
+    approver_type = workflow_step.approver_type
+
+    if approver_type == ApprovalWorkflowStep.APPROVER_REPORTING_MANAGER:
+        manager = report.employee.reporting_manager
+        if not manager:
+            return False, "Employee does not have a reporting manager."
+        if manager.id != user_profile.id:
+            return False, "Only the reporting manager can approve."
+        return True, None
+
+    if approver_type == ApprovalWorkflowStep.APPROVER_DEPARTMENT_MANAGER:
+        department = report.department
+        if not department:
+            return False, "Report has no department."
+        if not department.manager:
+            return False, "Department manager is not configured."
+        if department.manager.id != user_profile.id:
+            return False, "Only the department manager can approve."
+        return True, None
+
+    if approver_type == ApprovalWorkflowStep.APPROVER_COMPANY_ROLE:
+        if user_profile.company_role != workflow_step.approver_role:
+            return False, "Current role cannot approve this workflow step."
+        return True, None
+
+    if approver_type == ApprovalWorkflowStep.APPROVER_SPECIFIC_USER:
+        if not workflow_step.specific_user:
+            return False, "Specific approver is not configured."
+        if workflow_step.specific_user.id != user_profile.id:
+            return False, "Only the configured user can approve."
+        return True, None
+
+    return False, "Unknown workflow approver type."
+
+
+def start_workflow(report):
+    employee = report.employee
+
+    workflow = get_workflow(employee)
+
+    if workflow is None:
+        return False, f"No workflow configured for '{employee.company_role.name}'."
+
+    first_step = get_first_step(workflow)
+
+    if first_step is None:
+        return False, "Workflow has no active steps."
+
+    approver, error = resolve_step_approver(
+        employee=employee,
+        workflow_step=first_step,
+    )
+
+    if error:
+        return False, error
+
+    report.status = ExpenseReport.STATUS_SUBMITTED
+    report.current_workflow_step = first_step
+    report.current_approver = approver
+    report.workflow_completed = False
+    report.submitted_at = timezone.now()
+
+    report.save(update_fields=[
+        "status",
+        "current_workflow_step",
+        "current_approver",
+        "workflow_completed",
+        "submitted_at",
+        "updated_at",
+    ])
+
+    report.receipts.all().update(
+        status=ExpenseReceipt.STATUS_PENDING_APPROVAL
+    )
+
+    ApprovalHistory.objects.create(
+        report=report,
+        action_by=employee,
+        action=ApprovalHistory.ACTION_REPORT_SUBMITTED,
+        comments=(
+            f"Workflow started. Current approver: "
+            f"{approver.user.get_full_name() or approver.user.email}"
+        )
+    )
+
+    return True, {
+        "workflow": workflow,
+        "step": first_step,
+        "approver": approver,
+    }
+
+
+def approve_current_step(report, approver_profile, notes=""):
+
+    current_step = report.current_workflow_step
+
+    if not current_step:
+        return False, "Current workflow step not found."
+
+    allowed, error = can_user_approve_step(
+        approver_profile,
+        report,
+        current_step,
+    )
+
+    if not allowed:
+        return False, error
+
+    ApprovalHistory.objects.create(
+        report=report,
+        action_by=approver_profile,
+        action=ApprovalHistory.ACTION_STEP_APPROVED,
+        comments=notes,
+    )
+
+    next_step, next_approver, skipped = get_next_valid_step(
+        employee=report.employee,
+        workflow=current_step.workflow,
+        current_step=current_step,
+        previous_approver=approver_profile,
+    )
+
+    # ----------------------------------
+    # No more valid approvers
+    # ----------------------------------
+
+    if next_step is None:
+        success, result = complete_workflow(
+            report,
+            approver_profile,
+        )
+
+        if success:
+            result["steps_skipped"] = skipped
+
+        return success, result
+
+    # ----------------------------------
+    # Move to next valid approver
+    # ----------------------------------
+
+    report.current_workflow_step = next_step
+    report.current_approver = next_approver
+    report.status = ExpenseReport.STATUS_SUBMITTED
+    report.workflow_completed = False
+
+    report.save(update_fields=[
+        "current_workflow_step",
+        "current_approver",
+        "status",
+        "workflow_completed",
+        "updated_at",
+    ])
+
+    report.receipts.all().update(
+        status=ExpenseReceipt.STATUS_PENDING_APPROVAL
+    )
+
+    return True, {
+        "completed": False,
+        "current_step": current_step,
+        "next_step": next_step,
+        "next_approver": next_approver,
+        "steps_skipped": skipped,
+    }
+
+
+def complete_workflow(report, approver_profile):
+    report.workflow_completed = True
+    report.status = ExpenseReport.STATUS_APPROVED
+    report.current_workflow_step = None
+    report.current_approver = None
+
+    report.save(update_fields=[
+        "workflow_completed",
+        "status",
+        "current_workflow_step",
+        "current_approver",
+        "updated_at",
+    ])
+
+    report.receipts.all().update(
+        status=ExpenseReceipt.STATUS_APPROVED
+    )
+
+    return True, {
+        "completed": True,
+        "approved_by": approver_profile,
+    }
+
+
+def reject_current_step(report, approver_profile, notes):
+    current_step = report.current_workflow_step
+
+    if not current_step:
+        return False, "Current workflow step not found."
+
+    allowed, error = can_user_approve_step(
+        approver_profile,
+        report,
+        current_step,
+    )
+
+    if not allowed:
+        return False, error
+
+    report.status = ExpenseReport.STATUS_REJECTED
+    report.current_workflow_step = None
+    report.current_approver = None
+    report.workflow_completed = True
+
+    report.save(update_fields=[
+        "status",
+        "current_workflow_step",
+        "current_approver",
+        "workflow_completed",
+        "updated_at",
+    ])
+
+    report.receipts.all().update(
+        status=ExpenseReceipt.STATUS_REJECTED
+    )
+
+    ApprovalHistory.objects.create(
+        report=report,
+        action_by=approver_profile,
+        action=ApprovalHistory.ACTION_STEP_REJECTED,
+        comments=notes,
+    )
+
+    return True, {
+        "rejected": True,
+        "step": current_step,
+    }

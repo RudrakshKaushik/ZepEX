@@ -1,13 +1,19 @@
-import { ChevronRight, Settings, Wallet } from 'lucide-react'
+import { ChevronRight, Mail, Settings, Wallet } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { getFinanceSettings, updateFinanceSettings } from '@/api'
+import {
+  getEmailServiceStatus,
+  getFinanceSettings,
+  getReimbursementEmailConfig,
+  saveReimbursementEmailConfig,
+  updateFinanceSettings,
+} from '@/api'
 import { getApiErrorMessage } from '@/api/client'
 import { AdminListPanel } from '@/components/admin/AdminListPanel'
 import { AdminModalFooter } from '@/components/admin/AdminModalFooter'
 import { CurrencySelect } from '@/components/admin/CurrencySelect'
 import { StatusBadge } from '@/components/StatusBadge'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
-import { useAdminNav } from '@/hooks/useAdminNav'
+import { useAdminNav, invalidateAdminSetupCache } from '@/hooks/useAdminNav'
 import {
   Dialog,
   DialogContent,
@@ -21,7 +27,8 @@ import { AdminListPanelShimmer } from '@/components/ui/shimmer'
 import { formatDateTime } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import { financeCurrencyLabel as formatFinanceCurrencyLabel } from '@/lib/financeSettings'
-import type { FinanceSettings } from '@/types'
+import { unwrapEmailServiceStatus, unwrapReimbursementEmailConfig } from '@/lib/emailSettings'
+import type { FinanceSettings, PlatformEmailServiceStatus } from '@/types'
 
 const DATE_FORMAT_OPTIONS = ['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD'] as const
 
@@ -34,6 +41,15 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [financeOpen, setFinanceOpen] = useState(false)
+  const [emailOpen, setEmailOpen] = useState(false)
+  const [emailForm, setEmailForm] = useState({ reimbursement_email: '' })
+  const [emailLoaded, setEmailLoaded] = useState(false)
+  const [emailSummary, setEmailSummary] = useState('Not configured')
+  const [platformReceiptEmail, setPlatformReceiptEmail] = useState('receipts@zepex.ai')
+  const [forwardingInstruction, setForwardingInstruction] = useState('')
+  const [emailServiceStatus, setEmailServiceStatus] = useState<PlatformEmailServiceStatus | null>(
+    null,
+  )
   const [financeForm, setFinanceForm] = useState({
     base_currency: '' as number | '',
     auto_currency_conversion: true,
@@ -85,13 +101,40 @@ export function SettingsPage() {
     setFinanceLoaded(true)
   }
 
+  const applyReimbursementEmail = (data: {
+    reimbursement_email: string | null
+    platform_receipt_email: string
+    forwarding_instruction: string
+  }) => {
+    setEmailForm({
+      reimbursement_email: data.reimbursement_email ?? '',
+    })
+    setEmailSummary(data.reimbursement_email || 'Not configured')
+    setPlatformReceiptEmail(data.platform_receipt_email)
+    setForwardingInstruction(data.forwarding_instruction)
+    setEmailLoaded(Boolean(data.reimbursement_email))
+  }
+
   useEffect(() => {
     async function loadSettings() {
       setLoading(true)
       try {
-        const { data } = await getFinanceSettings()
-        if (data.settings) {
-          applyFinanceSettings(data.settings)
+        const [financeRes, emailRes, emailStatusRes] = await Promise.all([
+          getFinanceSettings(),
+          getReimbursementEmailConfig().catch(() => null),
+          getEmailServiceStatus().catch(() => null),
+        ])
+
+        if (financeRes.data.settings) {
+          applyFinanceSettings(financeRes.data.settings)
+        }
+
+        if (emailRes?.data) {
+          applyReimbursementEmail(unwrapReimbursementEmailConfig(emailRes.data))
+        }
+
+        if (emailStatusRes?.data) {
+          setEmailServiceStatus(unwrapEmailServiceStatus(emailStatusRes.data))
         }
       } finally {
         setLoading(false)
@@ -111,12 +154,25 @@ export function SettingsPage() {
         configured: financeLoaded,
         icon: Wallet,
       },
+      {
+        id: 'email' as const,
+        title: 'Reimbursement email',
+        description: 'Company inbox for forwarded expense receipts.',
+        summary: emailSummary,
+        configured: emailLoaded,
+        icon: Mail,
+      },
     ],
-    [financeCurrencyLabel, financeLoaded],
+    [financeCurrencyLabel, financeLoaded, emailSummary, emailLoaded],
   )
 
-  const closeModal = () => {
+  const closeFinanceModal = () => {
     setFinanceOpen(false)
+    setError('')
+  }
+
+  const closeEmailModal = () => {
+    setEmailOpen(false)
     setError('')
   }
 
@@ -146,7 +202,31 @@ export function SettingsPage() {
         )
       }
       toast.success(data.message || 'Finance settings saved.')
-      closeModal()
+      closeFinanceModal()
+    } catch (err) {
+      setError(getApiErrorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const saveReimbursementEmail = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!emailForm.reimbursement_email.trim()) {
+      setError('Enter your company reimbursement email.')
+      return
+    }
+
+    setSaving(true)
+    setError('')
+    try {
+      const { data } = await saveReimbursementEmailConfig({
+        reimbursement_email: emailForm.reimbursement_email.trim().toLowerCase(),
+      })
+      applyReimbursementEmail(unwrapReimbursementEmailConfig(data))
+      invalidateAdminSetupCache()
+      toast.success(data.message || 'Reimbursement email saved.')
+      closeEmailModal()
     } catch (err) {
       setError(getApiErrorMessage(err))
     } finally {
@@ -158,12 +238,12 @@ export function SettingsPage() {
     return (
       <DashboardLayout
         title="Settings"
-        subtitle="Finance & display preferences"
+        subtitle="Finance, reimbursement email, and display preferences"
         breadcrumb="Settings"
         icon={Settings}
         navItems={navItems}
       >
-        <AdminListPanelShimmer rows={1} />
+        <AdminListPanelShimmer rows={2} />
       </DashboardLayout>
     )
   }
@@ -171,7 +251,7 @@ export function SettingsPage() {
   return (
     <DashboardLayout
       title="Settings"
-      subtitle="Finance & display preferences"
+      subtitle="Finance, reimbursement email, and display preferences"
       breadcrumb="Settings"
       icon={Settings}
       navItems={navItems}
@@ -194,7 +274,11 @@ export function SettingsPage() {
                 type="button"
                 onClick={() => {
                   setError('')
-                  setFinanceOpen(true)
+                  if (row.id === 'finance') {
+                    setFinanceOpen(true)
+                  } else {
+                    setEmailOpen(true)
+                  }
                 }}
                 className="flex w-full items-center gap-4 px-5 py-4 text-left transition-colors hover:bg-gray-50 sm:px-6"
               >
@@ -216,7 +300,7 @@ export function SettingsPage() {
         </div>
       </AdminListPanel>
 
-      <Dialog open={financeOpen} onOpenChange={(open) => !open && closeModal()}>
+      <Dialog open={financeOpen} onOpenChange={(open) => !open && closeFinanceModal()}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Finance settings</DialogTitle>
@@ -313,9 +397,76 @@ export function SettingsPage() {
             )}
             {error && financeOpen && <p className="text-sm text-red-600">{error}</p>}
             <AdminModalFooter
-              onCancel={closeModal}
+              onCancel={closeFinanceModal}
               submitLabel={financeLoaded ? 'Save finance settings' : 'Initialize finance settings'}
               submitDisabled={!financeForm.base_currency}
+              submitting={saving}
+            />
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={emailOpen} onOpenChange={(open) => !open && closeEmailModal()}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Reimbursement email</DialogTitle>
+            <DialogDescription>
+              Set the company inbox employees forward receipts to. ZepEx ingests mail sent to the
+              platform receipt address below.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={saveReimbursementEmail} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="reimbursement-email">Company reimbursement email</Label>
+              <Input
+                id="reimbursement-email"
+                type="email"
+                placeholder="expenses@company.com"
+                value={emailForm.reimbursement_email}
+                onChange={(e) =>
+                  setEmailForm({ reimbursement_email: e.target.value })
+                }
+                disabled={saving}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="platform-receipt-email">Forward all emails to</Label>
+              <Input
+                id="platform-receipt-email"
+                value={platformReceiptEmail}
+                readOnly
+                className="bg-muted/40"
+              />
+            </div>
+
+            {forwardingInstruction && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                {forwardingInstruction}
+              </div>
+            )}
+
+            {emailServiceStatus && (
+              <div className="rounded-lg border border-[#e2e8f0] bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                <p className="font-medium text-gray-900">Platform email delivery</p>
+                <p className="mt-1">
+                  Provider: {emailServiceStatus.provider ?? 'Platform SMTP (.env)'}
+                </p>
+                {emailServiceStatus.outgoing_email && (
+                  <p className="mt-1">Outgoing: {emailServiceStatus.outgoing_email}</p>
+                )}
+                <p className="mt-2 text-xs text-muted-foreground">
+                  SMTP is configured once by the platform via environment variables. Companies do not
+                  enter SMTP or IMAP credentials here.
+                </p>
+              </div>
+            )}
+
+            {error && emailOpen && <p className="text-sm text-red-600">{error}</p>}
+            <AdminModalFooter
+              onCancel={closeEmailModal}
+              submitLabel={emailLoaded ? 'Save reimbursement email' : 'Set reimbursement email'}
+              submitDisabled={!emailForm.reimbursement_email.trim()}
               submitting={saving}
             />
           </form>

@@ -5,6 +5,7 @@ export const SETUP_LABELS: Record<string, string> = {
   workflow_configured: 'Workflow Configured',
   workflow_steps_created: 'Workflow Steps Created',
   policy_configured: 'Policy Configured',
+  email_forwarding_enabled: 'Reimbursement Email',
 }
 
 export const SETUP_LINKS: Partial<Record<string, string>> = {
@@ -14,12 +15,16 @@ export const SETUP_LINKS: Partial<Record<string, string>> = {
   workflow_configured: '/admin/workflow',
   workflow_steps_created: '/admin/workflow',
   policy_configured: '/admin/policy',
+  email_forwarding_enabled: '/admin/settings',
 }
 
-/** Email (SMTP/IMAP) is configured via server environment, not admin UI. */
+/** Platform-managed email and legacy setup flags are hidden from the checklist. */
 const HIDDEN_SETUP_KEYS = new Set([
   'smtp_configured',
   'reimbursement_email_configured',
+  'platform_smtp_configured',
+  'imap_required',
+  'company_smtp_required',
 ])
 
 export function getVisibleSetupEntries(setup: Record<string, boolean>) {

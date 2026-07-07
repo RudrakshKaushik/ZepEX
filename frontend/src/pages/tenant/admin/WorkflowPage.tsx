@@ -1,11 +1,13 @@
-import { GitBranch, UserCog } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { GitBranch, Plus, Trash2, UserCog } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { isAxiosError } from 'axios'
 import {
   addWorkflowStep,
   deactivateWorkflowStep,
+  deleteApprovalWorkflow,
   getApprovalWorkflow,
+  listApprovalWorkflows,
   listCompanyRoles,
   listDepartments,
   saveApprovalWorkflow,
@@ -13,6 +15,7 @@ import {
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
 import { AdminListPanel } from '@/components/admin/AdminListPanel'
+import { AdminConfirmDialog } from '@/components/admin/AdminConfirmDialog'
 import { WorkflowBuilder } from '@/components/workflow/WorkflowBuilder'
 import type { ApprovalNodeData } from '@/components/workflow/types'
 import type { WorkflowNode } from '@/components/workflow/types'
@@ -22,10 +25,21 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { WorkflowPageShimmer } from '@/components/ui/shimmer'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { fetchAllPages } from '@/lib/pagination'
+import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import type { ApprovalWorkflow, ApprovalWorkflowStep, CompanyRole, DepartmentRecord } from '@/types'
-import UploadIcon from '@/assets/upload.png'
+
+const selectClassName =
+  'flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm'
 
 function getActiveSteps(workflow: ApprovalWorkflow | null): ApprovalWorkflowStep[] {
   return (workflow?.steps ?? [])
@@ -64,13 +78,13 @@ function resolveCanvasStepIds(
   })
 }
 
-async function loadWorkflowState(): Promise<ApprovalWorkflow | null> {
+async function loadWorkflowList(): Promise<ApprovalWorkflow[]> {
   try {
-    const { data } = await getApprovalWorkflow()
-    return data
+    const { data } = await listApprovalWorkflows()
+    return data.workflows ?? []
   } catch (err) {
     if (isAxiosError(err) && err.response?.status === 404) {
-      return null
+      return []
     }
     throw err
   }
@@ -78,28 +92,86 @@ async function loadWorkflowState(): Promise<ApprovalWorkflow | null> {
 
 export function WorkflowPage() {
   const { navItems } = useAdminNav()
-  const [workflow, setWorkflow] = useState<ApprovalWorkflow | null>(null)
+  const [workflows, setWorkflows] = useState<ApprovalWorkflow[]>([])
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null)
   const [roles, setRoles] = useState<CompanyRole[]>([])
   const [departments, setDepartments] = useState<DepartmentRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [createOpen, setCreateOpen] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [workflowName, setWorkflowName] = useState('Default Approval Workflow')
+  const [startRoleId, setStartRoleId] = useState<number | ''>('')
+
+  const selectedWorkflow = useMemo(
+    () => workflows.find((item) => item.id === selectedWorkflowId) ?? null,
+    [workflows, selectedWorkflowId],
+  )
+
+  const activeSteps = getActiveSteps(selectedWorkflow)
+
+  const submitterRoles = useMemo(
+    () => roles.filter((role) => role.can_submit_expense),
+    [roles],
+  )
+
+  const approverRoles = useMemo(
+    () => roles.filter((role) => role.can_approve_expense || role.can_mark_paid),
+    [roles],
+  )
+
+  const availableStartRoles = useMemo(
+    () =>
+      submitterRoles.filter(
+        (role) => !workflows.some((workflow) => workflow.start_role === role.id),
+      ),
+    [submitterRoles, workflows],
+  )
+
+  const openCreateWorkflowModal = useCallback(() => {
+    const nextRole = availableStartRoles[0]
+    if (nextRole) {
+      setStartRoleId(nextRole.id)
+      setWorkflowName(`${nextRole.name} Approval Workflow`)
+    }
+    setCreateOpen(true)
+  }, [availableStartRoles])
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const [rolesRes, allDepartments, workflowData] = await Promise.all([
+      const [rolesRes, allDepartments, workflowList] = await Promise.all([
         listCompanyRoles(),
         fetchAllPages((page) => listDepartments({ page })),
-        loadWorkflowState(),
+        loadWorkflowList(),
       ])
-      setRoles(rolesRes.data.results.filter((r) => r.is_active))
-      setDepartments(allDepartments.filter((d) => d.is_active !== false))
-      setWorkflow(workflowData)
-      if (workflowData?.name) {
-        setWorkflowName(workflowData.name)
+
+      const activeRoles = rolesRes.data.results.filter((role) => role.is_active)
+      setRoles(activeRoles)
+      setDepartments(allDepartments.filter((department) => department.is_active !== false))
+      setWorkflows(workflowList)
+
+      setSelectedWorkflowId((current) => {
+        if (current && workflowList.some((workflow) => workflow.id === current)) {
+          return current
+        }
+        return workflowList[0]?.id ?? null
+      })
+
+      const firstAvailable = activeRoles.find(
+        (role) =>
+          role.can_submit_expense &&
+          !workflowList.some((workflow) => workflow.start_role === role.id),
+      )
+      if (firstAvailable) {
+        setStartRoleId((current) => current || firstAvailable.id)
+        setWorkflowName((current) =>
+          current === 'Default Approval Workflow'
+            ? `${firstAvailable.name} Approval Workflow`
+            : current,
+        )
       }
     } catch (err) {
       setError(getApiErrorMessage(err))
@@ -109,35 +181,54 @@ export function WorkflowPage() {
   }, [])
 
   useEffect(() => {
-    load()
+    void load()
   }, [load])
 
-  const refreshWorkflow = useCallback(async () => {
-    const workflowData = await loadWorkflowState()
-    setWorkflow(workflowData)
-    return workflowData
-  }, [])
+  const refreshWorkflows = useCallback(
+    async (preferredWorkflowId?: string | null) => {
+      const workflowList = await loadWorkflowList()
+      setWorkflows(workflowList)
 
-  const activeSteps = (workflow?.steps ?? [])
-    .filter((s) => s.is_active)
-    .sort((a, b) => a.step_order - b.step_order)
+      const nextId =
+        preferredWorkflowId &&
+        workflowList.some((workflow) => workflow.id === preferredWorkflowId)
+          ? preferredWorkflowId
+          : workflowList.find((workflow) => workflow.id === selectedWorkflowId)?.id ??
+            workflowList[0]?.id ??
+            null
 
-  const approverRoles = roles.filter(
-    (r) => r.can_approve_expense || r.can_mark_paid,
+      setSelectedWorkflowId(nextId)
+
+      if (nextId) {
+        const { data } = await getApprovalWorkflow(nextId)
+        setWorkflows((prev) =>
+          prev.map((workflow) => (workflow.id === nextId ? data : workflow)),
+        )
+        return data
+      }
+
+      return null
+    },
+    [selectedWorkflowId],
   )
 
   const handleCreateWorkflow = async () => {
-    if (approverRoles.length === 0) return
+    if (!startRoleId) {
+      toast.error('Select which role this workflow applies to.')
+      return
+    }
 
     setSaving(true)
     setError('')
     try {
-      await saveApprovalWorkflow(workflowName)
-      const workflowData = await refreshWorkflow()
-      if (!workflowData) {
-        throw new Error('Workflow was saved but could not be loaded.')
-      }
-      toast.success('Approval workflow created. Build your flow on the canvas below.')
+      const { data } = await saveApprovalWorkflow({
+        name: workflowName.trim() || 'Approval Workflow',
+        start_role: startRoleId,
+      })
+
+      await refreshWorkflows(data.workflow.id)
+      setCreateOpen(false)
+      toast.success(`Workflow created for ${data.workflow.start_role_name ?? 'role'}.`)
       invalidateAdminSetupCache()
     } catch (err) {
       toast.error(getApiErrorMessage(err))
@@ -147,37 +238,52 @@ export function WorkflowPage() {
   }
 
   const handleCreateDefault = async () => {
+    if (!startRoleId) {
+      toast.error('Select which role this workflow applies to.')
+      return
+    }
+
     setSaving(true)
     setError('')
     try {
-      const managerRole = roles.find((r) => r.can_approve_expense)
-      const accountsRole = roles.find((r) => r.can_mark_paid)
+      const managerRole = roles.find((role) => role.can_approve_expense)
+      const accountsRole = roles.find((role) => role.can_mark_paid)
 
       if (!managerRole) {
         toast.error('Create a company role with approve expense permission first.')
         return
       }
 
-      await saveApprovalWorkflow('Default Approval Workflow')
+      const { data } = await saveApprovalWorkflow({
+        name: workflowName.trim() || 'Default Approval Workflow',
+        start_role: startRoleId,
+      })
+
+      const workflowId = data.workflow.id
 
       await addWorkflowStep({
+        workflow_id: workflowId,
         step_order: 1,
         approver_role: managerRole.id,
+        approver_type: 'COMPANY_ROLE',
         routing_type: 'COMPANY',
       })
 
       if (accountsRole) {
         await addWorkflowStep({
+          workflow_id: workflowId,
           step_order: 2,
           approver_role: accountsRole.id,
+          approver_type: 'COMPANY_ROLE',
           routing_type: 'COMPANY',
         })
       }
 
-      await refreshWorkflow()
+      await refreshWorkflows(workflowId)
+      setCreateOpen(false)
       toast.success(
         accountsRole
-          ? 'Default workflow created on canvas: Manager → Accounts.'
+          ? 'Default workflow created: Manager → Accounts.'
           : 'Workflow created with manager approval step.',
       )
       invalidateAdminSetupCache()
@@ -189,11 +295,13 @@ export function WorkflowPage() {
   }
 
   const handleDeleteStep = async (stepId: string) => {
+    if (!selectedWorkflow) return
+
     setSaving(true)
     setError('')
     try {
       await deactivateWorkflowStep(stepId)
-      await refreshWorkflow()
+      await refreshWorkflows(selectedWorkflow.id)
       toast.success('Step removed from workflow.')
       invalidateAdminSetupCache()
     } catch (err) {
@@ -204,7 +312,27 @@ export function WorkflowPage() {
     }
   }
 
+  const handleDeleteWorkflow = async () => {
+    if (!selectedWorkflow) return
+
+    setSaving(true)
+    setError('')
+    try {
+      const { data } = await deleteApprovalWorkflow(selectedWorkflow.id)
+      setDeleteConfirmOpen(false)
+      await refreshWorkflows()
+      toast.success(data.message || 'Workflow deleted.')
+      invalidateAdminSetupCache()
+    } catch (err) {
+      toast.error(getApiErrorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleSaveStepsFromCanvas = async (approvalNodes: WorkflowNode[]) => {
+    if (!selectedWorkflow) return
+
     setSaving(true)
     setError('')
     try {
@@ -228,7 +356,7 @@ export function WorkflowPage() {
         }
       }
 
-      let workflowData = await refreshWorkflow()
+      let workflowData = await refreshWorkflows(selectedWorkflow.id)
       let currentActive = getActiveSteps(workflowData)
 
       const newNodes = approvalNodes.filter(
@@ -244,15 +372,17 @@ export function WorkflowPage() {
         for (const node of newNodes) {
           const data = node.data as ApprovalNodeData
           await addWorkflowStep({
+            workflow_id: selectedWorkflow.id,
             step_order: nextOrder,
             approver_role: data.roleId!,
+            approver_type: 'COMPANY_ROLE',
             routing_type: data.routingType,
             department: data.routingType === 'DEPARTMENT' ? data.departmentId || null : null,
           })
           nextOrder += 1
         }
 
-        workflowData = await refreshWorkflow()
+        workflowData = await refreshWorkflows(selectedWorkflow.id)
         currentActive = getActiveSteps(workflowData)
       }
 
@@ -285,16 +415,13 @@ export function WorkflowPage() {
         })
 
         if (orderChanged) {
-          workflowData = await refreshWorkflow()
+          workflowData = await refreshWorkflows(selectedWorkflow.id)
           currentActive = getActiveSteps(workflowData)
           stepIds = resolveCanvasStepIds(approvalNodes, currentActive)
         }
       }
 
-      workflowData = await refreshWorkflow()
-      if (!workflowData) {
-        throw new Error('Workflow was saved but could not be loaded.')
-      }
+      await refreshWorkflows(selectedWorkflow.id)
       toast.success('Workflow saved.')
       invalidateAdminSetupCache()
     } catch (err) {
@@ -308,7 +435,7 @@ export function WorkflowPage() {
     return (
       <DashboardLayout
         title="Approval Workflow"
-        subtitle="Define who approves expense reports and in what order"
+        subtitle="Define approval paths per submitter role"
         breadcrumb="Approval Workflow"
         icon={GitBranch}
         navItems={navItems}
@@ -319,11 +446,12 @@ export function WorkflowPage() {
   }
 
   const needsRolesFirst = approverRoles.length === 0
+  const needsSubmitterRoles = submitterRoles.length === 0
 
   return (
     <DashboardLayout
       title="Approval Workflow"
-      subtitle="Define who approves expense reports and in what order"
+      subtitle="Each workflow applies when an employee with the selected start role submits expenses"
       breadcrumb="Approval Workflow"
       icon={GitBranch}
       navItems={navItems}
@@ -355,45 +483,235 @@ export function WorkflowPage() {
             </div>
           </div>
         </AdminListPanel>
-      ) : !workflow ? (
+      ) : needsSubmitterRoles ? (
         <AdminListPanel
-          title="Configure Workflow"
-          description="Expense reports route through these steps after employees submit. You need at least one step with a role that can approve expenses."
+          title="Submitter roles required"
+          description="Workflows are assigned to roles that can submit expense reports."
         >
-          <div className="space-y-4 px-5 py-6 sm:px-6">
-            <div className="space-y-2">
-              <Label htmlFor="workflow-name">Workflow name</Label>
-              <Input
-                id="workflow-name"
-                value={workflowName}
-                onChange={(e) => setWorkflowName(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button disabled={saving} onClick={handleCreateWorkflow}>
-                Create Workflow
-                <img src={UploadIcon} alt="Assign" className="w-6 h-6" />
-              </Button>
-              <Button
-                variant="outline"
-                disabled={saving || !roles.some((r) => r.can_approve_expense)}
-                onClick={handleCreateDefault}
-              >
-                Create Default (Manager → Accounts)
-              </Button>
-            </div>
+          <div className="flex flex-col items-center px-5 py-12 text-center sm:px-6">
+            <p className="max-w-md text-sm text-gray-500">
+              Enable <strong>Submit expense</strong> on at least one company role (for example
+              Employee), then return here to create workflows.
+            </p>
+            <Button asChild className="mt-6">
+              <Link to="/admin/roles">Go to Roles</Link>
+            </Button>
           </div>
         </AdminListPanel>
       ) : (
-        <WorkflowBuilder
-          steps={activeSteps}
-          roles={roles}
-          departments={departments}
-          saving={saving}
-          onSaveSteps={handleSaveStepsFromCanvas}
-          onDeleteStep={handleDeleteStep}
-        />
+        <div className="space-y-4">
+          <div className="rounded-lg border border-[#e2e8f0] bg-white">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e2e8f0] px-4 py-3 sm:px-5">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Workflows
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                {selectedWorkflow && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={saving}
+                    className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                    onClick={() => setDeleteConfirmOpen(true)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={saving || availableStartRoles.length === 0}
+                  onClick={openCreateWorkflowModal}
+                >
+                  <Plus className="h-4 w-4" />
+                  New workflow
+                </Button>
+              </div>
+            </div>
+
+            <p className="border-b border-[#e2e8f0] px-4 py-2 text-xs text-muted-foreground sm:px-5">
+              One workflow per role that can <span className="font-medium text-gray-700">submit expenses</span>.
+              Approver-only roles (e.g. CEO, Accounts) are not listed here.
+              {availableStartRoles.length === 0 && submitterRoles.length > 0
+                ? ' You already have a workflow for each submitter role.'
+                : ''}
+            </p>
+
+            {workflows.length > 0 && (
+              <div className="flex flex-wrap gap-2 px-4 py-3 sm:px-5">
+                {workflows.map((workflow) => {
+                  const selected = workflow.id === selectedWorkflowId
+                  return (
+                    <button
+                      key={workflow.id}
+                      type="button"
+                      onClick={() => setSelectedWorkflowId(workflow.id)}
+                      className={cn(
+                        'rounded-full border px-4 py-2 text-sm font-medium transition-colors',
+                        selected
+                          ? 'border-primary bg-primary text-white'
+                          : 'border-gray-200 bg-white text-gray-700 hover:border-primary/40 hover:bg-blue-50',
+                      )}
+                    >
+                      {workflow.start_role_name || workflow.name}
+                      <span
+                        className={cn(
+                          'ml-2 text-xs',
+                          selected ? 'text-blue-100' : 'text-gray-400',
+                        )}
+                      >
+                        {getActiveSteps(workflow).length} step
+                        {getActiveSteps(workflow).length === 1 ? '' : 's'}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {selectedWorkflow && (
+              <div className="border-t border-[#e2e8f0] px-4 py-3 text-sm sm:px-5">
+                <p className="font-medium text-gray-900">{selectedWorkflow.name}</p>
+                <p className="mt-0.5 text-muted-foreground">
+                  Submitter role:{' '}
+                  <span className="font-medium text-gray-800">
+                    {selectedWorkflow.start_role_name}
+                  </span>
+                </p>
+              </div>
+            )}
+          </div>
+
+          {!selectedWorkflow ? (
+            <AdminListPanel
+              title="No workflows yet"
+              description="Create a workflow for each submitter role that needs its own approval path."
+            >
+              <div className="px-5 py-8 text-center sm:px-6">
+                <p className="text-sm text-gray-500">
+                  For example: Employee → Manager → Finance → Accounts, or a shorter path for
+                  managers.
+                </p>
+                <Button
+                  className="mt-4"
+                  onClick={openCreateWorkflowModal}
+                  disabled={availableStartRoles.length === 0}
+                >
+                  <Plus className="h-4 w-4" />
+                  Create first workflow
+                </Button>
+              </div>
+            </AdminListPanel>
+          ) : selectedWorkflow ? (
+            <WorkflowBuilder
+              key={selectedWorkflow.id}
+              steps={activeSteps}
+              roles={roles}
+              departments={departments}
+              saving={saving}
+              onSaveSteps={handleSaveStepsFromCanvas}
+              onDeleteStep={handleDeleteStep}
+            />
+          ) : null}
+
+          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Create workflow</DialogTitle>
+                <DialogDescription>
+                  Choose which submitter role uses this approval path.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid min-w-0 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="start-role">Start role</Label>
+                  <select
+                    id="start-role"
+                    className={selectClassName}
+                    value={startRoleId}
+                    onChange={(e) => {
+                      const roleId = Number(e.target.value)
+                      setStartRoleId(roleId)
+                      const role = roles.find((item) => item.id === roleId)
+                      if (role) {
+                        setWorkflowName(`${role.name} Approval Workflow`)
+                      }
+                    }}
+                  >
+                    <option value="" disabled>
+                      Select role
+                    </option>
+                    {availableStartRoles.map((role) => (
+                      <option key={role.id} value={role.id}>
+                        {role.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    Employees with this role will follow this workflow when they submit reports.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="workflow-name">Workflow name</Label>
+                  <Input
+                    id="workflow-name"
+                    value={workflowName}
+                    onChange={(e) => setWorkflowName(e.target.value)}
+                  />
+                </div>
+              </div>
+              <DialogFooter className="flex-col gap-2 sm:flex-col">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  disabled={
+                    saving ||
+                    !startRoleId ||
+                    !roles.some((role) => role.can_approve_expense)
+                  }
+                  onClick={handleCreateDefault}
+                >
+                  Create default (Manager → Accounts)
+                </Button>
+                <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={saving}
+                    onClick={() => setCreateOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={saving || !startRoleId}
+                    onClick={handleCreateWorkflow}
+                  >
+                    {saving ? 'Please wait...' : 'Create workflow'}
+                  </Button>
+                </div>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
       )}
+
+      <AdminConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={(open) => !open && setDeleteConfirmOpen(false)}
+        title="Delete workflow"
+        description={
+          selectedWorkflow
+            ? `Permanently delete "${selectedWorkflow.name}" for ${selectedWorkflow.start_role_name ?? 'this role'}? This cannot be undone.`
+            : 'Permanently delete this workflow? This cannot be undone.'
+        }
+        confirmLabel="Delete"
+        onConfirm={handleDeleteWorkflow}
+        loading={saving}
+      />
     </DashboardLayout>
   )
 }

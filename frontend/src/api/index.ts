@@ -18,9 +18,9 @@ import type {
   MyUploadedExpensesResponse,
   PendingApprovalsResponse,
   PolicyRule,
-  ReimbursementEmailConfig,
+  PlatformEmailServiceResponse,
+  ReimbursementEmailConfigResponse,
   RejectReportResponse,
-  SmtpConfig,
   UpdateWorkflowStepResponse,
   Currency,
   CurrencyListResponse,
@@ -133,6 +133,7 @@ export const listEmployees = (params?: {
   search?: string
   department_id?: string
   role?: string
+  company_role_id?: string
 }) =>
   api.get<import('@/lib/pagination').PaginatedResponse<EmployeeRecord>>(
     '/tenants/employees/list/',
@@ -233,32 +234,19 @@ export const listPolicyRules = (params?: { page?: number; search?: string; categ
   )
 
 export const getReimbursementEmailConfig = () =>
-  api.get<ReimbursementEmailConfig | { message: string }>('/tenants/reimbursement-email/')
+  api.get<ReimbursementEmailConfigResponse>('/tenants/reimbursement-email/')
 
-export const saveReimbursementEmailConfig = (data: {
-  email_address: string
-  imap_host: string
-  imap_port: number
-  imap_username: string
-  imap_password: string
-  is_active: boolean
-}) => api.post('/tenants/reimbursement-email/save/', data)
+export const saveReimbursementEmailConfig = (data: { reimbursement_email: string }) =>
+  api.post<ReimbursementEmailConfigResponse>('/tenants/reimbursement-email/save/', data)
 
-export const getSmtpConfig = () =>
-  api.get<SmtpConfig | { message: string }>('/tenants/smtp-config/')
+export const getEmailServiceStatus = () =>
+  api.get<PlatformEmailServiceResponse>('/tenants/smtp-config/')
 
-export const saveSmtpConfig = (data: {
-  smtp_host: string
-  smtp_port: number
-  smtp_email: string
-  smtp_password: string
-  from_email_name: string
-  use_tls: boolean
-  is_active: boolean
-}) => api.post('/tenants/smtp-config/save/', data)
+/** @deprecated Use getEmailServiceStatus — company SMTP is platform-managed via .env */
+export const getSmtpConfig = getEmailServiceStatus
 
 export const getCompanyAdminDashboard = () =>
-  api.get('/dashboard/company-admin/')
+  api.get<import('@/types').CompanyAdminDashboardData>('/dashboard/company-admin/')
 
 export const getAuditLogs = (params?: {
   action?: string
@@ -492,25 +480,24 @@ export const rejectReport = (reportId: string, notes: string) =>
 export const accountsMarkPaid = (reportId: string, notes: string) =>
   api.post<MarkPaidReportResponse>(`/expenses/accounts/reports/${reportId}/paid/`, { notes })
 
-export const triggerEmailFetch = () =>
-  api.post<{ success: boolean; processed_count: number; skipped_count: number }>(
-    '/expenses/emails/fetch/',
-    {},
-  )
-
 // Approval workflow
-export const getApprovalWorkflow = () => api.get<ApprovalWorkflow>('/expenses/workflow/')
+export const listApprovalWorkflows = () =>
+  api.get<import('@/types').ApprovalWorkflowListResponse>('/expenses/workflow/')
 
-export const saveApprovalWorkflow = (name = 'Default Approval Workflow') =>
-  api.post<{ message: string; workflow: ApprovalWorkflow }>('/expenses/workflow/save/', {
-    name,
-  })
+export const getApprovalWorkflow = (workflowId: string) =>
+  api.get<ApprovalWorkflow>(`/expenses/workflow/?workflow_id=${workflowId}`)
+
+export const saveApprovalWorkflow = (data: { name: string; start_role: number }) =>
+  api.post<{ message: string; workflow: ApprovalWorkflow }>('/expenses/workflow/save/', data)
 
 export const addWorkflowStep = (data: {
+  workflow_id: string
   step_order: number
-  approver_role: number
+  approver_role?: number
+  approver_type?: string
   routing_type: 'DEPARTMENT' | 'COMPANY'
   department?: string | null
+  specific_user?: string | null
 }) => api.post<AddWorkflowStepResponse>('/expenses/workflow/steps/add/', data)
 
 export const deactivateWorkflowStep = (stepId: string) =>
@@ -526,10 +513,14 @@ export const updateWorkflowStep = (
   },
 ) => api.patch<UpdateWorkflowStepResponse>(`/expenses/workflow/steps/${stepId}/update/`, data)
 
+export const deleteApprovalWorkflow = (workflowId: string) =>
+  api.delete<import('@/types').DeleteWorkflowResponse>(`/expenses/workflow/${workflowId}/`)
+
 // Dashboards
 export const getDashboard = () => api.get('/dashboard/')
 
-export const getEmployeeDashboard = () => api.get('/dashboard/employee/')
+export const getEmployeeDashboard = () =>
+  api.get<import('@/types').EmployeeDashboardResponse>('/dashboard/employee/')
 
 export const getApproverDashboard = () => api.get('/dashboard/approver/')
 

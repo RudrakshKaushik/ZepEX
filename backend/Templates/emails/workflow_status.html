@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>{{ subject }}</title>
+</head>
+<body style="font-family: Arial, sans-serif; background:#f6f7fb; padding:20px;">
+
+<div style="max-width:650px; margin:auto; background:white; padding:25px; border-radius:10px;">
+
+    <h2 style="color:#1f2937;">{{ subject }}</h2>
+
+    <p>Hello {{ employee_name }},</p>
+
+    <p>{{ message }}</p>
+
+    <hr>
+
+    <h3>Workflow Details</h3>
+
+    <p><b>Company:</b> {{ company_name }}</p>
+    <p><b>Report ID:</b> {{ report_id }}</p>
+    <p><b>Month:</b> {{ month }}</p>
+    <p><b>Status:</b> {{ status }}</p>
+    <p><b>Total Amount:</b> {{ total_amount }}</p>
+
+    <hr>
+
+    <h3>Approval Action</h3>
+
+    <p><b>Action:</b> {{ action }}</p>
+    <p><b>Action By:</b> {{ action_by_name }} ({{ action_by_email }})</p>
+    <p><b>Role:</b> {{ action_by_role }}</p>
+    <p><b>Step:</b> {{ step_order }}</p>
+    <p><b>Approver Type:</b> {{ approver_type }}</p>
+
+    {% if notes %}
+        <p><b>Notes:</b> {{ notes }}</p>
+    {% endif %}
+
+    {% if next_approver_email %}
+        <hr>
+        <h3>Next Approval</h3>
+        <p><b>Next Step:</b> {{ next_step_order }}</p>
+        <p><b>Next Approver:</b> {{ next_approver_name }} ({{ next_approver_email }})</p>
+    {% endif %}
+
+    {% if steps_skipped %}
+        <p><b>Steps Skipped:</b> {{ steps_skipped }}</p>
+    {% endif %}
+
+    <br>
+
+    <p style="color:#6b7280;">
+        This is an automated notification from ZepEx.
+    </p>
+
+</div>
+
+</body>
+</html>

@@ -46,8 +46,6 @@ import { formatDate } from '@/lib/utils'
 import UploadIcon from '@/assets/upload.png'
 import AssignIcon from '@/assets/assign.png'
 
-const roles = ['MANAGER', 'EMPLOYEE', 'ACCOUNTS'] as const
-
 const COMPANY_ADMIN_ROLE_VALUE = '__COMPANY_ADMIN__'
 
 const selectClassName =
@@ -140,7 +138,9 @@ export function EmployeesPage() {
           page,
           search: search || undefined,
           department_id: filterDepartmentId || undefined,
-          role: filterRole || undefined,
+          role: isCompanyAdminRoleValue(filterRole) ? 'COMPANY_ADMIN' : undefined,
+          company_role_id:
+            filterRole && !isCompanyAdminRoleValue(filterRole) ? filterRole : undefined,
         }),
         fetchAllPages((page) => listDepartments({ page })),
         fetchAllPages((page) => listEmployees({ page })),
@@ -489,7 +489,7 @@ export function EmployeesPage() {
               </Button>
             </div>
             {filtersOpen && (
-              <div className="mt-3 flex flex-wrap gap-2 rounded-lg border border-[#e2e8f0] bg-gray-50 p-3">
+              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-[#e2e8f0] bg-gray-50 p-3">
                 <select
                   className={selectClassName + ' w-full min-w-[10rem] sm:w-auto sm:flex-1'}
                   value={filterDepartmentId}
@@ -510,12 +510,34 @@ export function EmployeesPage() {
                   disabled={saving}
                 >
                   <option value="">All roles</option>
-                  {roles.map((r) => (
-                    <option key={r} value={r}>
-                      {r.charAt(0) + r.slice(1).toLowerCase()}
+                  <option value={COMPANY_ADMIN_ROLE_VALUE}>Company Admin</option>
+                  {activeCompanyRoles.map((role) => (
+                    <option key={role.id} value={String(role.id)}>
+                      {role.name}
                     </option>
                   ))}
                 </select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={saving || (!filterDepartmentId && !filterRole)}
+                  onClick={() => {
+                    setFilterDepartmentId('')
+                    setFilterRole('')
+                  }}
+                >
+                  Clear filters
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={saving}
+                  onClick={() => setFiltersOpen(false)}
+                >
+                  Cancel
+                </Button>
               </div>
             )}
           </>

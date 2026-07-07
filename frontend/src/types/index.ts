@@ -167,8 +167,13 @@ export interface ApprovalWorkflowStep {
   id: string
   workflow?: string
   step_order: number
-  approver_role: number
+  approver_type?: string
+  approver_type_name?: string
+  approver_role: number | null
   approver_role_name: string
+  specific_user?: string | null
+  specific_user_name?: string | null
+  specific_user_email?: string | null
   department: string | null
   department_name: string | null
   routing_type: 'DEPARTMENT' | 'COMPANY'
@@ -180,10 +185,17 @@ export interface ApprovalWorkflow {
   id: string
   company: string
   name: string
+  start_role: number
+  start_role_name?: string
   is_active: boolean
   steps: ApprovalWorkflowStep[]
   created_at: string
   updated_at: string
+}
+
+export interface ApprovalWorkflowListResponse {
+  count: number
+  workflows: ApprovalWorkflow[]
 }
 
 export interface LineItem {
@@ -290,12 +302,24 @@ export interface ExpenseReport {
 export interface ApproveReportResponse {
   message: string
   approved_by: string
-  is_company_admin_override: boolean
+  workflow_completed?: boolean
+  steps_skipped?: number
+  is_company_admin_override?: boolean
   next_step?: {
+    id?: string
     step_order: number
-    role: string
+    approver_type?: string
+    approver_type_name?: string
+    approver_role?: string | null
+    role?: string
     routing_type: string
     department: string | null
+    specific_user?: string | null
+    next_approver?: {
+      id: string
+      name: string
+      email: string
+    }
   }
   status?: string
   report: ExpenseReport
@@ -304,7 +328,8 @@ export interface ApproveReportResponse {
 export interface RejectReportResponse {
   message: string
   rejected_by: string
-  is_company_admin_override: boolean
+  workflow_completed?: boolean
+  is_company_admin_override?: boolean
   status: string
   report: ExpenseReport
 }
@@ -312,7 +337,7 @@ export interface RejectReportResponse {
 export interface MarkPaidReportResponse {
   message: string
   paid_by: string
-  is_company_admin_override: boolean
+  is_company_admin_override?: boolean
   report: ExpenseReport
 }
 
@@ -324,6 +349,10 @@ export interface AddWorkflowStepResponse {
 export interface DeactivateWorkflowStepResponse {
   message: string
   workflow_steps_reordered: boolean
+}
+
+export interface DeleteWorkflowResponse {
+  message: string
 }
 
 export interface UpdateWorkflowStepResponse {
@@ -389,25 +418,38 @@ export interface DuplicateReceiptsResponse {
   results: DuplicateReceiptLog[]
 }
 
-export interface ReimbursementEmailConfig {
-  id: string
-  email_address: string
-  imap_host: string
-  imap_port: number
-  imap_username: string
-  is_active: boolean
-  last_checked_at: string | null
-  created_at: string
+export interface ReimbursementEmailConfigData {
+  company_name: string
+  reimbursement_email: string | null
+  platform_receipt_email: string
+  forwarding_instruction: string
+  imap_required?: boolean
+  imap_removed?: boolean
 }
 
-export interface SmtpConfig {
-  id: string
-  smtp_host: string
-  smtp_port: number
-  smtp_email: string
-  from_email_name: string
-  use_tls: boolean
-  is_active: boolean
+export interface ReimbursementEmailConfigResponse {
+  success: boolean
+  message?: string
+  data: ReimbursementEmailConfigData
+}
+
+export interface PlatformEmailServiceStatus {
+  smtp_source?: string
+  company_smtp_required?: boolean
+  company_smtp_removed?: boolean
+  from_email?: string
+  provider?: string
+  outgoing_email?: string
+  smtp_configured?: boolean
+  email_forwarding_required?: boolean
+  platform_receipt_email?: string
+}
+
+export interface PlatformEmailServiceResponse {
+  success: boolean
+  message?: string
+  data?: PlatformEmailServiceStatus
+  email_service?: PlatformEmailServiceStatus
 }
 
 export interface CsvImportError {
@@ -570,6 +612,60 @@ export interface PaymentDashboardResponse {
   manual_approved_reports?: ExpenseReport[]
   paid_reports?: ExpenseReport[]
   rejected_reports?: ExpenseReport[]
+}
+
+export interface CompanyAdminDashboardData {
+  company_admin: { name: string; email: string; company: string; company_id?: string }
+  setup_status: Record<string, boolean>
+  email_forwarding?: {
+    company_reimbursement_email: string | null
+    platform_receipt_email: string
+    forwarding_instruction: string
+  }
+  metrics: Record<string, number | string>
+  department_wise_spend?: Array<{ department: string; total: string }>
+  category_wise_spend?: Array<{ category: string; total: string }>
+  recent_reports?: ExpenseReport[]
+  workflows?: unknown[]
+}
+
+export interface EmployeeDashboardCurrentMonthReport {
+  report: ExpenseReport
+  summary?: {
+    total_receipts: number
+    no_violation_receipts: number
+    violation_receipts: number
+    total_amount: string
+  }
+  workflow_status?: {
+    workflow_completed: boolean
+    current_approver: { id: string; name: string; email: string } | null
+    current_step: Record<string, unknown> | null
+  }
+  no_violation_receipts?: Receipt[]
+  violation_receipts?: Receipt[]
+}
+
+export interface EmployeeDashboardResponse {
+  user: {
+    name: string
+    email: string
+    system_role: string
+    company_role: string
+    company: string
+    department: string | null
+    permissions: UserPermissions
+  }
+  metrics: {
+    total_reports: number
+    draft_reports: number
+    pending_reports: number
+    approved_reports: number
+    rejected_reports: number
+    paid_reports: number
+  }
+  current_month_report: EmployeeDashboardCurrentMonthReport | null
+  submitted_reports: ExpenseReport[]
 }
 
 export interface Currency {

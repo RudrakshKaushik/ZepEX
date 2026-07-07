@@ -1,146 +1,113 @@
-import email
-import imaplib
-from django.core.files.base import ContentFile
-from django.utils import timezone
+from tenants.models import UserProfile
 
-from tenants.models import ReimbursementEmailConfig, UserProfile
 from .models import ExpenseReport, ExpenseSubmission, ExpenseReceipt
 from .report_utils import get_or_create_current_month_report
-from .tasks import process_receipt_ai_task
 
 
 ALLOWED_EXTENSIONS = ["pdf", "jpg", "jpeg", "png"]
 
 
-def fetch_company_reimbursement_emails(config_id):
-    config = ReimbursementEmailConfig.objects.get(id=config_id)
-
-    mail = imaplib.IMAP4_SSL(
-        config.imap_host,
-        config.imap_port
-    )
-
-    mail.login(
-        config.imap_username,
-        config.imap_password
-    )
-
-    mail.select("inbox")
-
-    status, messages = mail.search(None, "UNSEEN")
-
-    if status != "OK":
+def ingest_forwarded_receipt_email(
+    *,
+    sender_email,
+    subject="",
+    uploaded_file=None,
+):
+    if not sender_email:
         return {
             "success": False,
-            "message": "No unread emails found."
+            "error": "sender_email is required."
         }
 
-    processed_count = 0
-    skipped_count = 0
+    if not uploaded_file:
+        return {
+            "success": False,
+            "error": "Receipt attachment is required."
+        }
 
-    for message_id in messages[0].split():
-        status, msg_data = mail.fetch(
-            message_id,
-            "(RFC822)"
+    extension = uploaded_file.name.split(".")[-1].lower()
+
+    if extension not in ALLOWED_EXTENSIONS:
+        return {
+            "success": False,
+            "error": "Only PDF, JPG, JPEG, and PNG files are allowed."
+        }
+
+    try:
+        employee = UserProfile.objects.select_related(
+            "user",
+            "company",
+            "department",
+            "company_role"
+        ).get(
+            user__email__iexact=sender_email,
+            user__is_active=True
         )
 
-        if status != "OK":
-            skipped_count += 1
-            continue
+    except UserProfile.DoesNotExist:
+        return {
+            "success": False,
+            "error": "Sender is not a registered employee."
+        }
 
-        raw_email = msg_data[0][1]
-        msg = email.message_from_bytes(raw_email)
+    company = employee.company
 
-        sender_email = email.utils.parseaddr(
-            msg.get("From")
-        )[1]
+    if not company.is_verified or not company.is_active:
+        return {
+            "success": False,
+            "error": "Company is not active or verified."
+        }
 
-        subject = msg.get("Subject", "")
+    if not employee.company_role:
+        return {
+            "success": False,
+            "error": "Employee company role is not assigned."
+        }
 
-        try:
-            employee = UserProfile.objects.get(
-                user__email=sender_email,
-                company=config.company,
-                role__in=["EMPLOYEE", "MANAGER"]
-            )
-        except UserProfile.DoesNotExist:
-            skipped_count += 1
-            continue
+    if not employee.company_role.can_upload_receipt:
+        return {
+            "success": False,
+            "error": "Employee role is not allowed to upload receipts."
+        }
 
-        if not employee.department:
-            skipped_count += 1
-            continue
+    if not employee.department:
+        return {
+            "success": False,
+            "error": "Employee department is not assigned."
+        }
 
-        attachments_found = False
+    report = get_or_create_current_month_report(employee)
 
-        for part in msg.walk():
-            if part.get_content_disposition() != "attachment":
-                continue
+    if report.status != ExpenseReport.STATUS_DRAFT:
+        return {
+            "success": False,
+            "error": "Current month report is already submitted."
+        }
 
-            filename = part.get_filename()
+    submission = ExpenseSubmission.objects.create(
+        report=report,
+        company=company,
+        employee=employee,
+        source=ExpenseSubmission.SOURCE_EMAIL,
+        email_subject=subject
+    )
 
-            if not filename:
-                continue
-
-            extension = filename.split(".")[-1].lower()
-
-            if extension not in ALLOWED_EXTENSIONS:
-                continue
-
-            file_data = part.get_payload(decode=True)
-
-            if not file_data:
-                continue
-
-            attachments_found = True
-
-            report = get_or_create_current_month_report(employee)
-
-            if report.status != ExpenseReport.STATUS_DRAFT:
-                skipped_count += 1
-                continue
-
-            submission = ExpenseSubmission.objects.create(
-                report=report,
-                company=config.company,
-                employee=employee,
-                source=ExpenseSubmission.SOURCE_EMAIL,
-                email_subject=subject
-            )
-
-            receipt = ExpenseReceipt.objects.create(
-                report=report,
-                submission=submission,
-                company=config.company,
-                employee=employee,
-                department=employee.department,
-                status=ExpenseReceipt.STATUS_AI_PROCESSING
-            )
-
-            receipt.receipt_file.save(
-                filename,
-                ContentFile(file_data),
-                save=True
-            )
-
-            process_receipt_ai_task.delay(
-                str(receipt.id)
-            )
-
-            processed_count += 1
-
-        if not attachments_found:
-            skipped_count += 1
-
-        mail.store(message_id, "+FLAGS", "\\Seen")
-
-    config.last_checked_at = timezone.now()
-    config.save(update_fields=["last_checked_at"])
-
-    mail.logout()
+    receipt = ExpenseReceipt.objects.create(
+        report=report,
+        submission=submission,
+        company=company,
+        employee=employee,
+        department=employee.department,
+        receipt_file=uploaded_file,
+        status=ExpenseReceipt.STATUS_AI_PROCESSING,
+        ai_status=ExpenseReceipt.AI_PENDING,
+        ai_error_message=None,
+        ai_retry_count=0,
+    )
 
     return {
         "success": True,
-        "processed_count": processed_count,
-        "skipped_count": skipped_count
+        "report": report,
+        "submission": submission,
+        "receipt": receipt,
     }

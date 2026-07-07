@@ -1,24 +1,21 @@
-import { Building2, CheckCircle2, Clock, Users, XCircle } from 'lucide-react'
+import { Building2, CheckCircle2, Clock, Mail, Users, XCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { getCompanyAdminDashboard, getCompanyAuditLogs } from '@/api'
 import { AdminAuditFeed } from '@/components/admin/AdminAuditFeed'
 import { AdminSetupChecklist } from '@/components/admin/AdminSetupChecklist'
+import { DashboardPanel } from '@/components/dashboard/DashboardPanel'
 import { MetricCard } from '@/components/MetricCard'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
+import { Button } from '@/components/ui/button'
 import { DashboardPageShimmer } from '@/components/ui/shimmer'
 import { useAdminNav, invalidateAdminSetupCache } from '@/hooks/useAdminNav'
 import { formatMetricDisplay } from '@/lib/format'
-import type { AuditLogEntry } from '@/types'
-
-interface AdminDashboardData {
-  company_admin: { name: string; email: string; company: string }
-  setup_status: Record<string, boolean>
-  metrics: Record<string, number>
-}
+import type { AuditLogEntry, CompanyAdminDashboardData } from '@/types'
 
 export function AdminDashboard() {
   const { navItems } = useAdminNav()
-  const [data, setData] = useState<AdminDashboardData | null>(null)
+  const [data, setData] = useState<CompanyAdminDashboardData | null>(null)
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -49,6 +46,7 @@ export function AdminDashboard() {
 
   const metrics = data?.metrics ?? {}
   const setup = data?.setup_status ?? {}
+  const emailForwarding = data?.email_forwarding
 
   return (
     <DashboardLayout
@@ -61,25 +59,25 @@ export function AdminDashboard() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           title="Team Members"
-          value={formatMetricDisplay(metrics.total_users ?? 0)}
+          value={formatMetricDisplay(Number(metrics.total_users ?? 0))}
           icon={Users}
           accent="purple"
         />
         <MetricCard
           title="Pending Reports"
-          value={formatMetricDisplay(metrics.submitted_reports ?? 0)}
+          value={formatMetricDisplay(Number(metrics.submitted_reports ?? 0))}
           icon={Clock}
           accent="blue"
         />
         <MetricCard
           title="Approved"
-          value={formatMetricDisplay(metrics.approved_reports ?? 0)}
+          value={formatMetricDisplay(Number(metrics.approved_reports ?? 0))}
           icon={CheckCircle2}
           accent="green"
         />
         <MetricCard
           title="Rejected"
-          value={formatMetricDisplay(metrics.rejected_reports ?? 0)}
+          value={formatMetricDisplay(Number(metrics.rejected_reports ?? 0))}
           icon={XCircle}
           accent="red"
         />
@@ -88,6 +86,36 @@ export function AdminDashboard() {
       <div className="mt-6">
         <AdminSetupChecklist setup={setup} />
       </div>
+
+      {emailForwarding && (
+        <div className="mt-6">
+          <DashboardPanel
+            title="Email forwarding"
+            action={
+              <Button asChild variant="outline" size="sm">
+                <Link to="/admin/settings">Configure</Link>
+              </Button>
+            }
+          >
+            <div className="space-y-3 text-sm text-gray-700">
+              <div className="flex items-start gap-3">
+                <Mail className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                <div>
+                  <p className="font-medium text-gray-900">Company reimbursement email</p>
+                  <p>{emailForwarding.company_reimbursement_email || 'Not configured'}</p>
+                </div>
+              </div>
+              <div>
+                <p className="font-medium text-gray-900">Forward all emails to</p>
+                <p>{emailForwarding.platform_receipt_email}</p>
+              </div>
+              <p className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-blue-900">
+                {emailForwarding.forwarding_instruction}
+              </p>
+            </div>
+          </DashboardPanel>
+        </div>
+      )}
 
       <div className="mt-6">
         <AdminAuditFeed logs={auditLogs} />

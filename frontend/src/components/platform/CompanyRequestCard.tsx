@@ -25,10 +25,10 @@ const requestStatusLabel = {
 function formatRequestDateTime(date: string) {
   const value = new Date(date)
   const day = value.getDate()
-  const month = value.toLocaleString('en-IN', { month: 'short' })
+  const month = value.toLocaleString('en-US', { month: 'short' })
   const year = value.getFullYear()
   const time = value
-    .toLocaleString('en-IN', {
+    .toLocaleString('en-US', {
       hour: 'numeric',
       minute: '2-digit',
       hour12: true,

@@ -3,7 +3,7 @@ from django.shortcuts import render
 # Create your views here.
 from datetime import date
 
-from datetime import date
+from django.conf import settings
 
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -503,12 +503,14 @@ def company_admin_dashboard(request):
         if workflow else 0
     )
 
-    smtp_configured = CompanySMTPConfig.objects.filter(
+    env_email_configured = bool(settings.EMAIL_HOST and settings.EMAIL_HOST_USER)
+
+    smtp_configured = env_email_configured or CompanySMTPConfig.objects.filter(
         company=company,
         is_active=True
     ).exists()
 
-    reimbursement_email_configured = ReimbursementEmailConfig.objects.filter(
+    reimbursement_email_configured = env_email_configured or ReimbursementEmailConfig.objects.filter(
         company=company,
         is_active=True
     ).exists()

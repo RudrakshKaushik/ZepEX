@@ -22,7 +22,7 @@ from tenants.models import CompanyRole
 
 
 from .serializers import ExpenseReceiptSerializer,ExpenseReportSerializer, ApprovalHistorySerializer
-from .services import extract_receipt_with_gemini
+from .services import extract_receipt_with_gemini, recalculate_receipt_from_line_items, sync_receipt_totals_for_report
 from .models import ApprovalWorkflow, ApprovalWorkflowStep
 from .serializers import ApprovalWorkflowSerializer, ApprovalWorkflowStepSerializer
 from django.utils import timezone
@@ -873,6 +873,9 @@ def current_month_report(request):
             status=status.HTTP_404_NOT_FOUND
         )
 
+    if sync_receipt_totals_for_report(report):
+        report.refresh_from_db()
+
     serializer = ExpenseReportSerializer(report)
     payload = serializer.data
     payload["report_id"] = str(report.id)
@@ -1044,6 +1047,8 @@ def delete_expense_line_item(request, line_item_id):
     }
 
     line_item.delete()
+
+    recalculate_receipt_from_line_items(receipt)
 
     create_audit_log(
         company=profile.company,

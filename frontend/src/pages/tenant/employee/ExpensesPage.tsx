@@ -1,4 +1,4 @@
-import { AlertTriangle, FileText, RefreshCw, Send, Trash2, Upload, X } from 'lucide-react'
+import { FileText, Send, Upload, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import {
@@ -10,12 +10,13 @@ import {
   uploadReceipt,
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
-import { StatusBadge } from '@/components/StatusBadge'
 import { DashboardEmptyState } from '@/components/dashboard/DashboardEmptyState'
 import { DashboardPanel } from '@/components/dashboard/DashboardPanel'
 import { ExpenseReportTable } from '@/components/reports/ExpenseReportTable'
+import { ExpenseProcessingPanel } from '@/components/reports/ExpenseProcessingPanel'
+import { EmployeeReportSummary } from '@/components/reports/EmployeeReportSummary'
+import { ReceiptExpenseCard } from '@/components/reports/ReceiptExpenseCard'
 import { ReportFiltersBar } from '@/components/reports/ReportFiltersBar'
-import { ReportDetail } from '@/components/ReportDetail'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { useAuth } from '@/context/AuthContext'
 import { defaultHomeForUser } from '@/lib/auth'
@@ -36,11 +37,14 @@ import {
 } from '@/components/ui/dialog'
 import { TableShimmer } from '@/components/ui/shimmer'
 import type { ExpenseReport } from '@/types'
-import { formatCurrency, formatDate } from '@/lib/utils'
-import { formatReceiptAmountDisplay, receiptDisplayCurrency, receiptExchangeRateHint } from '@/lib/receiptDisplay'
-import { canRetryReceiptAi, countPendingAiReceipts, isAiExtractionFailed, isAiExtractionPending, receiptAiStatusLabel, receiptDisplayTitle } from '@/lib/receiptAi'
+import { formatCurrency } from '@/lib/utils'
+import { countPendingAiReceipts } from '@/lib/receiptAi'
 import { fireImportConfetti } from '@/lib/confetti'
-import { normalizeCurrentMonthReport } from '@/lib/expenseReport'
+import {
+  mergeServerReportIntoReports,
+  mergeUploadIntoReports,
+  normalizeCurrentMonthReport,
+} from '@/lib/expenseReport'
 import {
   hasEmployeeExpenseFilters,
   toEmployeeExpenseApiParams,
@@ -77,89 +81,26 @@ function MyExpenseExpandedPanel({
 }) {
   return (
     <div className="space-y-4">
-      <ReportDetail report={report} showEmployee={false} />
+      <EmployeeReportSummary report={report} />
+
       {!report.receipts.length ? (
-        <p className="text-sm text-muted-foreground">No receipts uploaded yet.</p>
+        <p className="rounded-xl border border-dashed border-[#e2e8f0] bg-white px-5 py-8 text-center text-sm text-muted-foreground">
+          No receipts uploaded yet. Use Upload receipt to add expenses.
+        </p>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Extracted receipts
+          </p>
           {report.receipts.map((receipt) => (
-            <div key={receipt.id} className="rounded-xl border bg-white p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="font-medium">{receiptDisplayTitle(receipt)}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {isAiExtractionFailed(receipt)
-                      ? 'Amount pending extraction'
-                      : `${formatReceiptAmountDisplay(receipt)} · ${formatDate(receipt.invoice_date)}`}
-                  </p>
-                  {receiptExchangeRateHint(receipt) && (
-                    <p className="text-xs text-muted-foreground">
-                      {receiptExchangeRateHint(receipt)}
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {receipt.has_any_violation && (
-                    <AlertTriangle className="h-4 w-4 text-amber-500" />
-                  )}
-                  <StatusBadge status={receipt.status} />
-                  {canEditReceipts && canRetryReceiptAi(receipt) && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={retryingReceiptId === receipt.id}
-                      onClick={() => onRetryReceipt(receipt.id)}
-                    >
-                      <RefreshCw
-                        className={`h-3.5 w-3.5 ${retryingReceiptId === receipt.id ? 'animate-spin' : ''}`}
-                      />
-                      Retry AI
-                    </Button>
-                  )}
-                </div>
-              </div>
-              {receipt.ai_status && receipt.ai_status !== 'AI_COMPLETED' && (
-                <p className="mt-2 text-xs text-amber-700">
-                  {isAiExtractionPending(receipt) ? (
-                    <>AI extraction in progress…</>
-                  ) : (
-                    <>
-                      AI: {receiptAiStatusLabel(receipt.ai_status)}
-                      {receipt.ai_error_message ? ` — ${receipt.ai_error_message}` : ''}
-                    </>
-                  )}
-                </p>
-              )}
-              {receipt.has_any_violation && receipt.policy_violation_reason && (
-                <p className="mt-2 text-sm text-amber-700">{receipt.policy_violation_reason}</p>
-              )}
-              {receipt.line_items.map((item) => (
-                <div
-                  key={item.id}
-                  className="mt-3 flex items-start justify-between gap-2 rounded-lg bg-muted/40 p-3 text-sm"
-                >
-                  <div>
-                    <p className="font-medium capitalize">
-                      {item.category.replace(/_/g, ' ')}
-                    </p>
-                    <p className="line-clamp-2 text-muted-foreground">{item.description}</p>
-                    {item.is_violating && item.violation_reason && (
-                      <p className="mt-1 text-xs text-amber-700">{item.violation_reason}</p>
-                    )}
-                    <p className="mt-1">{formatCurrency(item.amount, receiptDisplayCurrency(receipt))}</p>
-                  </div>
-                  {canEditReceipts && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => onDeleteLineItem(item.id)}
-                    >
-                      <Trash2 className="h-4 w-4 text-red-500" />
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </div>
+            <ReceiptExpenseCard
+              key={receipt.id}
+              receipt={receipt}
+              canEdit={canEditReceipts}
+              onDeleteLineItem={onDeleteLineItem}
+              onRetryReceipt={onRetryReceipt}
+              retrying={retryingReceiptId === receipt.id}
+            />
           ))}
         </div>
       )}
@@ -223,19 +164,15 @@ export function ExpensesPage() {
       }
 
       const { data } = await getCurrentMonthReport()
-      const current = normalizeCurrentMonthReport(data)
-      setReports(
-        current?.id
-          ? [
-              {
-                ...current,
-                employee_email: current.employee_email || user?.email || '',
-              },
-            ]
-          : [],
-      )
-    } catch {
-      setReports([])
+      setReports((prev) => mergeServerReportIntoReports(prev, data, user?.email))
+    } catch (err) {
+      const status = (err as { response?: { status?: number } })?.response?.status
+      if (status === 404) {
+        return
+      }
+      if (!options?.silent) {
+        toast.error(getApiErrorMessage(err))
+      }
     } finally {
       if (!options?.silent) setLoading(false)
     }
@@ -251,21 +188,21 @@ export function ExpensesPage() {
       return
     }
 
-    if (hadPendingAiRef.current) {
+    if (hadPendingAiRef.current && reports.some((report) => (report.receipts?.length ?? 0) > 0)) {
       hadPendingAiRef.current = false
       toast.success('AI extraction finished for your receipt(s).')
     }
-  }, [pendingAiCount])
+  }, [pendingAiCount, reports])
 
   useEffect(() => {
-    if (pendingAiCount === 0) return
+    if (pendingAiCount === 0 && backgroundUploads === 0) return
 
     const intervalId = window.setInterval(() => {
       void load({ silent: true })
     }, 3000)
 
     return () => window.clearInterval(intervalId)
-  }, [pendingAiCount, load])
+  }, [pendingAiCount, backgroundUploads, load])
 
   const runBackgroundUploads = async (files: File[]) => {
     setBackgroundUploads((count) => count + files.length)
@@ -280,6 +217,15 @@ export function ExpensesPage() {
         try {
           const { data } = await uploadReceipt(file)
           uploadedCount += 1
+
+          setReports((prev) => {
+            const next = mergeUploadIntoReports(prev, data, {
+              email: user?.email,
+              name: [user?.first_name, user?.last_name].filter(Boolean).join(' ') || undefined,
+              department: user?.department?.name,
+            })
+            return next
+          })
 
           const aiFailed = data.ai_result?.success === false && !data.ai_result?.pending
           if (aiFailed) {
@@ -330,7 +276,7 @@ export function ExpensesPage() {
         )
       }
 
-      await load({ silent: true })
+      void load({ silent: true })
     } finally {
       setBackgroundUploads((count) => Math.max(0, count - files.length))
     }
@@ -437,7 +383,11 @@ export function ExpensesPage() {
     allowSubmit &&
     !!draftReport &&
     (draftReport.receipts?.length ?? 0) > 0 &&
-    !filtersActive
+    !filtersActive &&
+    pendingAiCount === 0 &&
+    backgroundUploads === 0
+  const showProcessingOnly = !displayReports.length && isProcessingInBackground
+  const expandReportId = draftReport?.id ?? displayReports[0]?.id ?? null
 
   return (
     <DashboardLayout title="My Expenses" subtitle="Upload receipts for this month" navItems={navItems}>
@@ -481,33 +431,42 @@ export function ExpensesPage() {
       </div>
 
       {!displayReports.length ? (
-        <DashboardPanel title="My expenses">
-          <DashboardEmptyState
-            image="folder"
-            title={filtersActive ? 'No matching reports' : 'No expense report yet'}
-            description={
-              filtersActive
-                ? 'Try adjusting your filters or clear them to view the current month report.'
-                : 'Upload a receipt to start your monthly expense report.'
-            }
-            action={
-              !filtersActive && allowUpload ? (
-                <Button
-                  onClick={() => {
-                    resetUploadModal()
-                    setUploadOpen(true)
-                  }}
-                >
-                  Upload receipt
-                  <img src={UploadIcon} alt="Upload" className="w-6 h-6" />
-                </Button>
-              ) : undefined
-            }
+        showProcessingOnly ? (
+          <ExpenseProcessingPanel
+            uploadingCount={backgroundUploads}
+            processingCount={pendingAiCount}
           />
-        </DashboardPanel>
+        ) : (
+          <DashboardPanel title="My expenses">
+            <DashboardEmptyState
+              image="folder"
+              title={filtersActive ? 'No matching reports' : 'No expense report yet'}
+              description={
+                filtersActive
+                  ? 'Try adjusting your filters or clear them to view the current month report.'
+                  : 'Upload a receipt to start your monthly expense report.'
+              }
+              onRefresh={() => void load()}
+              action={
+                !filtersActive && allowUpload ? (
+                  <Button
+                    onClick={() => {
+                      resetUploadModal()
+                      setUploadOpen(true)
+                    }}
+                  >
+                    Upload receipt
+                    <img src={UploadIcon} alt="Upload" className="w-6 h-6" />
+                  </Button>
+                ) : undefined
+              }
+            />
+          </DashboardPanel>
+        )
       ) : (
         <ExpenseReportTable
           reports={displayReports}
+          defaultExpandedId={expandReportId}
           renderExpanded={(expandedReport) => {
             const isDraftReport = expandedReport.status === 'DRAFT'
             const canEditReceipts = allowSubmit && isDraftReport

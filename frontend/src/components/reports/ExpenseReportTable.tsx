@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { WorkflowStepper } from '@/components/reports/WorkflowStepper'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import {
@@ -25,8 +25,14 @@ export function ExpenseReportTable({
   renderRowActions,
   defaultExpandedId = null,
 }: ExpenseReportTableProps) {
-  const [expandedId, setExpandedId] = useState<string | null>(defaultExpandedId)
+  const [expandedId, setExpandedId] = useState<string | null>(defaultExpandedId ?? null)
   const columnCount = renderRowActions ? 6 : 5
+
+  useEffect(() => {
+    if (defaultExpandedId) {
+      setExpandedId(defaultExpandedId)
+    }
+  }, [defaultExpandedId])
 
   if (!reports.length) return null
 

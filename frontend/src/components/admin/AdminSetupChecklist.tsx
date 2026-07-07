@@ -1,6 +1,6 @@
 import { Check } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { getSetupLabel, SETUP_LINKS } from '@/lib/adminSetup'
+import { getSetupLabel, getVisibleSetupEntries, SETUP_LINKS } from '@/lib/adminSetup'
 import { cn } from '@/lib/utils'
 
 interface AdminSetupChecklistProps {
@@ -8,7 +8,7 @@ interface AdminSetupChecklistProps {
 }
 
 export function AdminSetupChecklist({ setup }: AdminSetupChecklistProps) {
-  const entries = Object.entries(setup)
+  const entries = getVisibleSetupEntries(setup)
 
   return (
     <div className="overflow-hidden rounded-lg border border-[#e2e8f0] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)]">

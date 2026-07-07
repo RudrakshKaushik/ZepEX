@@ -8,7 +8,7 @@ export function cn(...inputs: ClassValue[]) {
 export function formatCurrency(amount: string | number, currency = 'INR') {
   const num = typeof amount === 'string' ? parseFloat(amount) : amount
   if (Number.isNaN(num)) return `${currency} 0.00`
-  return new Intl.NumberFormat('en-IN', {
+  return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,
     minimumFractionDigits: 2,
@@ -17,7 +17,7 @@ export function formatCurrency(amount: string | number, currency = 'INR') {
 
 export function formatDate(date: string | null | undefined) {
   if (!date) return '—'
-  return new Date(date).toLocaleDateString('en-IN', {
+  return new Date(date).toLocaleDateString('en-US', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -26,7 +26,7 @@ export function formatDate(date: string | null | undefined) {
 
 export function formatDateTime(date: string | null | undefined) {
   if (!date) return '—'
-  return new Date(date).toLocaleString('en-IN', {
+  return new Date(date).toLocaleString('en-US', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',

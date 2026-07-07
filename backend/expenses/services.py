@@ -12,6 +12,7 @@ from tenants.models import CompanyPolicy, PolicyCategoryRule
 from .models import (
     ExpenseLineItem,
     ExpenseReceipt,
+    ExpenseReport,
     DuplicateReceiptLog,
 )
 
@@ -254,6 +255,126 @@ def recalculate_report_total(report):
 
     report.total_amount = total
     report.save(update_fields=["total_amount", "updated_at"])
+
+
+def recalculate_receipt_from_line_items(receipt):
+    from django.db.models import Sum
+
+    from .currency_services import convert_currency
+
+    line_total = receipt.line_items.aggregate(total=Sum("amount"))["total"] or Decimal(
+        "0.00"
+    )
+
+    if line_total <= Decimal("0.00"):
+        receipt.original_amount = Decimal("0.00")
+        receipt.company_amount = Decimal("0.00")
+        receipt.total_amount = Decimal("0.00")
+        receipt.has_duplicate_violation = False
+        receipt.has_old_bill_violation = False
+        receipt.has_amount_violation = False
+        receipt.has_any_violation = False
+        receipt.policy_violation_reason = ""
+        receipt.status = ExpenseReceipt.STATUS_VALID
+        receipt.save(
+            update_fields=[
+                "original_amount",
+                "company_amount",
+                "total_amount",
+                "has_duplicate_violation",
+                "has_old_bill_violation",
+                "has_amount_violation",
+                "has_any_violation",
+                "policy_violation_reason",
+                "status",
+                "updated_at",
+            ]
+        )
+    else:
+        finance_settings = receipt.company.finance_settings
+        company_currency = (
+            finance_settings.base_currency.code
+            if finance_settings and finance_settings.base_currency
+            else receipt.company_currency or receipt.original_currency or "INR"
+        ).upper()
+
+        receipt.original_amount = line_total
+
+        if finance_settings and finance_settings.auto_currency_conversion:
+            conversion_result = convert_currency(
+                amount=receipt.original_amount,
+                from_currency=receipt.original_currency,
+                to_currency=company_currency,
+            )
+
+            if conversion_result.get("success"):
+                receipt.company_amount = conversion_result["company_amount"]
+                receipt.company_currency = conversion_result["company_currency"]
+                receipt.exchange_rate = conversion_result["exchange_rate"]
+                receipt.exchange_rate_date = conversion_result["exchange_rate_date"]
+                receipt.exchange_rate_provider = conversion_result[
+                    "exchange_rate_provider"
+                ]
+            else:
+                receipt.company_amount = receipt.original_amount
+                receipt.company_currency = receipt.original_currency
+                receipt.exchange_rate = None
+                receipt.exchange_rate_date = None
+                receipt.exchange_rate_provider = None
+        else:
+            receipt.company_amount = receipt.original_amount
+            receipt.company_currency = receipt.original_currency or company_currency
+            receipt.exchange_rate = Decimal("1")
+            receipt.exchange_rate_date = timezone.now()
+            receipt.exchange_rate_provider = "Conversion Disabled"
+
+        receipt.total_amount = receipt.company_amount
+        receipt.save(
+            update_fields=[
+                "original_amount",
+                "company_amount",
+                "company_currency",
+                "total_amount",
+                "exchange_rate",
+                "exchange_rate_date",
+                "exchange_rate_provider",
+                "updated_at",
+            ]
+        )
+        check_policy_violations(receipt)
+
+    if receipt.report_id:
+        recalculate_report_total(receipt.report)
+
+
+def sync_receipt_totals_for_report(report):
+    from django.db.models import Sum
+
+    if report.status != ExpenseReport.STATUS_DRAFT:
+        return False
+
+    changed = False
+
+    for receipt in report.receipts.all():
+        line_total = receipt.line_items.aggregate(total=Sum("amount"))["total"] or Decimal(
+            "0.00"
+        )
+        stored_total = receipt.original_amount or Decimal("0.00")
+
+        needs_sync = line_total != stored_total or (
+            line_total <= Decimal("0.00")
+            and (
+                receipt.has_any_violation
+                or stored_total > Decimal("0.00")
+                or (receipt.company_amount or Decimal("0.00")) > Decimal("0.00")
+            )
+        )
+
+        if needs_sync:
+            recalculate_receipt_from_line_items(receipt)
+            changed = True
+
+    return changed
 
 
 def extract_receipt_with_gemini(receipt: ExpenseReceipt):

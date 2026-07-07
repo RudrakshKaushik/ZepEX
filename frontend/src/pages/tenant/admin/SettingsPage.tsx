@@ -1,22 +1,13 @@
-import { ChevronRight, Mail, Settings, Wallet } from 'lucide-react'
+import { ChevronRight, Settings, Wallet } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import {
-  getFinanceSettings,
-  getReimbursementEmailConfig,
-  getSmtpConfig,
-  saveReimbursementEmailConfig,
-  saveSmtpConfig,
-  triggerEmailFetch,
-  updateFinanceSettings,
-} from '@/api'
+import { getFinanceSettings, updateFinanceSettings } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
 import { AdminListPanel } from '@/components/admin/AdminListPanel'
 import { AdminModalFooter } from '@/components/admin/AdminModalFooter'
 import { CurrencySelect } from '@/components/admin/CurrencySelect'
 import { StatusBadge } from '@/components/StatusBadge'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
-import { useAdminNav, invalidateAdminSetupCache } from '@/hooks/useAdminNav'
-import { Button } from '@/components/ui/button'
+import { useAdminNav } from '@/hooks/useAdminNav'
 import {
   Dialog,
   DialogContent,
@@ -25,15 +16,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
 import { AdminListPanelShimmer } from '@/components/ui/shimmer'
 import { formatDateTime } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import { financeCurrencyLabel as formatFinanceCurrencyLabel } from '@/lib/financeSettings'
 import type { FinanceSettings } from '@/types'
-
-type SettingsSection = 'imap' | 'smtp' | 'finance'
 
 const DATE_FORMAT_OPTIONS = ['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD'] as const
 
@@ -45,24 +33,7 @@ export function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [activeSection, setActiveSection] = useState<SettingsSection | null>(null)
-  const [emailForm, setEmailForm] = useState({
-    email_address: '',
-    imap_host: 'imap.gmail.com',
-    imap_port: '993',
-    imap_username: '',
-    imap_password: '',
-    is_active: true,
-  })
-  const [smtpForm, setSmtpForm] = useState({
-    smtp_host: '',
-    smtp_port: '587',
-    smtp_email: '',
-    smtp_password: '',
-    from_email_name: 'ZepEx Notifications',
-    use_tls: true,
-    is_active: true,
-  })
+  const [financeOpen, setFinanceOpen] = useState(false)
   const [financeForm, setFinanceForm] = useState({
     base_currency: '' as number | '',
     auto_currency_conversion: true,
@@ -118,42 +89,9 @@ export function SettingsPage() {
     async function loadSettings() {
       setLoading(true)
       try {
-        const [emailResult, smtpResult, financeResult] = await Promise.allSettled([
-          getReimbursementEmailConfig(),
-          getSmtpConfig(),
-          getFinanceSettings(),
-        ])
-
-        if (emailResult.status === 'fulfilled') {
-          const emailData = emailResult.value.data
-          if ('email_address' in emailData) {
-            setEmailForm((f) => ({
-              ...f,
-              email_address: emailData.email_address,
-              imap_host: emailData.imap_host,
-              imap_port: String(emailData.imap_port),
-              imap_username: emailData.imap_username,
-            }))
-          }
-        }
-
-        if (smtpResult.status === 'fulfilled') {
-          const smtpData = smtpResult.value.data
-          if ('smtp_host' in smtpData) {
-            setSmtpForm((f) => ({
-              ...f,
-              smtp_host: smtpData.smtp_host,
-              smtp_port: String(smtpData.smtp_port),
-              smtp_email: smtpData.smtp_email,
-              from_email_name: smtpData.from_email_name,
-              use_tls: smtpData.use_tls,
-              is_active: smtpData.is_active,
-            }))
-          }
-        }
-
-        if (financeResult.status === 'fulfilled' && financeResult.value.data.settings) {
-          applyFinanceSettings(financeResult.value.data.settings)
+        const { data } = await getFinanceSettings()
+        if (data.settings) {
+          applyFinanceSettings(data.settings)
         }
       } finally {
         setLoading(false)
@@ -163,27 +101,8 @@ export function SettingsPage() {
     loadSettings()
   }, [])
 
-  const imapConfigured = Boolean(emailForm.email_address.trim())
-  const smtpConfigured = Boolean(smtpForm.smtp_host.trim() && smtpForm.smtp_email.trim())
-
   const settingsRows = useMemo(
     () => [
-      {
-        id: 'imap' as const,
-        title: 'Reimbursement email (IMAP)',
-        description: 'Fetch expense receipts from a shared inbox.',
-        summary: emailForm.email_address || 'Not configured',
-        configured: imapConfigured,
-        icon: Mail,
-      },
-      {
-        id: 'smtp' as const,
-        title: 'SMTP notifications',
-        description: 'Outgoing email for status updates and invites.',
-        summary: smtpForm.smtp_email || 'Not configured',
-        configured: smtpConfigured,
-        icon: Mail,
-      },
       {
         id: 'finance' as const,
         title: 'Finance settings',
@@ -193,57 +112,12 @@ export function SettingsPage() {
         icon: Wallet,
       },
     ],
-    [
-      emailForm.email_address,
-      smtpForm.smtp_email,
-      financeCurrencyLabel,
-      imapConfigured,
-      smtpConfigured,
-      financeLoaded,
-    ],
+    [financeCurrencyLabel, financeLoaded],
   )
 
   const closeModal = () => {
-    setActiveSection(null)
+    setFinanceOpen(false)
     setError('')
-  }
-
-  const saveEmail = async (e: FormEvent) => {
-    e.preventDefault()
-    setSaving(true)
-    setError('')
-    try {
-      await saveReimbursementEmailConfig({
-        ...emailForm,
-        imap_port: parseInt(emailForm.imap_port, 10),
-      })
-      toast.success('Reimbursement email config saved.')
-      invalidateAdminSetupCache()
-      closeModal()
-    } catch (err) {
-      setError(getApiErrorMessage(err))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const saveSmtp = async (e: FormEvent) => {
-    e.preventDefault()
-    setSaving(true)
-    setError('')
-    try {
-      await saveSmtpConfig({
-        ...smtpForm,
-        smtp_port: parseInt(smtpForm.smtp_port, 10),
-      })
-      toast.success('SMTP config saved.')
-      invalidateAdminSetupCache()
-      closeModal()
-    } catch (err) {
-      setError(getApiErrorMessage(err))
-    } finally {
-      setSaving(false)
-    }
   }
 
   const saveFinance = async (e: FormEvent) => {
@@ -280,31 +154,16 @@ export function SettingsPage() {
     }
   }
 
-  const fetchEmails = async () => {
-    setSaving(true)
-    setError('')
-    try {
-      const { data } = await triggerEmailFetch()
-      toast.success(
-        `Processed ${data.processed_count} emails (${data.skipped_count} skipped).`,
-      )
-    } catch (err) {
-      setError(getApiErrorMessage(err))
-    } finally {
-      setSaving(false)
-    }
-  }
-
   if (loading) {
     return (
       <DashboardLayout
         title="Settings"
-        subtitle="Email, finance & notifications"
+        subtitle="Finance & display preferences"
         breadcrumb="Settings"
         icon={Settings}
         navItems={navItems}
       >
-        <AdminListPanelShimmer rows={3} />
+        <AdminListPanelShimmer rows={1} />
       </DashboardLayout>
     )
   }
@@ -312,12 +171,12 @@ export function SettingsPage() {
   return (
     <DashboardLayout
       title="Settings"
-      subtitle="Email, finance & notifications"
+      subtitle="Finance & display preferences"
       breadcrumb="Settings"
       icon={Settings}
       navItems={navItems}
     >
-      {error && !activeSection && (
+      {error && !financeOpen && (
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
 
@@ -335,7 +194,7 @@ export function SettingsPage() {
                 type="button"
                 onClick={() => {
                   setError('')
-                  setActiveSection(row.id)
+                  setFinanceOpen(true)
                 }}
                 className="flex w-full items-center gap-4 px-5 py-4 text-left transition-colors hover:bg-gray-50 sm:px-6"
               >
@@ -357,141 +216,7 @@ export function SettingsPage() {
         </div>
       </AdminListPanel>
 
-      <Dialog open={activeSection === 'imap'} onOpenChange={(open) => !open && closeModal()}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Reimbursement email (IMAP)</DialogTitle>
-            <DialogDescription>Fetch expense receipts from a shared inbox.</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={saveEmail} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="imap-email">Email address</Label>
-              <Input
-                id="imap-email"
-                type="email"
-                value={emailForm.email_address}
-                onChange={(e) => setEmailForm({ ...emailForm, email_address: e.target.value })}
-                required
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-[1fr_7rem]">
-              <div className="space-y-2">
-                <Label htmlFor="imap-host">IMAP host</Label>
-                <Input
-                  id="imap-host"
-                  value={emailForm.imap_host}
-                  onChange={(e) => setEmailForm({ ...emailForm, imap_host: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="imap-port">Port</Label>
-                <Input
-                  id="imap-port"
-                  inputMode="numeric"
-                  value={emailForm.imap_port}
-                  onChange={(e) => setEmailForm({ ...emailForm, imap_port: e.target.value })}
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="imap-username">Username</Label>
-              <Input
-                id="imap-username"
-                value={emailForm.imap_username}
-                onChange={(e) => setEmailForm({ ...emailForm, imap_username: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="imap-password">Password / app password</Label>
-              <PasswordInput
-                id="imap-password"
-                value={emailForm.imap_password}
-                onChange={(e) => setEmailForm({ ...emailForm, imap_password: e.target.value })}
-                placeholder="Enter app password"
-              />
-            </div>
-            {error && activeSection === 'imap' && (
-              <p className="text-sm text-red-600">{error}</p>
-            )}
-            <AdminModalFooter
-              onCancel={closeModal}
-              submitLabel="Save email config"
-              submitting={saving}
-              extra={
-                <Button type="button" variant="outline" onClick={fetchEmails} disabled={saving}>
-                  Trigger email fetch
-                </Button>
-              }
-            />
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={activeSection === 'smtp'} onOpenChange={(open) => !open && closeModal()}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>SMTP notifications</DialogTitle>
-            <DialogDescription>Outgoing email for status updates and invites.</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={saveSmtp} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-[1fr_7rem]">
-              <div className="space-y-2">
-                <Label htmlFor="smtp-host">SMTP host</Label>
-                <Input
-                  id="smtp-host"
-                  value={smtpForm.smtp_host}
-                  onChange={(e) => setSmtpForm({ ...smtpForm, smtp_host: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="smtp-port">Port</Label>
-                <Input
-                  id="smtp-port"
-                  inputMode="numeric"
-                  value={smtpForm.smtp_port}
-                  onChange={(e) => setSmtpForm({ ...smtpForm, smtp_port: e.target.value })}
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="smtp-email">SMTP email</Label>
-              <Input
-                id="smtp-email"
-                type="email"
-                value={smtpForm.smtp_email}
-                onChange={(e) => setSmtpForm({ ...smtpForm, smtp_email: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="smtp-password">Password</Label>
-              <PasswordInput
-                id="smtp-password"
-                value={smtpForm.smtp_password}
-                onChange={(e) => setSmtpForm({ ...smtpForm, smtp_password: e.target.value })}
-                placeholder="Enter SMTP password"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="smtp-from-name">From name</Label>
-              <Input
-                id="smtp-from-name"
-                value={smtpForm.from_email_name}
-                onChange={(e) => setSmtpForm({ ...smtpForm, from_email_name: e.target.value })}
-              />
-            </div>
-            {error && activeSection === 'smtp' && (
-              <p className="text-sm text-red-600">{error}</p>
-            )}
-            <AdminModalFooter
-              onCancel={closeModal}
-              submitLabel="Save SMTP config"
-              submitting={saving}
-            />
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={activeSection === 'finance'} onOpenChange={(open) => !open && closeModal()}>
+      <Dialog open={financeOpen} onOpenChange={(open) => !open && closeModal()}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Finance settings</DialogTitle>
@@ -586,9 +311,7 @@ export function SettingsPage() {
                 Last exchange rate sync: {formatDateTime(lastExchangeSync)}
               </p>
             )}
-            {error && activeSection === 'finance' && (
-              <p className="text-sm text-red-600">{error}</p>
-            )}
+            {error && financeOpen && <p className="text-sm text-red-600">{error}</p>}
             <AdminModalFooter
               onCancel={closeModal}
               submitLabel={financeLoaded ? 'Save finance settings' : 'Initialize finance settings'}

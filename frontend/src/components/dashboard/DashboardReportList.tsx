@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom'
 import type { ExpenseReport } from '@/types'
 import { UserAvatar } from '@/components/ui/user-avatar'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatReportTotal } from '@/lib/receiptDisplay'
+import { formatDate } from '@/lib/utils'
 
 interface DashboardReportListProps {
   reports: ExpenseReport[]
@@ -59,7 +60,7 @@ export function DashboardReportList({
                 {formatDate(report.submitted_at || report.month)}
               </td>
               <td className="py-4 pr-4 font-semibold text-gray-900">
-                {formatCurrency(report.total_amount)}
+                {formatReportTotal(report)}
               </td>
               <td className="py-4 text-right">
                 {viewTo && (

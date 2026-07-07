@@ -5,8 +5,6 @@ export const SETUP_LABELS: Record<string, string> = {
   workflow_configured: 'Workflow Configured',
   workflow_steps_created: 'Workflow Steps Created',
   policy_configured: 'Policy Configured',
-  reimbursement_email_configured: 'Reimbursement Email Configured',
-  smtp_configured: 'SMTP Configured',
 }
 
 export const SETUP_LINKS: Partial<Record<string, string>> = {
@@ -16,14 +14,22 @@ export const SETUP_LINKS: Partial<Record<string, string>> = {
   workflow_configured: '/admin/workflow',
   workflow_steps_created: '/admin/workflow',
   policy_configured: '/admin/policy',
-  reimbursement_email_configured: '/admin/settings',
-  smtp_configured: '/admin/settings',
+}
+
+/** Email (SMTP/IMAP) is configured via server environment, not admin UI. */
+const HIDDEN_SETUP_KEYS = new Set([
+  'smtp_configured',
+  'reimbursement_email_configured',
+])
+
+export function getVisibleSetupEntries(setup: Record<string, boolean>) {
+  return Object.entries(setup).filter(([key]) => !HIDDEN_SETUP_KEYS.has(key))
 }
 
 export function isSetupComplete(setup: Record<string, boolean>) {
-  const keys = Object.keys(setup)
-  if (keys.length === 0) return false
-  return keys.every((key) => setup[key])
+  const entries = getVisibleSetupEntries(setup)
+  if (entries.length === 0) return false
+  return entries.every(([, done]) => done)
 }
 
 export function getSetupLabel(key: string) {

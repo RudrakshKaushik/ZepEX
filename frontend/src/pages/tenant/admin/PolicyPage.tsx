@@ -6,6 +6,7 @@ import {
   createPolicyRule,
   deactivatePolicyRule,
   downloadPolicyRulesTemplate,
+  getFinanceSettings,
   importPolicyRulesCsv,
   listPolicyRules,
   updatePolicyRule,
@@ -32,6 +33,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { CardsGridShimmer } from '@/components/ui/shimmer'
 import { PaginationControls } from '@/components/ui/pagination-controls'
 import { toast } from '@/lib/toast'
+import { financeCurrencyCode } from '@/lib/financeSettings'
 import type { PolicyRule } from '@/types'
 import AssignIcon from '@/assets/assign.png'
 import UploadIcon from '@/assets/upload.png'
@@ -60,14 +62,21 @@ export function PolicyPage() {
   const [searchDraft, setSearchDraft] = useState('')
   const [search, setSearch] = useState('')
   const [importOpen, setImportOpen] = useState(false)
+  const [policyCurrency, setPolicyCurrency] = useState('INR')
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await listPolicyRules({ page, search: search || undefined })
-      setRules(data.results)
-      setTotalPages(data.total_pages)
-      setTotalCount(data.count)
+      const [rulesRes, financeRes] = await Promise.all([
+        listPolicyRules({ page, search: search || undefined }),
+        getFinanceSettings().catch(() => null),
+      ])
+      setRules(rulesRes.data.results)
+      setTotalPages(rulesRes.data.total_pages)
+      setTotalCount(rulesRes.data.count)
+      if (financeRes?.data.settings) {
+        setPolicyCurrency(financeCurrencyCode(financeRes.data.settings))
+      }
     } catch {
       setRules([])
       setTotalPages(1)
@@ -233,7 +242,12 @@ export function PolicyPage() {
         ) : (
           <div>
             {rules.map((rule) => (
-              <AdminPolicyRuleCard key={rule.id} rule={rule} onEdit={() => openEdit(rule)} />
+              <AdminPolicyRuleCard
+                key={rule.id}
+                rule={rule}
+                currency={policyCurrency}
+                onEdit={() => openEdit(rule)}
+              />
             ))}
           </div>
         )}
@@ -297,7 +311,7 @@ export function PolicyPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Limit Amount (INR)</Label>
+              <Label>Limit Amount ({policyCurrency})</Label>
               <Input
                 type="number"
                 value={form.max_amount}
@@ -320,7 +334,7 @@ export function PolicyPage() {
           </DialogHeader>
           <form onSubmit={handleUpdate} className="space-y-3">
             <div className="space-y-2">
-              <Label>Limit Amount (INR)</Label>
+              <Label>Limit Amount ({policyCurrency})</Label>
               <Input
                 type="number"
                 value={editForm.max_amount}

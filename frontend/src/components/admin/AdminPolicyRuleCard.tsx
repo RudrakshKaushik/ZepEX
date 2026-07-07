@@ -4,10 +4,11 @@ import { formatCurrency } from '@/lib/utils'
 
 interface AdminPolicyRuleCardProps {
   rule: PolicyRule
+  currency?: string
   onEdit?: () => void
 }
 
-export function AdminPolicyRuleCard({ rule, onEdit }: AdminPolicyRuleCardProps) {
+export function AdminPolicyRuleCard({ rule, currency = 'INR', onEdit }: AdminPolicyRuleCardProps) {
   return (
     <button
       type="button"
@@ -24,7 +25,7 @@ export function AdminPolicyRuleCard({ rule, onEdit }: AdminPolicyRuleCardProps) 
         <p className="mt-0.5 line-clamp-2 text-sm text-gray-500">{rule.category_description}</p>
       </div>
       <p className="shrink-0 text-lg font-bold text-gray-900">
-        {formatCurrency(rule.max_amount)}
+        {formatCurrency(rule.max_amount, currency)}
       </p>
     </button>
   )

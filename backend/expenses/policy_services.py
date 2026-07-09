@@ -1,5 +1,6 @@
 from tenants.models import CompanyPolicy, PolicyCategoryRule
 from .models import ExpenseReceipt
+from tenants.policy_utils import get_policy_rule_for_employee
 
 
 def validate_receipt_policy(receipt: ExpenseReceipt):
@@ -40,14 +41,17 @@ def validate_receipt_policy(receipt: ExpenseReceipt):
         item.is_violating = False
         item.violation_reason = None
 
-        rule = PolicyCategoryRule.objects.filter(
-            policy=policy,
-            category_name__iexact=item.category,
-            is_active=True
-        ).first()
+        rule = get_policy_rule_for_employee(
+        employee=receipt.employee,
+        category_name=item.category,
+)
 
         if not rule:
-            reason = f"{item.category}: No matching policy rule found."
+            reason = (
+           f"{item.category}: No policy configured for "
+           f"{receipt.employee.company_role.name}. "
+            "Employee default policy also not found."
+)
 
             item.is_violating = True
             item.violation_reason = reason

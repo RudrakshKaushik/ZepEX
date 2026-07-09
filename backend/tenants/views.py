@@ -610,23 +610,91 @@ def create_policy_rule(request):
     )
 
     serializer = PolicyCategoryRuleSerializer(
-        data=request.data
+    data=request.data,
+    context={
+        "policy": policy
+    }
+)
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    company_role = serializer.validated_data.get(
+        "company_role"
     )
 
-    if serializer.is_valid():
-
-        serializer.save(
-            policy=policy
+    if not company_role:
+        return Response(
+            {
+                "error": "company_role is required."
+            },
+            status=status.HTTP_400_BAD_REQUEST
         )
+
+    if company_role.company != company:
+        return Response(
+            {
+                "error": "Selected role does not belong to your company."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not company_role.is_active:
+        return Response(
+            {
+                "error": "Selected company role is inactive."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    category_name = serializer.validated_data["category_name"]
+
+    if PolicyCategoryRule.objects.filter(
+        policy=policy,
+        company_role=company_role,
+        category_name__iexact=category_name,
+    ).exists():
 
         return Response(
-            serializer.data,
-            status=status.HTTP_201_CREATED
+            {
+                "error": (
+                    f"A policy for category '{category_name}' "
+                    f"already exists for role '{company_role.name}'."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST
         )
 
+    rule = serializer.save(
+        policy=policy
+    )
+
+    create_audit_log(
+        company=company,
+        action="POLICY_RULE_CREATED",
+        action_by=request.user.profile,
+        message=(
+            f"Created '{rule.category_name}' policy "
+            f"for role '{rule.company_role.name}'."
+        ),
+        metadata={
+            "rule_id": str(rule.id),
+            "company_role": rule.company_role.name,
+            "category_name": rule.category_name,
+            "max_amount": str(rule.max_amount),
+            "is_active": rule.is_active,
+        }
+    )
+
     return Response(
-        serializer.errors,
-        status=status.HTTP_400_BAD_REQUEST
+        {
+            "message": "Policy rule created successfully.",
+            "rule": PolicyCategoryRuleSerializer(rule).data,
+        },
+        status=status.HTTP_201_CREATED
     )
 
 @api_view(["GET"])
@@ -640,14 +708,23 @@ def list_policy_rules(request):
 
     search = request.GET.get("search")
     category = request.GET.get("category")
+    company_role_id = request.GET.get("company_role_id")
+    page = request.GET.get("page", 1)
 
     policy, created = CompanyPolicy.objects.get_or_create(
         company=company
     )
 
-    rules = PolicyCategoryRule.objects.filter(
+    rules = PolicyCategoryRule.objects.select_related(
+        "company_role"
+    ).filter(
         policy=policy
     )
+
+    if company_role_id:
+        rules = rules.filter(
+            company_role_id=company_role_id
+        )
 
     if category:
         rules = rules.filter(
@@ -658,9 +735,13 @@ def list_policy_rules(request):
         rules = rules.filter(
             Q(category_name__icontains=search)
             | Q(category_description__icontains=search)
+            | Q(company_role__name__icontains=search)
         )
 
-    page = request.GET.get("page", 1)
+    rules = rules.order_by(
+        "company_role__name",
+        "category_name"
+    )
 
     paginator = Paginator(
         rules,
@@ -681,10 +762,10 @@ def list_policy_rules(request):
         "filters": {
             "search": search,
             "category": category,
+            "company_role_id": company_role_id,
         },
         "results": serializer.data
     })
-
 
 from .serializers import ReimbursementEmailConfigSerializer
 
@@ -1376,27 +1457,49 @@ def activate_department(request, department_id):
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated, IsCompanyAdmin])
 def update_policy_rule(request, rule_id):
+
     company = request.user.profile.company
 
     try:
-        rule = PolicyCategoryRule.objects.get(
+        rule = PolicyCategoryRule.objects.select_related(
+            "company_role"
+        ).get(
             id=rule_id,
             policy__company=company
         )
+
     except PolicyCategoryRule.DoesNotExist:
         return Response(
-            {"error": "Policy rule not found."},
+            {
+                "error": "Policy rule not found."
+            },
             status=status.HTTP_404_NOT_FOUND
         )
 
     serializer = PolicyCategoryRuleSerializer(
-        rule,
-        data=request.data,
-        partial=True
-    )
+    rule,
+    data=request.data,
+    partial=True,
+    context={
+        "policy": rule.policy
+    }
+)
 
     if not serializer.is_valid():
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    company_role = serializer.validated_data.get("company_role")
+
+    if company_role and company_role.company != company:
+        return Response(
+            {
+                "error": "Selected company role does not belong to your company."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
     rule = serializer.save()
 
@@ -1404,9 +1507,16 @@ def update_policy_rule(request, rule_id):
         company=company,
         action="POLICY_RULE_UPDATED",
         action_by=request.user.profile,
-        message=f"Updated policy rule {rule.category_name}",
+        message=(
+            f"Updated policy rule '{rule.category_name}' "
+            f"for role '{rule.company_role.name}'."
+        ),
         metadata={
             "rule_id": str(rule.id),
+            "company_role": (
+                rule.company_role.name
+                if rule.company_role else None
+            ),
             "category_name": rule.category_name,
             "max_amount": str(rule.max_amount),
             "is_active": rule.is_active,
@@ -1422,13 +1532,17 @@ def update_policy_rule(request, rule_id):
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated, IsCompanyAdmin])
 def deactivate_policy_rule(request, rule_id):
+
     company = request.user.profile.company
 
     try:
-        rule = PolicyCategoryRule.objects.get(
+        rule = PolicyCategoryRule.objects.select_related(
+            "company_role"
+        ).get(
             id=rule_id,
             policy__company=company
         )
+
     except PolicyCategoryRule.DoesNotExist:
         return Response(
             {"error": "Policy rule not found."},
@@ -1442,28 +1556,39 @@ def deactivate_policy_rule(request, rule_id):
         company=company,
         action="POLICY_RULE_DEACTIVATED",
         action_by=request.user.profile,
-        message=f"Deactivated policy rule {rule.category_name}",
+        message=(
+            f"Deactivated policy rule '{rule.category_name}' "
+            f"for role '{rule.company_role.name}'."
+        ),
         metadata={
             "rule_id": str(rule.id),
+            "company_role": rule.company_role.name,
             "category_name": rule.category_name,
+            "max_amount": str(rule.max_amount),
+            "is_active": rule.is_active,
         }
     )
 
     return Response({
-        "message": "Policy rule deactivated successfully."
+        "message": "Policy rule deactivated successfully.",
+        "rule": PolicyCategoryRuleSerializer(rule).data
     })
 
 
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated, IsCompanyAdmin])
 def activate_policy_rule(request, rule_id):
+
     company = request.user.profile.company
 
     try:
-        rule = PolicyCategoryRule.objects.get(
+        rule = PolicyCategoryRule.objects.select_related(
+            "company_role"
+        ).get(
             id=rule_id,
             policy__company=company
         )
+
     except PolicyCategoryRule.DoesNotExist:
         return Response(
             {"error": "Policy rule not found."},
@@ -1477,15 +1602,22 @@ def activate_policy_rule(request, rule_id):
         company=company,
         action="POLICY_RULE_ACTIVATED",
         action_by=request.user.profile,
-        message=f"Activated policy rule {rule.category_name}",
+        message=(
+            f"Activated policy rule '{rule.category_name}' "
+            f"for role '{rule.company_role.name}'."
+        ),
         metadata={
             "rule_id": str(rule.id),
+            "company_role": rule.company_role.name,
             "category_name": rule.category_name,
+            "max_amount": str(rule.max_amount),
+            "is_active": rule.is_active,
         }
     )
 
     return Response({
-        "message": "Policy rule activated successfully."
+        "message": "Policy rule activated successfully.",
+        "rule": PolicyCategoryRuleSerializer(rule).data
     })
 
 @api_view(["DELETE"])
@@ -2538,6 +2670,138 @@ def import_employees(request):
             status=status.HTTP_400_BAD_REQUEST
         )
     
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, IsCompanyAdmin])
+def copy_role_policy(request):
+
+    profile = request.user.profile
+    company = profile.company
+
+    from_role_id = request.data.get("from_role")
+    to_role_id = request.data.get("to_role")
+    overwrite_existing = request.data.get("overwrite_existing", False)
+
+    if not from_role_id or not to_role_id:
+        return Response(
+            {
+                "error": "from_role and to_role are required."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if str(from_role_id) == str(to_role_id):
+        return Response(
+            {
+                "error": "Source and destination roles cannot be the same."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    policy, _ = CompanyPolicy.objects.get_or_create(
+        company=company
+    )
+
+    try:
+        from_role = CompanyRole.objects.get(
+            id=from_role_id,
+            company=company,
+            is_active=True
+        )
+
+        to_role = CompanyRole.objects.get(
+            id=to_role_id,
+            company=company,
+            is_active=True
+        )
+
+    except CompanyRole.DoesNotExist:
+        return Response(
+            {
+                "error": "Invalid company role."
+            },
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    source_rules = PolicyCategoryRule.objects.filter(
+        policy=policy,
+        company_role=from_role,
+        is_active=True
+    )
+
+    if not source_rules.exists():
+        return Response(
+            {
+                "error": "Source role has no policy rules."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    copied = 0
+    updated = 0
+    skipped = 0
+
+    for rule in source_rules:
+
+        existing = PolicyCategoryRule.objects.filter(
+            policy=policy,
+            company_role=to_role,
+            category_name__iexact=rule.category_name
+        ).first()
+
+        if existing:
+
+            if overwrite_existing:
+
+                existing.max_amount = rule.max_amount
+                existing.category_description = rule.category_description
+                existing.is_active = rule.is_active
+                existing.save()
+
+                updated += 1
+
+            else:
+
+                skipped += 1
+
+            continue
+
+        PolicyCategoryRule.objects.create(
+            policy=policy,
+            company_role=to_role,
+            category_name=rule.category_name,
+            max_amount=rule.max_amount,
+            category_description=rule.category_description,
+            is_active=rule.is_active,
+        )
+
+        copied += 1
+
+    create_audit_log(
+        company=company,
+        action="POLICY_ROLE_COPIED",
+        action_by=profile,
+        message=f"Copied policy from {from_role.name} to {to_role.name}.",
+        metadata={
+            "from_role": from_role.name,
+            "to_role": to_role.name,
+            "copied": copied,
+            "updated": updated,
+            "skipped": skipped,
+            "overwrite_existing": overwrite_existing,
+        }
+    )
+
+    return Response(
+        {
+            "message": "Policy copied successfully.",
+            "from_role": from_role.name,
+            "to_role": to_role.name,
+            "copied": copied,
+            "updated": updated,
+            "skipped": skipped,
+            "overwrite_existing": overwrite_existing,
+        }
+    )
 
 @api_view(["POST"])
 @permission_classes([
@@ -2553,7 +2817,9 @@ def import_policy_rules(request):
 
     if not file:
         return Response(
-            {"error": "CSV file is required."},
+            {
+                "error": "CSV file is required."
+            },
             status=status.HTTP_400_BAD_REQUEST
         )
 
@@ -2575,21 +2841,45 @@ def import_policy_rules(request):
 
         for row_number, row in enumerate(csv_data, start=2):
 
-            category = row.get(
-                "category",
+            role_name = row.get(
+                "company_role",
                 ""
-            ).strip().lower()
+            ).strip()
 
-            if not category:
+            category_name = row.get(
+                "category_name",
+                ""
+            ).strip()
+
+            description = row.get(
+                "category_description",
+                ""
+            ).strip()
+
+            is_active = (
+                row.get(
+                    "is_active",
+                    "true"
+                ).strip().lower() == "true"
+            )
+
+            if not role_name:
                 errors.append({
                     "row": row_number,
-                    "message": "Category is required."
+                    "message": "company_role is required."
+                })
+                continue
+
+            if not category_name:
+                errors.append({
+                    "row": row_number,
+                    "message": "category_name is required."
                 })
                 continue
 
             try:
                 max_amount = Decimal(
-                    row.get("max_amount", 0)
+                    row.get("max_amount")
                 )
 
             except Exception:
@@ -2599,11 +2889,30 @@ def import_policy_rules(request):
                 })
                 continue
 
+            company_role = CompanyRole.objects.filter(
+                company=company,
+                name__iexact=role_name,
+                is_active=True,
+            ).first()
+
+            if not company_role:
+                errors.append({
+                    "row": row_number,
+                    "message": (
+                        f"Role '{role_name}' does not exist."
+                    )
+                })
+                continue
+
             rule, created = PolicyCategoryRule.objects.update_or_create(
                 policy=policy,
-                category=category,
+                company_role=company_role,
+                category_name__iexact=category_name,
                 defaults={
-                    "max_amount": max_amount
+                    "category_name": category_name,
+                    "category_description": description,
+                    "max_amount": max_amount,
+                    "is_active": is_active,
                 }
             )
 
@@ -2616,19 +2925,31 @@ def import_policy_rules(request):
             company=company,
             action="POLICY_RULE_IMPORT",
             action_by=profile,
-            message="Policy rules imported.",
+            message="Imported role based reimbursement policy rules.",
             metadata={
                 "created": created_count,
                 "updated": updated_count,
-                "errors": len(errors),
+                "failed": len(errors),
             }
         )
 
         return Response({
+
             "success": True,
-            "created": created_count,
-            "updated": updated_count,
-            "errors": errors,
+
+            "summary": {
+                "created": created_count,
+                "updated": updated_count,
+                "failed": len(errors),
+                "processed": (
+                    created_count
+                    + updated_count
+                    + len(errors)
+                ),
+            },
+
+            "errors": errors
+
         })
 
     except Exception as e:
@@ -2919,23 +3240,125 @@ def download_employees_template(request):
     return response
 
 
+import csv
+
+from django.http import HttpResponse
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+
+
 @api_view(["GET"])
-@permission_classes([IsAuthenticated, IsCompanyAdmin])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin
+])
 def download_policy_rules_template(request):
-    response = HttpResponse(content_type="text/csv")
-    response["Content-Disposition"] = 'attachment; filename="policy_rules_template.csv"'
+
+    response = HttpResponse(
+        content_type="text/csv"
+    )
+
+    response["Content-Disposition"] = (
+        'attachment; filename="policy_rules_template.csv"'
+    )
 
     writer = csv.writer(response)
-    writer.writerow(["category", "max_amount"])
-    writer.writerow(["food", "1000"])
-    writer.writerow(["hotel", "5000"])
-    writer.writerow(["flight_ticket", "15000"])
-    writer.writerow(["train_ticket", "8000"])
-    writer.writerow(["fuel", "3000"])
-    writer.writerow(["parking", "1000"])
-    writer.writerow(["medical", "5000"])
-    writer.writerow(["office_supplies", "2000"])
-    writer.writerow(["miscellaneous", "1000"])
+
+    writer.writerow([
+        "company_role",
+        "category",
+        "max_amount",
+        "category_description",
+        "is_active",
+    ])
+
+    writer.writerow([
+        "Employee",
+        "food",
+        "1000",
+        "Food reimbursement limit",
+        "TRUE",
+    ])
+
+    writer.writerow([
+        "Employee",
+        "hotel",
+        "5000",
+        "Hotel reimbursement limit",
+        "TRUE",
+    ])
+
+    writer.writerow([
+        "Employee",
+        "flight_ticket",
+        "15000",
+        "Domestic flight",
+        "TRUE",
+    ])
+
+    writer.writerow([
+        "Employee",
+        "train_ticket",
+        "8000",
+        "Train reimbursement",
+        "TRUE",
+    ])
+
+    writer.writerow([
+        "Employee",
+        "fuel",
+        "3000",
+        "Fuel reimbursement",
+        "TRUE",
+    ])
+
+    writer.writerow([
+        "Employee",
+        "parking",
+        "1000",
+        "Parking reimbursement",
+        "TRUE",
+    ])
+
+    writer.writerow([
+        "Employee",
+        "medical",
+        "5000",
+        "Medical reimbursement",
+        "TRUE",
+    ])
+
+    writer.writerow([
+        "Employee",
+        "office_supplies",
+        "2000",
+        "Office supplies",
+        "TRUE",
+    ])
+
+    writer.writerow([
+        "Employee",
+        "miscellaneous",
+        "1000",
+        "Miscellaneous expenses",
+        "TRUE",
+    ])
+
+    writer.writerow([
+        "Manager",
+        "food",
+        "1500",
+        "Manager food limit",
+        "TRUE",
+    ])
+
+    writer.writerow([
+        "CEO",
+        "food",
+        "2500",
+        "CEO food limit",
+        "TRUE",
+    ])
 
     return response
 
@@ -3211,3 +3634,151 @@ def currency_detail(request, code):
         "currency": serializer.data,
     })
 
+from .policy_utils import get_effective_policy_rules
+@api_view(["GET"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin,
+])
+def preview_role_policy(request):
+
+    company = request.user.profile.company
+
+    company_role_id = request.GET.get(
+        "company_role_id"
+    )
+
+    if not company_role_id:
+
+        return Response(
+            {
+                "error": "company_role_id is required."
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+
+        company_role = CompanyRole.objects.get(
+            id=company_role_id,
+            company=company,
+            is_active=True,
+        )
+
+    except CompanyRole.DoesNotExist:
+
+        return Response(
+            {
+                "error": "Company role not found."
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    rules = get_effective_policy_rules(
+        company,
+        company_role,
+    )
+
+    return Response(
+        {
+            "company_role": {
+                "id": str(company_role.id),
+                "name": company_role.name,
+            },
+            "total_rules": len(rules),
+            "rules": rules,
+        }
+    )
+
+from .policy_utils import (
+    get_effective_policy_rules,
+    simulate_policy,
+)
+@api_view(["POST"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin,
+])
+def simulate_policy_rule(request):
+
+    company = request.user.profile.company
+
+    company_role_id = request.data.get(
+        "company_role_id"
+    )
+
+    category = request.data.get(
+        "category"
+    )
+
+    amount = request.data.get(
+        "amount"
+    )
+
+    if not company_role_id:
+        return Response(
+            {
+                "error": "company_role_id is required."
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not category:
+        return Response(
+            {
+                "error": "category is required."
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if amount is None:
+        return Response(
+            {
+                "error": "amount is required."
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+
+        amount = Decimal(str(amount))
+
+    except Exception:
+
+        return Response(
+            {
+                "error": "Invalid amount."
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+
+        company_role = CompanyRole.objects.get(
+            id=company_role_id,
+            company=company,
+            is_active=True,
+        )
+
+    except CompanyRole.DoesNotExist:
+
+        return Response(
+            {
+                "error": "Company role not found."
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    result = simulate_policy(
+        company=company,
+        company_role=company_role,
+        category=category,
+        amount=amount,
+    )
+
+    return Response(
+        {
+            "company_role": company_role.name,
+            **result,
+        }
+    )

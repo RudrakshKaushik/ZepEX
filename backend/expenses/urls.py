@@ -26,6 +26,7 @@ from .views import (
     admin_reports_list,
     update_workflow_step,
     delete_workflow,
+    simulate_workflow_api,
 
 )
 
@@ -82,5 +83,10 @@ path("admin/reports/",admin_reports_list,name="admin-reports-list"
 ),
 path("workflow/steps/<int:step_id>/update/", update_workflow_step, name="update-workflow-step"),
 path("workflow/<int:workflow_id>/", delete_workflow, name="delete-workflow"),
+path(
+    "workflow/simulate/",
+    simulate_workflow_api,
+    name="simulate-workflow",
+),
 
 ]

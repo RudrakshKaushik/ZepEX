@@ -418,28 +418,17 @@ def payment_dashboard(request):
         company=profile.company
     )
 
-    approved_reports = reports.filter(
-        status=ExpenseReport.STATUS_APPROVED,
-        workflow_completed=True,
-    ).select_related(
-        "employee",
-        "employee__user",
-        "department",
-        "current_approver",
-        "current_approver__user",
-        "current_workflow_step",
-        "current_workflow_step__approver_role",
-        "current_workflow_step__specific_user",
-        "current_workflow_step__specific_user__user",
-        "current_workflow_step__department",
-    ).prefetch_related(
-        "receipts",
-        "receipts__line_items",
-        "approval_history",
-        "approval_history__action_by",
-        "approval_history__action_by__user",
-        "approval_history__action_by__company_role",
-    ).order_by("-updated_at")
+    payment_queue_reports = get_reports_awaiting_payment(
+        profile.company
+    )
+
+    approved_reports = payment_queue_reports.filter(
+        status=ExpenseReport.STATUS_APPROVED
+    )
+
+    rejected_reports_for_accounts = payment_queue_reports.filter(
+        status=ExpenseReport.STATUS_REJECTED
+    )
 
     auto_approved_reports = approved_reports.filter(
         is_auto_approved=True
@@ -463,7 +452,7 @@ def payment_dashboard(request):
         "approval_history__action_by__user",
     ).order_by("-paid_at")
 
-    rejected_reports = reports.filter(
+    all_rejected_reports = reports.filter(
         status=ExpenseReport.STATUS_REJECTED
     ).select_related(
         "employee",
@@ -471,10 +460,17 @@ def payment_dashboard(request):
         "department",
     ).prefetch_related(
         "receipts",
-        "receipts__line_items"
+        "receipts__line_items",
+        "approval_history",
+        "approval_history__action_by",
+        "approval_history__action_by__user",
     ).order_by("-updated_at")
 
     approved_amount = approved_reports.aggregate(
+        total=Sum("total_amount")
+    )["total"] or 0
+
+    rejected_queue_amount = rejected_reports_for_accounts.aggregate(
         total=Sum("total_amount")
     )["total"] or 0
 
@@ -490,7 +486,7 @@ def payment_dashboard(request):
         total=Sum("total_amount")
     )["total"] or 0
 
-    rejected_amount = rejected_reports.aggregate(
+    rejected_amount = all_rejected_reports.aggregate(
         total=Sum("total_amount")
     )["total"] or 0
 
@@ -523,27 +519,38 @@ def payment_dashboard(request):
         },
 
         "metrics": {
+            "payment_queue_reports": payment_queue_reports.count(),
             "approved_reports_waiting_payment": approved_reports.count(),
+            "rejected_reports_waiting_accounts_action": rejected_reports_for_accounts.count(),
+
             "auto_approved_reports_waiting_payment": auto_approved_reports.count(),
             "manual_approved_reports_waiting_payment": manual_approved_reports.count(),
 
             "paid_reports": paid_reports.count(),
-            "rejected_reports": rejected_reports.count(),
+            "total_rejected_reports": all_rejected_reports.count(),
 
             "approved_amount": str(approved_amount),
+            "rejected_queue_amount": str(rejected_queue_amount),
             "auto_approved_amount": str(auto_approved_amount),
             "manual_approved_amount": str(manual_approved_amount),
 
             "paid_amount": str(paid_amount),
-            "rejected_amount": str(rejected_amount),
+            "total_rejected_amount": str(rejected_amount),
 
             "payment_completion_rate": payment_completion_rate,
         },
 
         "payment_queue": {
-            "ready_for_payment": approved_reports.count(),
-            "workflow_completed": True,
-            "payment_status_filter": ExpenseReport.STATUS_APPROVED,
+            "ready_for_accounts_action": payment_queue_reports.count(),
+            "approved_waiting_payment": approved_reports.count(),
+            "rejected_waiting_accounts_action": rejected_reports_for_accounts.count(),
+            "allowed_actions": [
+                "MARK_PAID"
+            ],
+            "includes_statuses": [
+                ExpenseReport.STATUS_APPROVED,
+                ExpenseReport.STATUS_REJECTED,
+            ],
         },
 
         "department_payment_summary": [
@@ -554,8 +561,18 @@ def payment_dashboard(request):
             for item in department_payment_summary
         ],
 
+        "recent_payment_queue_reports": ExpenseReportSerializer(
+            payment_queue_reports[:10],
+            many=True
+        ).data,
+
         "recent_approved_reports": ExpenseReportSerializer(
             approved_reports[:10],
+            many=True
+        ).data,
+
+        "recent_rejected_reports_for_accounts": ExpenseReportSerializer(
+            rejected_reports_for_accounts[:10],
             many=True
         ).data,
 
@@ -574,8 +591,18 @@ def payment_dashboard(request):
             many=True
         ).data,
 
+        "payment_queue_reports": ExpenseReportSerializer(
+            payment_queue_reports,
+            many=True
+        ).data,
+
         "approved_reports": ExpenseReportSerializer(
             approved_reports,
+            many=True
+        ).data,
+
+        "rejected_reports_for_accounts": ExpenseReportSerializer(
+            rejected_reports_for_accounts,
             many=True
         ).data,
 
@@ -594,8 +621,8 @@ def payment_dashboard(request):
             many=True
         ).data,
 
-        "rejected_reports": ExpenseReportSerializer(
-            rejected_reports[:10],
+        "all_rejected_reports": ExpenseReportSerializer(
+            all_rejected_reports[:10],
             many=True
         ).data,
     })
@@ -613,9 +640,34 @@ def company_admin_dashboard(request):
     company = profile.company
 
     departments = Department.objects.filter(company=company)
-    users = UserProfile.objects.filter(company=company)
-    reports = ExpenseReport.objects.filter(company=company)
-    company_roles = CompanyRole.objects.filter(company=company)
+
+    users = UserProfile.objects.select_related(
+        "user",
+        "department",
+        "company_role",
+    ).filter(
+        company=company
+    )
+
+    employees = users.filter(
+        company_role__can_submit_expense=True
+    )
+
+    approvers = users.filter(
+        company_role__can_approve_expense=True
+    )
+
+    payment_users = users.filter(
+        company_role__can_mark_paid=True
+    )
+
+    reports = ExpenseReport.objects.filter(
+        company=company
+    )
+
+    company_roles = CompanyRole.objects.filter(
+        company=company
+    )
 
     workflows = ApprovalWorkflow.objects.filter(
         company=company,
@@ -626,16 +678,19 @@ def company_admin_dashboard(request):
         "steps",
         "steps__approver_role",
         "steps__specific_user",
-        "steps__department"
-    ).order_by("start_role__name")
+        "steps__specific_user__user",
+        "steps__department",
+    ).order_by(
+        "start_role__name"
+    )
 
-    workflow_steps_count = ApprovalWorkflowStep.objects.filter(
+    workflow_steps = ApprovalWorkflowStep.objects.filter(
         workflow__company=company,
         workflow__is_active=True,
         is_active=True
-    ).count()
+    )
 
-    reimbursement_email_configured = bool(company.reimbursement_email)
+    workflow_steps_count = workflow_steps.count()
 
     platform_receipt_email = getattr(
         settings,
@@ -643,17 +698,10 @@ def company_admin_dashboard(request):
         "receipts@zepex.ai"
     )
 
-    env_email_configured = bool(settings.EMAIL_HOST and settings.EMAIL_HOST_USER)
+    reimbursement_email_configured = bool(
+        company.reimbursement_email
+    )
 
-    smtp_configured = env_email_configured or CompanySMTPConfig.objects.filter(
-        company=company,
-        is_active=True
-    ).exists()
-
-    reimbursement_email_configured = env_email_configured or ReimbursementEmailConfig.objects.filter(
-        company=company,
-        is_active=True
-    ).exists()
     smtp_configured = bool(
         getattr(settings, "EMAIL_HOST", None)
         and getattr(settings, "EMAIL_HOST_USER", None)
@@ -707,15 +755,15 @@ def company_admin_dashboard(request):
     ).order_by("-total")
 
     recent_reports = reports.select_related(
-    "employee",
-    "employee__user",
-    "department",
-    "current_approver",
-    "current_approver__user",
-    "current_workflow_step",
-    "current_workflow_step__approver_role",
-    "current_workflow_step__specific_user",
-    "current_workflow_step__specific_user__user",
+        "employee",
+        "employee__user",
+        "department",
+        "current_approver",
+        "current_approver__user",
+        "current_workflow_step",
+        "current_workflow_step__approver_role",
+        "current_workflow_step__specific_user",
+        "current_workflow_step__specific_user__user",
     ).order_by("-created_at")[:10]
 
     return Response({
@@ -727,25 +775,19 @@ def company_admin_dashboard(request):
         },
 
         "setup_status": {
-
-    "departments_created": departments.exists(),
-    "users_created": users.exists(),
-    "roles_created": company_roles.exists(),
-
-    "workflow_configured": workflows.exists(),
-    "workflow_steps_created": workflow_steps_count > 0,
-
-    "policy_configured": policy_configured,
-
-    "email_forwarding_enabled": reimbursement_email_configured,
-
-    "platform_smtp_configured": smtp_configured,
-
-    "imap_required": False,
-    "company_smtp_required": False,
-
-    "workflow_engine": "Dynamic",
-},
+            "departments_created": departments.exists(),
+            "users_created": users.exists(),
+            "employees_created": employees.exists(),
+            "roles_created": company_roles.exists(),
+            "workflow_configured": workflows.exists(),
+            "workflow_steps_created": workflow_steps_count > 0,
+            "policy_configured": policy_configured,
+            "email_forwarding_enabled": reimbursement_email_configured,
+            "platform_smtp_configured": smtp_configured,
+            "imap_required": False,
+            "company_smtp_required": False,
+            "workflow_engine": "Dynamic",
+        },
 
         "email_forwarding": {
             "company_reimbursement_email": company.reimbursement_email,
@@ -760,38 +802,27 @@ def company_admin_dashboard(request):
         "metrics": {
             "total_departments": departments.count(),
             "total_users": users.count(),
+            "total_employees": employees.count(),
+            "total_approvers": approvers.count(),
+            "payment_users": payment_users.count(),
             "active_users": users.filter(user__is_active=True).count(),
             "inactive_users": users.filter(user__is_active=False).count(),
             "total_company_roles": company_roles.count(),
+
             "total_workflows": workflows.count(),
             "total_workflow_steps": workflow_steps_count,
-            "reporting_manager_steps":
-ApprovalWorkflowStep.objects.filter(
-    workflow__company=company,
-    approver_type=ApprovalWorkflowStep.APPROVER_REPORTING_MANAGER,
-    is_active=True,
-).count(),
-
-"department_manager_steps":
-ApprovalWorkflowStep.objects.filter(
-    workflow__company=company,
-    approver_type=ApprovalWorkflowStep.APPROVER_DEPARTMENT_MANAGER,
-    is_active=True,
-).count(),
-
-"company_role_steps":
-ApprovalWorkflowStep.objects.filter(
-    workflow__company=company,
-    approver_type=ApprovalWorkflowStep.APPROVER_COMPANY_ROLE,
-    is_active=True,
-).count(),
-
-"specific_user_steps":
-ApprovalWorkflowStep.objects.filter(
-    workflow__company=company,
-    approver_type=ApprovalWorkflowStep.APPROVER_SPECIFIC_USER,
-    is_active=True,
-).count(),
+            "reporting_manager_steps": workflow_steps.filter(
+                approver_type=ApprovalWorkflowStep.APPROVER_REPORTING_MANAGER
+            ).count(),
+            "department_manager_steps": workflow_steps.filter(
+                approver_type=ApprovalWorkflowStep.APPROVER_DEPARTMENT_MANAGER
+            ).count(),
+            "company_role_steps": workflow_steps.filter(
+                approver_type=ApprovalWorkflowStep.APPROVER_COMPANY_ROLE
+            ).count(),
+            "specific_user_steps": workflow_steps.filter(
+                approver_type=ApprovalWorkflowStep.APPROVER_SPECIFIC_USER
+            ).count(),
 
             "total_reports": reports.count(),
             "draft_reports": reports.filter(
@@ -837,9 +868,9 @@ ApprovalWorkflowStep.objects.filter(
             {
                 "id": str(report.id),
                 "employee_name": (
-                    f"{report.employee.user.first_name} "
-                    f"{report.employee.user.last_name}"
-                ).strip() or report.employee.user.email,
+                    report.employee.user.get_full_name()
+                    or report.employee.user.email
+                ),
                 "employee_email": report.employee.user.email,
                 "department": (
                     report.department.name
@@ -849,47 +880,44 @@ ApprovalWorkflowStep.objects.filter(
                 "status": report.status,
                 "total_amount": str(report.total_amount),
                 "current_approver": (
-    {
-        "id": str(report.current_approver.id),
-        "email": report.current_approver.user.email,
-        "name": report.current_approver.user.get_full_name(),
-    }
-    if report.current_approver else None
-),
-
-"current_step": (
-    report.current_workflow_step.step_order
-    if report.current_workflow_step else None
-),
-
-"approver_type": (
-    report.current_workflow_step.get_approver_type_display()
-    if report.current_workflow_step else None
-),
-
-"workflow_completed": report.workflow_completed,
+                    {
+                        "id": str(report.current_approver.id),
+                        "email": report.current_approver.user.email,
+                        "name": report.current_approver.user.get_full_name(),
+                    }
+                    if report.current_approver else None
+                ),
+                "current_step": (
+                    report.current_workflow_step.step_order
+                    if report.current_workflow_step else None
+                ),
+                "approver_type": (
+                    report.current_workflow_step.get_approver_type_display()
+                    if report.current_workflow_step else None
+                ),
+                "workflow_completed": report.workflow_completed,
                 "created_at": report.created_at,
             }
             for report in recent_reports
         ],
+
         "workflow_summary": {
-
-    "total_workflows": workflows.count(),
-
-    "active_workflows":
-    workflows.filter(is_active=True).count(),
-
-    "total_steps": workflow_steps_count,
-
-    "engine": "Dynamic Approval Engine",
-
-    "supports": [
-        "Reporting Manager",
-        "Department Manager",
-        "Company Role",
-        "Specific User",
-    ],
-},
+            "total_workflows": workflows.count(),
+            "active_workflows": workflows.count(),
+            "total_steps": workflow_steps_count,
+            "engine": "Dynamic Approval Engine",
+            "supports": [
+                "Reporting Manager",
+                "Department Manager",
+                "Company Role",
+                "Specific User",
+                "Automatic Skip Logic",
+                "Role Based Workflow",
+                "Role Based Policy Rules",
+                "Department Routing",
+                "Company Routing",
+            ],
+        },
 
         "workflows": [
             {
@@ -905,42 +933,33 @@ ApprovalWorkflowStep.objects.filter(
                 ),
                 "steps": [
                     {
-    "id": str(step.id),
-
-    "step_order": step.step_order,
-
-    "approver_type": step.approver_type,
-
-    "approver_type_name":
-    step.get_approver_type_display(),
-
-    "approver_role": (
-        step.approver_role.name
-        if step.approver_role else None
-    ),
-
-    "specific_user": (
-        {
-            "id": str(step.specific_user.id),
-            "name": step.specific_user.user.get_full_name(),
-            "email": step.specific_user.user.email,
-        }
-        if step.specific_user else None
-    ),
-
-    "routing_type": step.routing_type,
-
-    "department": (
-        step.department.name
-        if step.department else None
-    ),
-
-    "is_active": step.is_active,
-}
+                        "id": str(step.id),
+                        "step_order": step.step_order,
+                        "approver_type": step.approver_type,
+                        "approver_type_name": step.get_approver_type_display(),
+                        "approver_role": (
+                            step.approver_role.name
+                            if step.approver_role else None
+                        ),
+                        "specific_user": (
+                            {
+                                "id": str(step.specific_user.id),
+                                "name": step.specific_user.user.get_full_name(),
+                                "email": step.specific_user.user.email,
+                            }
+                            if step.specific_user else None
+                        ),
+                        "routing_type": step.routing_type,
+                        "department": (
+                            step.department.name
+                            if step.department else None
+                        ),
+                        "is_active": step.is_active,
+                    }
                     for step in workflow.steps.filter(
                         is_active=True
                     ).order_by("step_order")
-                ]
+                ],
             }
             for workflow in workflows
         ],

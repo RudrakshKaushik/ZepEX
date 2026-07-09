@@ -45,7 +45,8 @@ from tenants.permissions import IsCompanyAdmin
 from django.core.paginator import Paginator
 from .email_notifications import send_workflow_status_email
 from .workflow_engine import can_user_approve_step,approve_current_step,reject_current_step
-
+from django.db import transaction
+from expenses.workflow_validator import validate_workflow
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
@@ -830,30 +831,22 @@ def accounts_mark_paid(request, report_id):
     )
 
     try:
-        report = ExpenseReport.objects.select_related(
-            "employee",
-            "employee__user",
-            "department",
-            "current_workflow_step",
-            "current_workflow_step__approver_role",
-            "current_workflow_step__specific_user",
-            "current_workflow_step__specific_user__user",
-            "current_approver",
-            "current_approver__user",
+        report = get_reports_awaiting_payment(
+            profile.company
         ).get(
             id=report_id,
             company=profile.company,
-            status=ExpenseReport.STATUS_APPROVED,
-            workflow_completed=True,
         )
 
     except ExpenseReport.DoesNotExist:
         return Response(
-            {"error": "Report not found or not approved for payment."},
+            {"error": "Report not found in accounts/payment queue."},
             status=status.HTTP_404_NOT_FOUND
         )
 
     notes = request.data.get("notes", "").strip()
+
+    previous_status = report.status
 
     report.status = ExpenseReport.STATUS_PAID
     report.paid_notes = notes
@@ -896,6 +889,7 @@ def accounts_mark_paid(request, report_id):
                 if report.department else None
             ),
             "total_amount": str(report.total_amount),
+            "previous_status": previous_status,
             "paid_by": profile.user.email,
             "paid_by_role": actor_role,
             "is_company_admin_override": is_company_admin,
@@ -906,7 +900,10 @@ def accounts_mark_paid(request, report_id):
     send_workflow_status_email(
         report=report,
         subject="Reimbursement Payment Completed",
-        message="Your reimbursement report has been paid successfully.",
+        message=(
+            "Your reimbursement report has been processed by Accounts "
+            "and marked as paid."
+        ),
         action="PAID",
         action_by=profile,
         current_step=None,
@@ -919,6 +916,7 @@ def accounts_mark_paid(request, report_id):
     return Response(
         {
             "message": "Report marked as paid.",
+            "previous_status": previous_status,
             "paid_by": actor_role,
             "is_company_admin_override": is_company_admin,
             "report": serializer.data,
@@ -1069,7 +1067,6 @@ def admin_employee_expenses(request, employee_id):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def create_or_update_workflow(request):
-
     profile = request.user.profile
 
     if profile.role != "COMPANY_ADMIN":
@@ -1078,12 +1075,9 @@ def create_or_update_workflow(request):
             status=status.HTTP_403_FORBIDDEN
         )
 
-    name = request.data.get(
-        "name",
-        "Default Workflow"
-    )
-
+    name = request.data.get("name", "Default Workflow").strip()
     start_role_id = request.data.get("start_role")
+    workflow_id = request.data.get("workflow_id")
 
     if not start_role_id:
         return Response(
@@ -1097,61 +1091,112 @@ def create_or_update_workflow(request):
             company=profile.company,
             is_active=True
         )
-
     except CompanyRole.DoesNotExist:
         return Response(
             {"error": "Invalid start_role for this company."},
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    workflow, created = ApprovalWorkflow.objects.update_or_create(
-        company=profile.company,
-        start_role=start_role,
-        defaults={
-            "name": name,
-            "is_active": True,
-        }
-    )
+    with transaction.atomic():
 
-    create_audit_log(
-        company=profile.company,
-        action="WORKFLOW_CONFIGURED",
-        action_by=profile,
-        message=(
-            f"Workflow '{workflow.name}' configured for "
-            f"start role '{start_role.name}'."
-        ),
-        metadata={
-            "workflow_id": str(workflow.id),
-            "workflow_name": workflow.name,
-            "start_role_id": str(start_role.id),
-            "start_role_name": start_role.name,
-            "created": created,
-        }
-    )
+        if workflow_id:
+            try:
+                workflow = ApprovalWorkflow.objects.get(
+                    id=workflow_id,
+                    company=profile.company
+                )
+            except ApprovalWorkflow.DoesNotExist:
+                return Response(
+                    {"error": "Workflow not found."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
 
-    serializer = ApprovalWorkflowSerializer(workflow)
+            if ApprovalWorkflow.objects.filter(
+                company=profile.company,
+                start_role=start_role,
+                is_active=True
+            ).exclude(id=workflow.id).exists():
+                return Response(
+                    {"error": f"A workflow already exists for '{start_role.name}'."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-    return Response({
-        "message": (
-            "Workflow created successfully."
-            if created
-            else "Workflow updated successfully."
-        ),
-        "workflow": serializer.data
-    })
+            workflow.name = name
+            workflow.start_role = start_role
+            workflow.is_active = True
+            workflow.save()
+
+            created = False
+
+        else:
+            if ApprovalWorkflow.objects.filter(
+                company=profile.company,
+                start_role=start_role,
+                is_active=True
+            ).exists():
+                return Response(
+                    {"error": f"A workflow already exists for '{start_role.name}'."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            workflow = ApprovalWorkflow.objects.create(
+                company=profile.company,
+                name=name,
+                start_role=start_role,
+                is_active=True
+            )
+
+            created = True
+
+        if workflow.steps.filter(is_active=True).exists():
+            valid, error = validate_workflow(workflow)
+
+            if not valid:
+                transaction.set_rollback(True)
+                return Response(
+                    {"error": error},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        create_audit_log(
+            company=profile.company,
+            action="WORKFLOW_CREATED" if created else "WORKFLOW_UPDATED",
+            action_by=profile,
+            message=(
+                f"Workflow '{workflow.name}' "
+                f"{'created' if created else 'updated'} "
+                f"for role '{start_role.name}'."
+            ),
+            metadata={
+                "workflow_id": str(workflow.id),
+                "workflow_name": workflow.name,
+                "start_role": start_role.name,
+                "created": created,
+            }
+        )
+
+        serializer = ApprovalWorkflowSerializer(workflow)
+
+        return Response(
+            {
+                "message": (
+                    "Workflow created successfully."
+                    if created else
+                    "Workflow updated successfully."
+                ),
+                "workflow": serializer.data,
+            },
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        )
 
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
 def update_workflow_step(request, step_id):
-
     profile = request.user.profile
 
     if profile.role != "COMPANY_ADMIN":
         return Response(
-            {
-                "error": "Only company admin can update workflow steps."
-            },
+            {"error": "Only company admin can update workflow steps."},
             status=status.HTTP_403_FORBIDDEN
         )
 
@@ -1160,256 +1205,227 @@ def update_workflow_step(request, step_id):
             "workflow",
             "approver_role",
             "specific_user",
+            "specific_user__user",
             "department",
         ).get(
             id=step_id,
             workflow__company=profile.company,
             is_active=True
         )
-
     except ApprovalWorkflowStep.DoesNotExist:
         return Response(
-            {
-                "error": "Workflow step not found."
-            },
+            {"error": "Workflow step not found."},
             status=status.HTTP_404_NOT_FOUND
         )
 
     workflow = step.workflow
-
-    # -----------------------------
-    # Step Order
-    # -----------------------------
     new_step_order = request.data.get("step_order")
 
-    # -----------------------------
-    # Approver Type
-    # -----------------------------
-    new_approver_type = request.data.get("approver_type")
+    with transaction.atomic():
 
-    if new_approver_type:
+        new_approver_type = request.data.get("approver_type")
 
-        if new_approver_type not in [
-            ApprovalWorkflowStep.APPROVER_REPORTING_MANAGER,
-            ApprovalWorkflowStep.APPROVER_DEPARTMENT_MANAGER,
-            ApprovalWorkflowStep.APPROVER_COMPANY_ROLE,
-            ApprovalWorkflowStep.APPROVER_SPECIFIC_USER,
-        ]:
+        if new_approver_type:
+            if new_approver_type not in [
+                ApprovalWorkflowStep.APPROVER_REPORTING_MANAGER,
+                ApprovalWorkflowStep.APPROVER_DEPARTMENT_MANAGER,
+                ApprovalWorkflowStep.APPROVER_COMPANY_ROLE,
+                ApprovalWorkflowStep.APPROVER_SPECIFIC_USER,
+            ]:
+                return Response(
+                    {"error": "Invalid approver_type."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            step.approver_type = new_approver_type
+
+            if new_approver_type in [
+                ApprovalWorkflowStep.APPROVER_REPORTING_MANAGER,
+                ApprovalWorkflowStep.APPROVER_DEPARTMENT_MANAGER,
+            ]:
+                step.approver_role = None
+                step.specific_user = None
+
+            elif new_approver_type == ApprovalWorkflowStep.APPROVER_COMPANY_ROLE:
+                step.specific_user = None
+
+            elif new_approver_type == ApprovalWorkflowStep.APPROVER_SPECIFIC_USER:
+                step.approver_role = None
+
+        if "approver_role" in request.data:
+            approver_role_id = request.data.get("approver_role")
+
+            if approver_role_id in [None, "", "null"]:
+                step.approver_role = None
+            else:
+                try:
+                    role = CompanyRole.objects.get(
+                        id=approver_role_id,
+                        company=profile.company,
+                        is_active=True
+                    )
+                    step.approver_role = role
+                except CompanyRole.DoesNotExist:
+                    return Response(
+                        {"error": "Approver role not found."},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+
+        if "specific_user" in request.data:
+            specific_user_id = request.data.get("specific_user")
+
+            if specific_user_id in [None, "", "null"]:
+                step.specific_user = None
+            else:
+                try:
+                    user = UserProfile.objects.get(
+                        id=specific_user_id,
+                        company=profile.company,
+                        user__is_active=True
+                    )
+                    step.specific_user = user
+                except UserProfile.DoesNotExist:
+                    return Response(
+                        {"error": "Specific user not found or inactive."},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+
+        if "routing_type" in request.data:
+            routing_type = request.data.get("routing_type")
+
+            if routing_type not in [
+                ApprovalWorkflowStep.ROUTING_COMPANY,
+                ApprovalWorkflowStep.ROUTING_DEPARTMENT,
+            ]:
+                return Response(
+                    {"error": "Invalid routing_type."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            step.routing_type = routing_type
+
+        if "department" in request.data:
+            department_id = request.data.get("department")
+
+            if department_id in [None, "", "null"]:
+                step.department = None
+            else:
+                try:
+                    department = Department.objects.get(
+                        id=department_id,
+                        company=profile.company,
+                        is_active=True
+                    )
+                    step.department = department
+                except Department.DoesNotExist:
+                    return Response(
+                        {"error": "Department not found."},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+
+        if step.approver_type == ApprovalWorkflowStep.APPROVER_COMPANY_ROLE and not step.approver_role:
             return Response(
-                {
-                    "error": "Invalid approver_type."
-                },
+                {"error": "approver_role is required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        step.approver_type = new_approver_type
-
-    # -----------------------------
-    # Company Role
-    # -----------------------------
-    if "approver_role" in request.data:
-
-        approver_role_id = request.data.get("approver_role")
-
-        if approver_role_id in [None, "", "null"]:
-            step.approver_role = None
-
-        else:
-
-            try:
-
-                role = CompanyRole.objects.get(
-                    id=approver_role_id,
-                    company=profile.company,
-                    is_active=True
-                )
-
-                step.approver_role = role
-
-            except CompanyRole.DoesNotExist:
-                return Response(
-                    {
-                        "error": "Approver role not found."
-                    },
-                    status=status.HTTP_404_NOT_FOUND
-                )
-
-    # -----------------------------
-    # Specific User
-    # -----------------------------
-    if "specific_user" in request.data:
-
-        specific_user_id = request.data.get("specific_user")
-
-        if specific_user_id in [None, "", "null"]:
-            step.specific_user = None
-
-        else:
-
-            try:
-
-                user = UserProfile.objects.get(
-                    id=specific_user_id,
-                    company=profile.company
-                )
-
-                step.specific_user = user
-
-            except UserProfile.DoesNotExist:
-                return Response(
-                    {
-                        "error": "Specific user not found."
-                    },
-                    status=status.HTTP_404_NOT_FOUND
-                )
-
-    # -----------------------------
-    # Routing Type
-    # -----------------------------
-    if "routing_type" in request.data:
-
-        routing_type = request.data.get("routing_type")
-
-        if routing_type not in [
-            ApprovalWorkflowStep.ROUTING_COMPANY,
-            ApprovalWorkflowStep.ROUTING_DEPARTMENT,
-        ]:
-
+        if step.approver_type == ApprovalWorkflowStep.APPROVER_SPECIFIC_USER and not step.specific_user:
             return Response(
-                {
-                    "error": "Invalid routing_type."
-                },
+                {"error": "specific_user is required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        step.routing_type = routing_type
+        if step.routing_type == ApprovalWorkflowStep.ROUTING_DEPARTMENT and not step.department:
+            return Response(
+                {"error": "Department is required for department routing."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-    # -----------------------------
-    # Department
-    # -----------------------------
-    if "department" in request.data:
-
-        department_id = request.data.get("department")
-
-        if department_id in [None, "", "null"]:
-
+        if step.routing_type == ApprovalWorkflowStep.ROUTING_COMPANY:
             step.department = None
 
-        else:
+        step.full_clean()
+        step.save()
 
-            try:
+        if new_step_order:
+            new_step_order = int(new_step_order)
 
-                department = Department.objects.get(
-                    id=department_id,
-                    company=profile.company,
+            active_steps = list(
+                ApprovalWorkflowStep.objects.filter(
+                    workflow=workflow,
                     is_active=True
-                )
-
-                step.department = department
-
-            except Department.DoesNotExist:
-
-                return Response(
-                    {
-                        "error": "Department not found."
-                    },
-                    status=status.HTTP_404_NOT_FOUND
-                )
-
-    step.save()
-
-    # -----------------------------
-    # Reorder
-    # -----------------------------
-    if new_step_order:
-
-        active_steps = list(
-
-            ApprovalWorkflowStep.objects.filter(
-                workflow=workflow,
-                is_active=True
-            ).order_by(
-                "step_order",
-                "created_at"
+                ).order_by("step_order", "created_at")
             )
 
+            active_steps = [
+                item for item in active_steps
+                if item.id != step.id
+            ]
+
+            if new_step_order < 1:
+                new_step_order = 1
+
+            if new_step_order > len(active_steps) + 1:
+                new_step_order = len(active_steps) + 1
+
+            active_steps.insert(new_step_order - 1, step)
+
+            for index, item in enumerate(active_steps, start=1):
+                item.step_order = index + 1000
+                item.save(update_fields=["step_order"])
+
+            for index, item in enumerate(active_steps, start=1):
+                item.step_order = index
+                item.save(update_fields=["step_order"])
+
+            step.refresh_from_db()
+
+        valid, error = validate_workflow(workflow)
+
+        if not valid:
+            transaction.set_rollback(True)
+            return Response(
+                {"error": error},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        create_audit_log(
+            company=profile.company,
+            action="WORKFLOW_STEP_UPDATED",
+            action_by=profile,
+            message=f"Workflow step {step.step_order} updated.",
+            metadata={
+                "workflow_id": str(workflow.id),
+                "workflow_name": workflow.name,
+                "step_id": str(step.id),
+                "step_order": step.step_order,
+                "approver_type": step.approver_type,
+                "approver_role": step.approver_role.name if step.approver_role else None,
+                "specific_user": step.specific_user.user.email if step.specific_user else None,
+                "routing_type": step.routing_type,
+                "department": step.department.name if step.department else None,
+            },
         )
 
-        active_steps = [
-            s
-            for s in active_steps
-            if s.id != step.id
-        ]
-
-        new_step_order = int(new_step_order)
-
-        if new_step_order < 1:
-            new_step_order = 1
-
-        if new_step_order > len(active_steps) + 1:
-            new_step_order = len(active_steps) + 1
-
-        active_steps.insert(
-            new_step_order - 1,
-            step
+        return Response(
+            {
+                "message": "Workflow step updated successfully.",
+                "workflow": {
+                    "id": str(workflow.id),
+                    "name": workflow.name,
+                },
+                "step": ApprovalWorkflowStepSerializer(step).data,
+            },
+            status=status.HTTP_200_OK
         )
-
-        for index, item in enumerate(active_steps, start=1):
-
-            item.step_order = index + 1000
-            item.save(update_fields=["step_order"])
-
-        for index, item in enumerate(active_steps, start=1):
-
-            item.step_order = index
-            item.save(update_fields=["step_order"])
-
-        step.refresh_from_db()
-
-    create_audit_log(
-        company=profile.company,
-        action="WORKFLOW_STEP_UPDATED",
-        action_by=profile,
-        message="Workflow step updated.",
-        metadata={
-            "workflow_id": str(workflow.id),
-            "workflow_name": workflow.name,
-            "step_id": str(step.id),
-            "step_order": step.step_order,
-            "approver_type": step.approver_type,
-            "approver_role": (
-                step.approver_role.name
-                if step.approver_role else None
-            ),
-            "specific_user": (
-                step.specific_user.user.email
-                if step.specific_user else None
-            ),
-            "routing_type": step.routing_type,
-            "department": (
-                step.department.name
-                if step.department else None
-            ),
-        }
-    )
-
-    return Response(
-        {
-            "message": "Workflow step updated successfully.",
-            "step": ApprovalWorkflowStepSerializer(step).data
-        }
-    )
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def add_workflow_step(request):
-
     profile = request.user.profile
 
     if profile.role != "COMPANY_ADMIN":
         return Response(
-            {
-                "error": "Only company admin can add workflow steps."
-            },
+            {"error": "Only company admin can add workflow steps."},
             status=status.HTTP_403_FORBIDDEN
         )
 
@@ -1417,9 +1433,7 @@ def add_workflow_step(request):
 
     if not workflow_id:
         return Response(
-            {
-                "error": "workflow_id is required."
-            },
+            {"error": "workflow_id is required."},
             status=status.HTTP_400_BAD_REQUEST
         )
 
@@ -1429,18 +1443,13 @@ def add_workflow_step(request):
             company=profile.company,
             is_active=True
         )
-
     except ApprovalWorkflow.DoesNotExist:
         return Response(
-            {
-                "error": "Workflow not found."
-            },
+            {"error": "Workflow not found."},
             status=status.HTTP_404_NOT_FOUND
         )
 
-    serializer = ApprovalWorkflowStepSerializer(
-        data=request.data
-    )
+    serializer = ApprovalWorkflowStepSerializer(data=request.data)
 
     if not serializer.is_valid():
         return Response(
@@ -1449,164 +1458,147 @@ def add_workflow_step(request):
         )
 
     approver_type = serializer.validated_data["approver_type"]
-
-    approver_role = serializer.validated_data.get(
-        "approver_role"
+    approver_role = serializer.validated_data.get("approver_role")
+    specific_user = serializer.validated_data.get("specific_user")
+    routing_type = serializer.validated_data.get(
+        "routing_type",
+        ApprovalWorkflowStep.ROUTING_COMPANY
     )
-
-    specific_user = serializer.validated_data.get(
-        "specific_user"
-    )
-
-    department = serializer.validated_data.get(
-        "department"
-    )
-
-    # -----------------------------
-    # Validate Approver
-    # -----------------------------
+    department = serializer.validated_data.get("department")
+    step_order = serializer.validated_data["step_order"]
 
     if approver_type == ApprovalWorkflowStep.APPROVER_COMPANY_ROLE:
-
         if not approver_role:
             return Response(
-                {
-                    "error": "approver_role is required."
-                },
+                {"error": "approver_role is required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         if approver_role.company != profile.company:
             return Response(
-                {
-                    "error": "Approver role does not belong to your company."
-                },
+                {"error": "Approver role belongs to another company."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         if not approver_role.is_active:
             return Response(
-                {
-                    "error": "Approver role is inactive."
-                },
+                {"error": "Approver role is inactive."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-    elif approver_type == ApprovalWorkflowStep.APPROVER_SPECIFIC_USER:
+        specific_user = None
 
+    elif approver_type == ApprovalWorkflowStep.APPROVER_SPECIFIC_USER:
         if not specific_user:
             return Response(
-                {
-                    "error": "specific_user is required."
-                },
+                {"error": "specific_user is required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         if specific_user.company != profile.company:
             return Response(
-                {
-                    "error": "Specific user does not belong to your company."
-                },
+                {"error": "Specific user belongs to another company."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         if not specific_user.user.is_active:
             return Response(
-                {
-                    "error": "Specific user is inactive."
-                },
+                {"error": "Specific user is inactive."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-    elif approver_type == ApprovalWorkflowStep.APPROVER_REPORTING_MANAGER:
-        # Nothing to validate.
-        pass
+        approver_role = None
 
-    elif approver_type == ApprovalWorkflowStep.APPROVER_DEPARTMENT_MANAGER:
-        # Nothing to validate.
-        pass
+    elif approver_type in [
+        ApprovalWorkflowStep.APPROVER_REPORTING_MANAGER,
+        ApprovalWorkflowStep.APPROVER_DEPARTMENT_MANAGER,
+    ]:
+        approver_role = None
+        specific_user = None
 
-    # -----------------------------
-    # Department Validation
-    # -----------------------------
-
-    if department:
+    if routing_type == ApprovalWorkflowStep.ROUTING_DEPARTMENT:
+        if not department:
+            return Response(
+                {"error": "Department is required for department routing."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         if department.company != profile.company:
             return Response(
-                {
-                    "error": "Department does not belong to your company."
-                },
+                {"error": "Department belongs to another company."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         if not department.is_active:
             return Response(
-                {
-                    "error": "Department is inactive."
-                },
+                {"error": "Department is inactive."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
-    step_order = serializer.validated_data["step_order"]
+    else:
+        department = None
 
     if ApprovalWorkflowStep.objects.filter(
         workflow=workflow,
         step_order=step_order,
         is_active=True
     ).exists():
-
         return Response(
-            {
-                "error": f"Step order {step_order} already exists."
-            },
+            {"error": f"Step order {step_order} already exists."},
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    step = serializer.save(
-        workflow=workflow,
-        is_active=True
-    )
+    with transaction.atomic():
+        step = serializer.save(
+            workflow=workflow,
+            approver_role=approver_role,
+            specific_user=specific_user,
+            routing_type=routing_type,
+            department=department,
+            is_active=True
+        )
 
-    create_audit_log(
-        company=profile.company,
-        action="WORKFLOW_STEP_CREATED",
-        action_by=profile,
-        message=(
-            f"Workflow step {step.step_order} added."
-        ),
-        metadata={
-            "workflow_id": str(workflow.id),
-            "workflow_name": workflow.name,
-            "start_role": workflow.start_role.name,
-            "step_order": step.step_order,
-            "approver_type": step.approver_type,
-            "approver_role": (
-                step.approver_role.name
-                if step.approver_role else None
-            ),
-            "specific_user": (
-                step.specific_user.user.email
-                if step.specific_user else None
-            ),
-            "department": (
-                step.department.name
-                if step.department else None
-            ),
-            "routing_type": step.routing_type,
-        }
-    )
+        step.full_clean()
+        step.save()
 
-    return Response(
-        {
-            "message": "Workflow step added successfully.",
-            "workflow": workflow.name,
-            "start_role": workflow.start_role.name,
-            "step": ApprovalWorkflowStepSerializer(step).data
-        },
-        status=status.HTTP_201_CREATED
-    )
+        valid, error = validate_workflow(workflow)
 
+        if not valid:
+            transaction.set_rollback(True)
+            return Response(
+                {"error": error},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        create_audit_log(
+            company=profile.company,
+            action="WORKFLOW_STEP_CREATED",
+            action_by=profile,
+            message=f"Workflow step {step.step_order} created.",
+            metadata={
+                "workflow_id": str(workflow.id),
+                "workflow_name": workflow.name,
+                "start_role": workflow.start_role.name,
+                "step_order": step.step_order,
+                "approver_type": step.approver_type,
+                "approver_role": step.approver_role.name if step.approver_role else None,
+                "specific_user": step.specific_user.user.email if step.specific_user else None,
+                "routing_type": step.routing_type,
+                "department": step.department.name if step.department else None,
+            },
+        )
+
+        return Response(
+            {
+                "message": "Workflow step added successfully.",
+                "workflow": {
+                    "id": str(workflow.id),
+                    "name": workflow.name,
+                    "start_role": workflow.start_role.name,
+                },
+                "step": ApprovalWorkflowStepSerializer(step).data,
+            },
+            status=status.HTTP_201_CREATED
+        )
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def view_workflow(request):
@@ -2311,3 +2303,92 @@ def admin_reports_list(request):
         },
         "results": serializer.data
     })
+
+from expenses.workflow_engine import simulate_workflow
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def simulate_workflow_api(request):
+
+    profile = request.user.profile
+
+    if profile.role != "COMPANY_ADMIN":
+        return Response(
+            {
+                "error": "Only company admin can simulate workflow."
+            },
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    employee_id = request.data.get("employee_id")
+
+    if not employee_id:
+        return Response(
+            {
+                "error": "employee_id is required."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+
+        employee = UserProfile.objects.select_related(
+            "user",
+            "company_role",
+            "department",
+            "department__manager",
+            "reporting_manager",
+            "reporting_manager__user",
+        ).get(
+            id=employee_id,
+            company=profile.company,
+        )
+
+    except UserProfile.DoesNotExist:
+
+        return Response(
+            {
+                "error": "Employee not found."
+            },
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    success, result = simulate_workflow(employee)
+
+    if not success:
+
+        return Response(
+            {
+                "success": False,
+                "error": result,
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    return Response({
+
+        "success": True,
+
+        "employee": {
+            "id": str(employee.id),
+            "name": employee.user.get_full_name(),
+            "email": employee.user.email,
+            "company_role": (
+                employee.company_role.name
+                if employee.company_role else None
+            ),
+            "department": (
+                employee.department.name
+                if employee.department else None
+            ),
+            "reporting_manager": (
+                employee.reporting_manager.user.get_full_name()
+                if employee.reporting_manager else None
+            ),
+        },
+
+        "simulation": result,
+
+    })
+
+from expenses.workflow_validator import validate_workflow

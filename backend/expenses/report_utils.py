@@ -90,9 +90,14 @@ def is_payment_queue_role(company_role):
 
 def get_reports_awaiting_payment(company):
     """
-    Reports ready for accounts to mark as paid.
-    Includes fully approved reports and reports at a mark-paid workflow step.
+    Reports visible to Accounts / Payment team.
+
+    Includes:
+    1. Fully approved reports
+    2. Rejected reports for final accounts handling
+    3. Reports currently sitting on an Accounts/payment workflow step
     """
+
     payment_step = Q(
         status=ExpenseReport.STATUS_SUBMITTED,
         workflow_completed=False,
@@ -100,7 +105,29 @@ def get_reports_awaiting_payment(company):
     )
 
     return ExpenseReport.objects.filter(
-        company=company,
+        company=company
     ).filter(
-        Q(status=ExpenseReport.STATUS_APPROVED) | payment_step
-    )
+        Q(
+            status=ExpenseReport.STATUS_APPROVED,
+            workflow_completed=True,
+        )
+        |
+        Q(
+            status=ExpenseReport.STATUS_REJECTED,
+            workflow_completed=True,
+        )
+        |
+        payment_step
+    ).select_related(
+        "employee",
+        "employee__user",
+        "department",
+        "current_workflow_step",
+        "current_workflow_step__approver_role",
+        "current_approver",
+        "current_approver__user",
+    ).prefetch_related(
+        "receipts",
+        "receipts__line_items",
+        "approval_history",
+    ).distinct().order_by("-updated_at")

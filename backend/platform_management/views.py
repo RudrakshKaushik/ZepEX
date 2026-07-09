@@ -558,6 +558,10 @@ def platform_company_details(request, company_id):
     department_id = request.GET.get("department_id")
     role = request.GET.get("role")
     company_role_id = request.GET.get("company_role_id")
+    if company_role_id:
+       policy_rules = policy_rules.filter(
+        company_role_id=company_role_id
+    )
     category = request.GET.get("category")
 
     def paginate_queryset(queryset, serializer_class):
@@ -672,9 +676,11 @@ def platform_company_details(request, company_id):
             company=company
         )
 
-        policy_rules = PolicyCategoryRule.objects.filter(
-            policy=policy
-        )
+        policy_rules = (
+        PolicyCategoryRule.objects
+        .select_related("company_role")
+        .filter(policy=policy)
+)
 
         if category:
             policy_rules = policy_rules.filter(
@@ -687,7 +693,10 @@ def platform_company_details(request, company_id):
                 | Q(category_description__icontains=search)
             )
 
-        policy_rules = policy_rules.order_by("category_name")
+        policy_rules = policy_rules.order_by(
+        "company_role__name",
+        "category_name",
+)
 
         response_data["policy_rules"] = paginate_queryset(
             policy_rules,

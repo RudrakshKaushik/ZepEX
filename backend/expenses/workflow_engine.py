@@ -389,3 +389,92 @@ def reject_current_step(report, approver_profile, notes):
         "rejected": True,
         "step": current_step,
     }
+
+def simulate_workflow(employee):
+    """
+    Simulates the approval workflow without creating
+    or modifying any ExpenseReport.
+    """
+
+    workflow = get_workflow(employee)
+
+    if workflow is None:
+        return False, "No workflow configured."
+
+    current_step = get_first_step(workflow)
+
+    if current_step is None:
+        return False, "Workflow has no active steps."
+
+    previous_approver = None
+    skipped_steps = 0
+
+    flow = []
+
+    while current_step:
+
+        approver, error = resolve_step_approver(
+            employee=employee,
+            workflow_step=current_step,
+        )
+
+        if error or approver is None:
+
+            flow.append({
+                "step_order": current_step.step_order,
+                "status": "SKIPPED",
+                "reason": error,
+            })
+
+            skipped_steps += 1
+
+        elif previous_approver and approver.id == previous_approver.id:
+
+            flow.append({
+                "step_order": current_step.step_order,
+                "status": "SKIPPED",
+                "reason": "Duplicate approver skipped.",
+            })
+
+            skipped_steps += 1
+
+        elif not approver.user.is_active:
+
+            flow.append({
+                "step_order": current_step.step_order,
+                "status": "SKIPPED",
+                "reason": "Inactive approver.",
+            })
+
+            skipped_steps += 1
+
+        else:
+
+            flow.append({
+                "step_order": current_step.step_order,
+                "status": "APPROVAL",
+
+                "approver_type":
+                    current_step.get_approver_type_display(),
+
+                "approver": (
+                    approver.user.get_full_name()
+                    or approver.user.email
+                ),
+
+                "email": approver.user.email,
+            })
+
+            previous_approver = approver
+
+        current_step = get_next_step(current_step)
+
+    return True, {
+        "workflow_name": workflow.name,
+        "start_role": workflow.start_role.name,
+        "total_steps": workflow.steps.filter(
+            is_active=True
+        ).count(),
+        "steps_skipped": skipped_steps,
+        "flow": flow,
+    }

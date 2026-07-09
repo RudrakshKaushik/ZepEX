@@ -51,7 +51,10 @@ from .views import (
     send_employee_invites,
     company_finance_settings,
     currency_list,
-    currency_detail
+    currency_detail,
+    preview_role_policy,
+    simulate_policy_rule,
+    copy_role_policy,
 
 
 )
@@ -165,5 +168,19 @@ path(
     currency_detail,
     name="currency-detail"
 ),
-
+path(
+    "policy/preview/",
+    preview_role_policy,
+    name="preview-role-policy"
+),
+path(
+    "policy/simulate/",
+    simulate_policy_rule,
+    name="simulate-policy-rule"
+),
+path(
+    "policy/copy/",
+    copy_role_policy,
+    name="copy-role-policy"
+),
 ]

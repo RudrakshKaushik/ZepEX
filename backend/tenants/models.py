@@ -282,19 +282,22 @@ class CompanyPolicy(models.Model):
     company = models.OneToOneField(
         Company,
         on_delete=models.CASCADE,
-        related_name='policy'
+        related_name="policy"
     )
 
     updated_at = models.DateTimeField(
         auto_now=True
     )
-        
+
     auto_approve_if_no_violation = models.BooleanField(
-    default=True
-    )    
+        default=True
+    )
+
     def __str__(self):
         return f"Policy - {self.company.name}"
 
+
+    
 
 class PolicyCategoryRule(models.Model):
     id = models.UUIDField(
@@ -306,8 +309,14 @@ class PolicyCategoryRule(models.Model):
     policy = models.ForeignKey(
         CompanyPolicy,
         on_delete=models.CASCADE,
-        related_name='category_rules'
+        related_name="category_rules"
     )
+
+    company_role = models.ForeignKey(
+    CompanyRole,
+    on_delete=models.CASCADE,
+    related_name="policy_category_rules",
+)
 
     category_name = models.CharField(
         max_length=100
@@ -322,18 +331,29 @@ class PolicyCategoryRule(models.Model):
         null=True,
         blank=True
     )
-    is_active = models.BooleanField(default=True)
 
-    updated_at = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(
+        default=True
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True
+    )
 
     class Meta:
         unique_together = (
-            'policy',
-            'category_name'
+            "policy",
+            "company_role",
+            "category_name"
         )
 
     def __str__(self):
-        return f"{self.category_name} - {self.max_amount}"
+        return (
+            f"{self.policy.company.name} - "
+            f"{self.company_role.name} - "
+            f"{self.category_name} - "
+            f"{self.max_amount}"
+        )
 
 class ReimbursementEmailConfig(models.Model):
     id = models.UUIDField(

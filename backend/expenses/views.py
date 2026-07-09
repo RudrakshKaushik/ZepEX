@@ -19,7 +19,7 @@ from .models import (
     Department
 )
 from tenants.models import CompanyRole
-
+from expenses.workflow_engine import reorder_workflow_steps
 from .workflow_engine import resolve_step_approver
 from expenses.workflow_engine import start_workflow
 from .serializers import ExpenseReceiptSerializer,ExpenseReportSerializer, ApprovalHistorySerializer
@@ -1335,11 +1335,7 @@ def update_workflow_step(request, step_id):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if step.routing_type == ApprovalWorkflowStep.ROUTING_DEPARTMENT and not step.department:
-            return Response(
-                {"error": "Department is required for department routing."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+       
 
         if step.routing_type == ApprovalWorkflowStep.ROUTING_COMPANY:
             step.department = None
@@ -1516,12 +1512,7 @@ def add_workflow_step(request):
         approver_role = None
         specific_user = None
 
-    if routing_type == ApprovalWorkflowStep.ROUTING_DEPARTMENT:
-        if not department:
-            return Response(
-                {"error": "Department is required for department routing."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+    
 
         if department.company != profile.company:
             return Response(
@@ -1655,45 +1646,69 @@ def view_workflow(request):
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
 def deactivate_workflow_step(request, step_id):
+
     profile = request.user.profile
 
     if profile.role != "COMPANY_ADMIN":
         return Response(
-            {"error": "Only company admin can deactivate workflow steps."},
+            {
+                "error": "Only company admin can deactivate workflow steps."
+            },
             status=status.HTTP_403_FORBIDDEN
         )
 
     try:
-        step = ApprovalWorkflowStep.objects.get(
+        step = ApprovalWorkflowStep.objects.select_related(
+            "workflow"
+        ).get(
             id=step_id,
-            workflow__company=profile.company
+            workflow__company=profile.company,
+            is_active=True,
         )
 
     except ApprovalWorkflowStep.DoesNotExist:
         return Response(
-            {"error": "Workflow step not found."},
+            {
+                "error": "Workflow step not found."
+            },
             status=status.HTTP_404_NOT_FOUND
         )
 
     workflow = step.workflow
+    old_step_order = step.step_order
 
     step.is_active = False
-    step.save(update_fields=["is_active"])
 
-    active_steps = ApprovalWorkflowStep.objects.filter(
-        workflow=workflow,
-        is_active=True
-    ).order_by("step_order", "created_at")
+    # Move inactive step away from active ordering range
+    step.step_order = old_step_order + 10000
 
-    for index, active_step in enumerate(active_steps, start=1):
-        if active_step.step_order != index:
-            active_step.step_order = index
-            active_step.save(update_fields=["step_order"])
+    step.save(update_fields=[
+        "is_active",
+        "step_order",
+    ])
 
-    return Response({
-        "message": "Workflow step deactivated successfully.",
-        "workflow_steps_reordered": True
-    })
+    reorder_workflow_steps(workflow)
+
+    create_audit_log(
+        company=profile.company,
+        action="WORKFLOW_STEP_DEACTIVATED",
+        action_by=profile,
+        message=f"Workflow step {old_step_order} deactivated.",
+        metadata={
+            "workflow_id": str(workflow.id),
+            "workflow_name": workflow.name,
+            "step_id": str(step.id),
+            "old_step_order": old_step_order,
+        }
+    )
+
+    return Response(
+        {
+            "message": "Workflow step deactivated successfully.",
+            "workflow_steps_reordered": True,
+        },
+        status=status.HTTP_200_OK
+    )
 
 
 @api_view(["DELETE"])

@@ -111,37 +111,70 @@ def get_next_valid_step(
 
 
 def resolve_step_approver(employee, workflow_step):
+
     if workflow_step.approver_type == ApprovalWorkflowStep.APPROVER_REPORTING_MANAGER:
+
         if not employee.reporting_manager:
             return None, "Reporting manager is not assigned."
+
         return employee.reporting_manager, None
 
     if workflow_step.approver_type == ApprovalWorkflowStep.APPROVER_DEPARTMENT_MANAGER:
-        if not employee.department:
+
+        target_department = workflow_step.department or employee.department
+
+        if not target_department:
             return None, "Employee department is not assigned."
-        if not employee.department.manager:
+
+        if not target_department.manager:
             return None, "Department manager is not assigned."
-        return employee.department.manager, None
+
+        return target_department.manager, None
 
     if workflow_step.approver_type == ApprovalWorkflowStep.APPROVER_SPECIFIC_USER:
+
         if not workflow_step.specific_user:
             return None, "Specific approver is not configured."
+
+        if not workflow_step.specific_user.user.is_active:
+            return None, "Specific approver is inactive."
+
         return workflow_step.specific_user, None
 
     if workflow_step.approver_type == ApprovalWorkflowStep.APPROVER_COMPANY_ROLE:
+
         if not workflow_step.approver_role:
             return None, "Approver role is not configured."
 
-        approver = UserProfile.objects.filter(
+        approver_query = UserProfile.objects.filter(
             company=employee.company,
             company_role=workflow_step.approver_role,
             user__is_active=True,
         ).exclude(
             id=employee.id
-        ).select_related("user").first()
+        ).select_related(
+            "user",
+            "department",
+            "company_role",
+        )
+
+        if workflow_step.routing_type == ApprovalWorkflowStep.ROUTING_DEPARTMENT:
+            target_department = workflow_step.department or employee.department
+
+            if not target_department:
+                return None, "Employee department is not assigned."
+
+            approver_query = approver_query.filter(
+                department=target_department
+            )
+
+        approver = approver_query.first()
 
         if not approver:
-            return None, f"No active user found with role '{workflow_step.approver_role.name}'."
+            return (
+                None,
+                f"No active user found with role '{workflow_step.approver_role.name}'."
+            )
 
         return approver, None
 
@@ -478,3 +511,26 @@ def simulate_workflow(employee):
         "steps_skipped": skipped_steps,
         "flow": flow,
     }
+
+def reorder_workflow_steps(workflow):
+    active_steps = list(
+        ApprovalWorkflowStep.objects.filter(
+            workflow=workflow,
+            is_active=True,
+        ).order_by(
+            "step_order",
+            "created_at",
+        )
+    )
+
+    # Temporary numbering to avoid unique constraint conflict
+    for index, step in enumerate(active_steps, start=1):
+        step.step_order = index + 1000
+        step.save(update_fields=["step_order"])
+
+    # Final numbering
+    for index, step in enumerate(active_steps, start=1):
+        step.step_order = index
+        step.save(update_fields=["step_order"])
+
+    return active_steps    

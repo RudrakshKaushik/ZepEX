@@ -156,11 +156,85 @@ export interface EmployeeRecord {
 
 export interface PolicyRule {
   id: string
-  policy: string
+  policy?: string
+  company_role: number
+  company_role_name: string
   category_name: string
   max_amount: string
   category_description: string
-  is_active?: boolean
+  is_active: boolean
+  updated_at?: string
+}
+
+export interface PolicyRuleMutationResponse {
+  message: string
+  rule: PolicyRule
+}
+
+export interface EffectivePolicyRule {
+  id: string
+  category: string
+  limit: string
+  description: string
+  source_role: string
+  inherited: boolean
+}
+
+export interface PolicyPreviewResponse {
+  company_role: { id: string; name: string }
+  total_rules: number
+  rules: EffectivePolicyRule[]
+}
+
+export interface PolicySimulateResponse {
+  company_role: string
+  allowed: boolean
+  entered_amount: string
+  limit?: string
+  category?: string
+  source_role?: string
+  inherited?: boolean
+  violation?: boolean
+  reason?: string
+}
+
+export interface PolicyCopyResponse {
+  message: string
+  from_role: string
+  to_role: string
+  copied: number
+  updated: number
+  skipped: number
+  overwrite_existing: boolean
+}
+
+export interface WorkflowSimulateStep {
+  step_order: number
+  status: string
+  approver_type?: string
+  approver?: string
+  email?: string
+  reason?: string
+}
+
+export interface WorkflowSimulateResponse {
+  success: boolean
+  error?: string
+  employee?: {
+    id: string
+    name: string
+    email: string
+    company_role: string | null
+    department: string | null
+    reporting_manager: string | null
+  }
+  simulation?: {
+    workflow_name: string
+    start_role: string
+    total_steps: number
+    steps_skipped: number
+    flow: WorkflowSimulateStep[]
+  }
 }
 
 export interface ApprovalWorkflowStep {
@@ -336,6 +410,7 @@ export interface RejectReportResponse {
 
 export interface MarkPaidReportResponse {
   message: string
+  previous_status?: string
   paid_by: string
   is_company_admin_override?: boolean
   report: ExpenseReport
@@ -574,16 +649,21 @@ export interface SubmitMonthlyReportResponse {
 }
 
 export interface PaymentDashboardMetrics {
+  payment_queue_reports: number
   approved_reports_waiting_payment: number
-  auto_approved_reports_waiting_payment: number
-  manual_approved_reports_waiting_payment: number
+  rejected_reports_waiting_accounts_action?: number
+  auto_approved_reports_waiting_payment?: number
+  manual_approved_reports_waiting_payment?: number
   paid_reports: number
-  rejected_reports: number
+  rejected_reports?: number
+  total_rejected_reports?: number
   approved_amount: string
-  auto_approved_amount: string
-  manual_approved_amount: string
+  auto_approved_amount?: string
+  manual_approved_amount?: string
   paid_amount: string
-  rejected_amount: string
+  rejected_amount?: string
+  rejected_queue_amount?: string
+  total_rejected_amount?: string
   payment_completion_rate: number
 }
 
@@ -612,6 +692,10 @@ export interface PaymentDashboardResponse {
   manual_approved_reports?: ExpenseReport[]
   paid_reports?: ExpenseReport[]
   rejected_reports?: ExpenseReport[]
+  rejected_reports_for_accounts?: ExpenseReport[]
+  payment_queue_reports?: ExpenseReport[]
+  recent_payment_queue_reports?: ExpenseReport[]
+  recent_rejected_reports_for_accounts?: ExpenseReport[]
 }
 
 export interface CompanyAdminDashboardData {

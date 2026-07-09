@@ -44,7 +44,11 @@ export async function loadApprovalCompletedReports(
 
 export async function loadPaymentPendingReports(): Promise<QueuedReport[]> {
   const { data } = await getPaymentDashboard()
-  return (data.approved_reports ?? []).map((report: ExpenseReport) => ({
+  const reports =
+    data.payment_queue_reports ??
+    data.approved_reports ??
+    []
+  return reports.map((report: ExpenseReport) => ({
     report,
     queueKind: 'payment_pending',
   }))

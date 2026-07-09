@@ -10,6 +10,7 @@ import {
   listApprovalWorkflows,
   listCompanyRoles,
   listDepartments,
+  listEmployees,
   saveApprovalWorkflow,
   updateWorkflowStep,
 } from '@/api'
@@ -17,6 +18,7 @@ import { getApiErrorMessage } from '@/api/client'
 import { AdminListPanel } from '@/components/admin/AdminListPanel'
 import { AdminConfirmDialog } from '@/components/admin/AdminConfirmDialog'
 import { WorkflowBuilder } from '@/components/workflow/WorkflowBuilder'
+import { WorkflowSimulationPanel } from '@/components/workflow/WorkflowSimulationPanel'
 import type { ApprovalNodeData } from '@/components/workflow/types'
 import type { WorkflowNode } from '@/components/workflow/types'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
@@ -36,7 +38,7 @@ import {
 import { fetchAllPages } from '@/lib/pagination'
 import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
-import type { ApprovalWorkflow, ApprovalWorkflowStep, CompanyRole, DepartmentRecord } from '@/types'
+import type { ApprovalWorkflow, ApprovalWorkflowStep, CompanyRole, DepartmentRecord, EmployeeRecord } from '@/types'
 
 const selectClassName =
   'flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm'
@@ -96,6 +98,7 @@ export function WorkflowPage() {
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null)
   const [roles, setRoles] = useState<CompanyRole[]>([])
   const [departments, setDepartments] = useState<DepartmentRecord[]>([])
+  const [employees, setEmployees] = useState<EmployeeRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -142,15 +145,17 @@ export function WorkflowPage() {
     setLoading(true)
     setError('')
     try {
-      const [rolesRes, allDepartments, workflowList] = await Promise.all([
+      const [rolesRes, allDepartments, allEmployees, workflowList] = await Promise.all([
         listCompanyRoles(),
         fetchAllPages((page) => listDepartments({ page })),
+        fetchAllPages((page) => listEmployees({ page })),
         loadWorkflowList(),
       ])
 
       const activeRoles = rolesRes.data.results.filter((role) => role.is_active)
       setRoles(activeRoles)
       setDepartments(allDepartments.filter((department) => department.is_active !== false))
+      setEmployees(allEmployees)
       setWorkflows(workflowList)
 
       setSelectedWorkflowId((current) => {
@@ -615,6 +620,8 @@ export function WorkflowPage() {
               onDeleteStep={handleDeleteStep}
             />
           ) : null}
+
+          <WorkflowSimulationPanel employees={employees} disabled={saving} />
 
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogContent className="max-w-lg">

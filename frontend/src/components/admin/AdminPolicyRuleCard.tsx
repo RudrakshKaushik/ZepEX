@@ -19,9 +19,16 @@ export function AdminPolicyRuleCard({ rule, currency = 'INR', onEdit }: AdminPol
         <FileText className="h-5 w-5 text-gray-700" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="font-semibold capitalize text-gray-900">
-          {rule.category_name.replace(/_/g, ' ')}
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="font-semibold capitalize text-gray-900">
+            {rule.category_name.replace(/_/g, ' ')}
+          </p>
+          {rule.company_role_name && (
+            <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+              {rule.company_role_name}
+            </span>
+          )}
+        </div>
         <p className="mt-0.5 line-clamp-2 text-sm text-gray-500">{rule.category_description}</p>
       </div>
       <p className="shrink-0 text-lg font-bold text-gray-900">

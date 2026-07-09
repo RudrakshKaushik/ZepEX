@@ -18,6 +18,11 @@ import type {
   MyUploadedExpensesResponse,
   PendingApprovalsResponse,
   PolicyRule,
+  PolicyRuleMutationResponse,
+  PolicyPreviewResponse,
+  PolicySimulateResponse,
+  PolicyCopyResponse,
+  WorkflowSimulateResponse,
   PlatformEmailServiceResponse,
   ReimbursementEmailConfigResponse,
   RejectReportResponse,
@@ -210,28 +215,58 @@ export const deactivateCompanyRole = (roleId: number) =>
 
 export const updatePolicyRule = (
   ruleId: string,
-  data: { max_amount?: number; category_description?: string },
-) => api.patch(`/tenants/policy/rules/${ruleId}/update/`, data)
+  data: {
+    company_role?: number
+    category_name?: string
+    max_amount?: number | string
+    category_description?: string
+    is_active?: boolean
+  },
+) => api.patch<PolicyRuleMutationResponse>(`/tenants/policy/rules/${ruleId}/update/`, data)
 
 export const deactivatePolicyRule = (ruleId: string) =>
-  api.patch(`/tenants/policy/rules/${ruleId}/deactivate/`)
+  api.patch<PolicyRuleMutationResponse>(`/tenants/policy/rules/${ruleId}/deactivate/`)
 
 export const activatePolicyRule = (ruleId: string) =>
-  api.patch(`/tenants/policy/rules/${ruleId}/activate/`)
+  api.patch<PolicyRuleMutationResponse>(`/tenants/policy/rules/${ruleId}/activate/`)
 
 export const createCompanyPolicy = () => api.post('/tenants/policy/')
 
 export const createPolicyRule = (data: {
+  company_role: number
   category_name: string
-  max_amount: number
+  max_amount: number | string
   category_description: string
-}) => api.post<PolicyRule>('/tenants/policy/rules/create/', data)
+  is_active?: boolean
+}) => api.post<PolicyRuleMutationResponse>('/tenants/policy/rules/create/', data)
 
-export const listPolicyRules = (params?: { page?: number; search?: string; category?: string }) =>
+export const listPolicyRules = (params?: {
+  page?: number
+  search?: string
+  category?: string
+  company_role_id?: number | string
+}) =>
   api.get<import('@/lib/pagination').PaginatedResponse<PolicyRule>>(
     '/tenants/policy/rules/',
     { params },
   )
+
+export const previewRolePolicy = (companyRoleId: number | string) =>
+  api.get<PolicyPreviewResponse>('/tenants/policy/preview/', {
+    params: { company_role_id: companyRoleId },
+  })
+
+export const simulatePolicyRule = (data: {
+  company_role_id: number | string
+  category: string
+  amount: number | string
+}) => api.post<PolicySimulateResponse>('/tenants/policy/simulate/', data)
+
+export const copyRolePolicy = (data: {
+  from_role: number
+  to_role: number
+  overwrite_existing?: boolean
+}) => api.post<PolicyCopyResponse>('/tenants/policy/copy/', data)
 
 export const getReimbursementEmailConfig = () =>
   api.get<ReimbursementEmailConfigResponse>('/tenants/reimbursement-email/')
@@ -477,8 +512,11 @@ export const approveReport = (reportId: string, notes?: string) =>
 export const rejectReport = (reportId: string, notes: string) =>
   api.post<RejectReportResponse>(`/expenses/reports/${reportId}/reject/`, { notes })
 
-export const accountsMarkPaid = (reportId: string, notes: string) =>
+export const accountsMarkPaid = (reportId: string, notes = '') =>
   api.post<MarkPaidReportResponse>(`/expenses/accounts/reports/${reportId}/paid/`, { notes })
+
+/** Alias matching updated API docs */
+export const markReportPaid = accountsMarkPaid
 
 // Approval workflow
 export const listApprovalWorkflows = () =>
@@ -487,7 +525,11 @@ export const listApprovalWorkflows = () =>
 export const getApprovalWorkflow = (workflowId: string) =>
   api.get<ApprovalWorkflow>(`/expenses/workflow/?workflow_id=${workflowId}`)
 
-export const saveApprovalWorkflow = (data: { name: string; start_role: number }) =>
+export const saveApprovalWorkflow = (data: {
+  name: string
+  start_role: number
+  workflow_id?: string | number
+}) =>
   api.post<{ message: string; workflow: ApprovalWorkflow }>('/expenses/workflow/save/', data)
 
 export const addWorkflowStep = (data: {
@@ -507,14 +549,21 @@ export const updateWorkflowStep = (
   stepId: string,
   data: {
     step_order?: number
+    approver_type?: string
     approver_role?: number
     routing_type?: 'DEPARTMENT' | 'COMPANY'
     department?: string | null
+    specific_user?: string | null
   },
 ) => api.patch<UpdateWorkflowStepResponse>(`/expenses/workflow/steps/${stepId}/update/`, data)
 
 export const deleteApprovalWorkflow = (workflowId: string) =>
   api.delete<import('@/types').DeleteWorkflowResponse>(`/expenses/workflow/${workflowId}/`)
+
+export const simulateWorkflow = (employeeId: string | number) =>
+  api.post<WorkflowSimulateResponse>('/expenses/workflow/simulate/', {
+    employee_id: employeeId,
+  })
 
 // Dashboards
 export const getDashboard = () => api.get('/dashboard/')

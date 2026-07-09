@@ -21,6 +21,8 @@ export function AccountsDashboard() {
   const navItems = buildAccountsNav(user)
   const [payment, setPayment] = useState<Awaited<ReturnType<typeof loadApprovedReportsForPayment>>['payment'] | null>(null)
   const [approvedReports, setApprovedReports] = useState<ExpenseReport[]>([])
+  const [paymentQueueReports, setPaymentQueueReports] = useState<ExpenseReport[]>([])
+  const [rejectedForAccounts, setRejectedForAccounts] = useState<ExpenseReport[]>([])
   const [pendingReports, setPendingReports] = useState<ExpenseReport[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -30,6 +32,8 @@ export function AccountsDashboard() {
       try {
         const paymentResult = await loadApprovedReportsForPayment()
         setPayment(paymentResult.payment)
+        setPaymentQueueReports(paymentResult.paymentQueueReports)
+        setRejectedForAccounts(paymentResult.rejectedReportsForAccounts)
 
         const canApprove = canApproveExpense(user)
         const canPay = canMarkPaid(user)
@@ -43,6 +47,7 @@ export function AccountsDashboard() {
           setApprovedReports(approved.map((item) => item.report))
         } else {
           setApprovedReports(paymentResult.approvedReports)
+          setPaymentQueueReports(paymentResult.paymentQueueReports)
         }
       } finally {
         setLoading(false)
@@ -76,11 +81,32 @@ export function AccountsDashboard() {
     >
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
+          title="Payment queue"
+          value={metrics?.payment_queue_reports ?? paymentQueueReports.length}
+          icon={Clock}
+          accent="orange"
+        />
+        <MetricCard
           title="Awaiting payment"
           value={metrics?.approved_reports_waiting_payment ?? 0}
           icon={Clock}
           accent="orange"
         />
+        <MetricCard
+          title="Rejected (accounts)"
+          value={metrics?.rejected_reports_waiting_accounts_action ?? rejectedForAccounts.length}
+          icon={FileText}
+          accent="orange"
+        />
+        <MetricCard
+          title="Paid amount"
+          value={formatCurrency(String(metrics?.paid_amount ?? 0))}
+          icon={DollarSign}
+          accent="blue"
+        />
+      </div>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           title="Auto-approved"
           value={metrics?.auto_approved_reports_waiting_payment ?? 0}
@@ -94,25 +120,10 @@ export function AccountsDashboard() {
           accent="blue"
         />
         <MetricCard
-          title="Paid amount"
-          value={formatCurrency(String(metrics?.paid_amount ?? 0))}
-          icon={DollarSign}
-          accent="blue"
-        />
-      </div>
-
-      <div className="mt-4 grid gap-4 sm:grid-cols-3">
-        <MetricCard
-          title="Auto-approved amount"
-          value={formatCurrency(String(metrics?.auto_approved_amount ?? 0))}
+          title="Paid reports"
+          value={metrics?.paid_reports ?? 0}
           icon={CheckCircle2}
           accent="green"
-        />
-        <MetricCard
-          title="Manual approved amount"
-          value={formatCurrency(String(metrics?.manual_approved_amount ?? 0))}
-          icon={FileText}
-          accent="blue"
         />
         <MetricCard
           title="Completion rate"
@@ -130,26 +141,44 @@ export function AccountsDashboard() {
           accent="orange"
         />
         <MetricCard
-          title="Rejected reports"
-          value={metrics?.rejected_reports ?? 0}
-          icon={FileText}
-          accent="orange"
-        />
-        <MetricCard
           title="Rejected amount"
           value={formatCurrency(String(metrics?.rejected_amount ?? 0))}
           icon={FileText}
           accent="orange"
         />
-        <MetricCard
-          title="Paid reports"
-          value={metrics?.paid_reports ?? 0}
-          icon={CheckCircle2}
-          accent="green"
-        />
       </div>
 
       <div className="mt-6 space-y-6">
+        {canMarkPaid(user) && (
+          <DashboardPanel
+            title="Payment queue"
+            action={
+              <Button asChild>
+                <Link to={approvedReportsPath('ACCOUNTS')}>View all</Link>
+              </Button>
+            }
+          >
+            {paymentQueueReports.length > 0 ? (
+              <DashboardReportList
+                reports={paymentQueueReports.slice(0, 5)}
+                viewTo={() => approvedReportsPath('ACCOUNTS')}
+              />
+            ) : (
+              <DashboardEmptyState
+                image="folder"
+                title="No reports in payment queue"
+                description="Approved reports waiting to be marked as paid will appear here."
+              />
+            )}
+          </DashboardPanel>
+        )}
+
+        {canMarkPaid(user) && rejectedForAccounts.length > 0 && (
+          <DashboardPanel title="Rejected reports (accounts action)">
+            <DashboardReportList reports={rejectedForAccounts.slice(0, 5)} />
+          </DashboardPanel>
+        )}
+
         {(canApproveExpense(user) || canMarkPaid(user)) && (
           <DashboardPanel
             title="Pending Reports"

@@ -416,15 +416,32 @@ class ExternalDatabaseConfigSerializer(serializers.ModelSerializer):
         }
 
 
+from rest_framework import serializers
+from .models import PolicyCategoryRule
+
+
 class PolicyCategoryRuleSerializer(serializers.ModelSerializer):
+
+    company_role_name = serializers.CharField(
+        source="company_role.name",
+        read_only=True
+    )
+
     class Meta:
         model = PolicyCategoryRule
+
         fields = [
             "id",
             "policy",
+
+            "company_role",
+            "company_role_name",
+
             "category_name",
             "max_amount",
+
             "category_description",
+
             "is_active",
             "updated_at",
         ]
@@ -433,7 +450,54 @@ class PolicyCategoryRuleSerializer(serializers.ModelSerializer):
             "id",
             "policy",
             "updated_at",
+            "company_role_name",
         ]
+
+    def validate(self, attrs):
+
+        instance = getattr(self, "instance", None)
+
+        policy = (
+            instance.policy
+            if instance
+            else self.context["policy"]
+        )
+
+        company_role = attrs.get(
+            "company_role",
+            instance.company_role if instance else None
+        )
+
+        category_name = attrs.get(
+            "category_name",
+            instance.category_name if instance else None
+        )
+
+        if not company_role:
+            raise serializers.ValidationError({
+                "company_role":
+                "Company role is required."
+            })
+
+        exists = PolicyCategoryRule.objects.filter(
+            policy=policy,
+            company_role=company_role,
+            category_name__iexact=category_name,
+        )
+
+        if instance:
+            exists = exists.exclude(id=instance.id)
+
+        if exists.exists():
+            raise serializers.ValidationError({
+                "category_name":
+                (
+                    f"Policy for '{category_name}' already exists "
+                    f"for role '{company_role.name}'."
+                )
+            })
+
+        return attrs
 
 
 class CompanyPolicySerializer(serializers.ModelSerializer):

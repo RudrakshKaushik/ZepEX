@@ -62,6 +62,27 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
+from .ai_difference_service import (
+    generate_ai_difference_summary,
+)
+from .models import (
+    PolicyVersion,
+    PolicyVersionComparison,
+)
+from audit_logs.utils import create_audit_log
+
+from .language_utils import (
+    get_company_output_language,
+)
+
+from .policy_difference import (
+    compare_policy_versions,
+)
+
+from .ai_difference_service import (
+    generate_ai_difference_summary,
+)
+
 
 def generate_employee_password(length=12):
     alphabet = (
@@ -3781,4 +3802,2538 @@ def simulate_policy_rule(request):
             "company_role": company_role.name,
             **result,
         }
+    )
+
+from .models import (
+    PolicyDocumentImport,
+)
+
+from .policy_document_service import (
+    extract_policy_document,
+)
+
+from .policy_document_importer import (
+    import_policy_document_preview,
+)
+def classify_policy_extraction_error(error_message):
+
+    message = str(
+        error_message or ""
+    ).lower()
+
+    if "api key" in message:
+        return "GEMINI_API_KEY_ERROR"
+
+    if (
+        "404" in message
+        or "model not found" in message
+        or "not found" in message
+    ):
+        return "GEMINI_MODEL_NOT_FOUND"
+
+    if (
+        "429" in message
+        or "quota" in message
+        or "rate limit" in message
+    ):
+        return "GEMINI_RATE_LIMIT"
+
+    if (
+        "timeout" in message
+        or "timed out" in message
+    ):
+        return "GEMINI_TIMEOUT"
+
+    if (
+        "json" in message
+        or "schema" in message
+        or "validation" in message
+    ):
+        return "AI_RESPONSE_VALIDATION_ERROR"
+
+    if (
+        "unsupported" in message
+        or "mime" in message
+        or "file type" in message
+    ):
+        return "UNSUPPORTED_FILE"
+
+    if (
+        "empty" in message
+        or "no readable content" in message
+    ):
+        return "UNREADABLE_DOCUMENT"
+
+    return "POLICY_EXTRACTION_FAILED"
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def upload_policy_document(request):
+
+    profile = request.user.profile
+
+    if profile.role != "COMPANY_ADMIN":
+        return Response(
+            {
+                "success": False,
+                "error": "Only company admin can upload policy documents.",
+                "error_code": "ACCESS_DENIED",
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    uploaded_file = request.FILES.get("document")
+
+    if not uploaded_file:
+        return Response(
+            {
+                "success": False,
+                "error": "Policy document is required.",
+                "error_code": "DOCUMENT_REQUIRED",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    import_record = PolicyDocumentImport.objects.create(
+        company=profile.company,
+        uploaded_by=profile,
+        document=uploaded_file,
+        original_filename=uploaded_file.name,
+        status=PolicyDocumentImport.STATUS_UPLOADED,
+    )
+
+    try:
+
+        # ---------------------------------------------
+        # Processing
+        # ---------------------------------------------
+
+        import_record.status = (
+            PolicyDocumentImport.STATUS_PROCESSING
+        )
+
+        import_record.error_message = None
+
+        import_record.save(
+            update_fields=[
+                "status",
+                "error_message",
+                "updated_at",
+            ]
+        )
+
+        # ---------------------------------------------
+        # AI Extraction
+        # ---------------------------------------------
+
+        result = extract_policy_document(
+            uploaded_file=uploaded_file,
+            company=profile.company,
+        )
+
+        # ---------------------------------------------
+        # Extraction Failed
+        # ---------------------------------------------
+
+        if not result.get("success"):
+
+            error_message = (
+                result.get("error")
+                or "Policy extraction failed."
+            )
+
+            validation_errors = (
+                result.get(
+                    "validation_errors",
+                    []
+                )
+            )
+
+            import_record.status = (
+                PolicyDocumentImport.STATUS_FAILED
+            )
+
+            import_record.error_message = (
+                error_message
+            )
+
+            import_record.warnings = (
+                validation_errors
+            )
+
+            import_record.save(
+                update_fields=[
+                    "status",
+                    "error_message",
+                    "warnings",
+                    "updated_at",
+                ]
+            )
+
+            create_audit_log(
+                company=profile.company,
+                action="AI_POLICY_DOCUMENT_EXTRACTION_FAILED",
+                action_by=profile,
+                message=(
+                    f"AI extraction failed for "
+                    f"{uploaded_file.name}"
+                ),
+                metadata={
+                    "import_id": str(import_record.id),
+                    "filename": uploaded_file.name,
+                    "error": error_message,
+                    "validation_errors": validation_errors,
+                    "status": import_record.status,
+                },
+            )
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "Policy extraction failed.",
+                    "error": error_message,
+                    "error_code": classify_policy_extraction_error(
+                        error_message
+                    ),
+                    "import_id": str(import_record.id),
+                    "status": import_record.status,
+                    "validation_errors": validation_errors,
+                },
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+        # ---------------------------------------------
+        # Success
+        # ---------------------------------------------
+
+        preview = result["preview"]
+
+        warnings = preview.get(
+            "warnings",
+            [],
+        )
+
+        conflicts = preview.get(
+            "conflicts",
+            [],
+        )
+
+        import_record.extracted_json = preview
+        import_record.warnings = warnings
+        import_record.conflicts = conflicts
+        import_record.error_message = None
+
+        if (
+            preview.get(
+                "rules_requiring_review",
+                0,
+            ) > 0
+            or warnings
+            or conflicts
+        ):
+            import_record.status = (
+                PolicyDocumentImport.STATUS_REVIEW_REQUIRED
+            )
+
+        else:
+            import_record.status = (
+                PolicyDocumentImport.STATUS_IMPORTED
+            )
+
+        import_record.save(
+            update_fields=[
+                "extracted_json",
+                "warnings",
+                "conflicts",
+                "error_message",
+                "status",
+                "updated_at",
+            ]
+        )
+
+        create_audit_log(
+            company=profile.company,
+            action="AI_POLICY_DOCUMENT_EXTRACTED",
+            action_by=profile,
+            message=(
+                f"Policy document "
+                f"{uploaded_file.name} extracted successfully."
+            ),
+            metadata={
+                "import_id": str(import_record.id),
+                "filename": uploaded_file.name,
+                "status": import_record.status,
+                "rules_found": preview.get(
+                    "rules_found",
+                    0,
+                ),
+                "rules_requiring_review": preview.get(
+                    "rules_requiring_review",
+                    0,
+                ),
+                "warning_count": len(
+                    warnings
+                ),
+                "conflict_count": len(
+                    conflicts
+                ),
+                "document_language": preview.get(
+                    "document_language"
+                ),
+                "output_language": preview.get(
+                    "output_language"
+                ),
+                "policy_currency": preview.get(
+                    "policy_currency"
+                ),
+                "ai_model": preview.get(
+                    "ai_model"
+                ),
+            },
+        )
+
+        return Response(
+            {
+                "success": True,
+                "message": (
+                    "Policy document extracted successfully."
+                ),
+                "import_id": str(import_record.id),
+                "status": import_record.status,
+                "preview": preview,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    except Exception as exc:
+
+        error_message = str(exc)
+
+        import_record.status = (
+            PolicyDocumentImport.STATUS_FAILED
+        )
+
+        import_record.error_message = (
+            error_message
+        )
+
+        import_record.save(
+            update_fields=[
+                "status",
+                "error_message",
+                "updated_at",
+            ]
+        )
+
+        create_audit_log(
+            company=profile.company,
+            action="AI_POLICY_DOCUMENT_EXTRACTION_FAILED",
+            action_by=profile,
+            message=(
+                f"Unexpected error while extracting "
+                f"{uploaded_file.name}"
+            ),
+            metadata={
+                "import_id": str(import_record.id),
+                "filename": uploaded_file.name,
+                "error": error_message,
+                "status": import_record.status,
+            },
+        )
+
+        return Response(
+            {
+                "success": False,
+                "message": (
+                    "Unexpected error while processing the policy document."
+                ),
+                "error": error_message,
+                "error_code": classify_policy_extraction_error(
+                    error_message
+                ),
+                "import_id": str(import_record.id),
+                "status": import_record.status,
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def confirm_policy_document_import(request, import_id):
+
+    profile = request.user.profile
+
+    if profile.role != "COMPANY_ADMIN":
+        return Response(
+            {
+                "error": "Only company admin can import policies."
+            },
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    try:
+
+        import_record = PolicyDocumentImport.objects.get(
+            id=import_id,
+            company=profile.company,
+        )
+
+    except PolicyDocumentImport.DoesNotExist:
+
+        return Response(
+            {
+                "error": "Import record not found."
+            },
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    overwrite_existing = request.data.get(
+        "overwrite_existing",
+        False,
+    )
+
+    allow_review_required = request.data.get(
+        "allow_review_required",
+        False,
+    )
+
+    result = import_policy_document_preview(
+        import_record=import_record,
+        action_by=profile,
+        overwrite_existing=overwrite_existing,
+        allow_review_required=allow_review_required,
+    )
+
+    if not result["success"]:
+
+        return Response(
+            result,
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    return Response(result)
+
+
+    from decimal import Decimal, InvalidOperation
+
+from django.db import transaction
+
+from tenants.models import (
+    CompanyRole,
+    Currency,
+    PolicyDocumentImport,
+)
+from decimal import Decimal, InvalidOperation
+
+from tenants.policy_document_service import (
+    VALID_CATEGORIES,
+    VALID_LIMIT_PERIODS,
+    VALID_TRAVEL_SCOPES,
+)
+def _parse_boolean(value, default=False):
+    if isinstance(value, bool):
+        return value
+
+    if value is None:
+        return default
+
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+
+        if normalized in {"true", "1", "yes", "y"}:
+            return True
+
+        if normalized in {"false", "0", "no", "n"}:
+            return False
+
+    return bool(value)
+
+
+def _parse_policy_decimal(value):
+    if value in [None, "", "null"]:
+        return None
+
+    try:
+        amount = Decimal(
+            str(value)
+            .replace(",", "")
+            .strip()
+        )
+    except (
+        InvalidOperation,
+        TypeError,
+        ValueError,
+    ):
+        return None
+
+    if amount < 0:
+        return None
+
+    return amount
+
+
+def _get_employee_role(company):
+    return CompanyRole.objects.filter(
+        company=company,
+        name__iexact="Employee",
+        is_active=True,
+    ).first()
+
+
+def _resolve_preview_role(company, rule):
+    resolved_role_id = rule.get("resolved_role_id")
+
+    if resolved_role_id:
+        role = CompanyRole.objects.filter(
+            id=resolved_role_id,
+            company=company,
+            is_active=True,
+        ).first()
+
+        if role:
+            return role, None
+
+    role_name = rule.get("role")
+
+    if not role_name:
+        employee_role = _get_employee_role(company)
+
+        if not employee_role:
+            return None, (
+                "No active Employee role exists for "
+                "the default policy fallback."
+            )
+
+        return employee_role, None
+
+    role = CompanyRole.objects.filter(
+        company=company,
+        name__iexact=str(role_name).strip(),
+        is_active=True,
+    ).first()
+
+    if role:
+        return role, None
+
+    resolved_role_name = rule.get("resolved_role_name")
+
+    if resolved_role_name:
+        role = CompanyRole.objects.filter(
+            company=company,
+            name__iexact=str(
+                resolved_role_name
+            ).strip(),
+            is_active=True,
+        ).first()
+
+        if role:
+            return role, None
+
+    return None, (
+        f"Role '{role_name}' does not exist as an "
+        "active company role."
+    )
+
+
+def _resolve_preview_currency(company, preview, rule):
+    currency_code = (
+        rule.get("currency")
+        or preview.get("policy_currency")
+    )
+
+    if currency_code:
+        currency = Currency.objects.filter(
+            code__iexact=str(currency_code).strip(),
+            is_active=True,
+        ).first()
+
+        if currency:
+            return currency, None
+
+    finance_settings = getattr(
+        company,
+        "finance_settings",
+        None,
+    )
+
+    if (
+        finance_settings
+        and finance_settings.base_currency
+        and finance_settings.base_currency.is_active
+    ):
+        return (
+            finance_settings.base_currency,
+            "Company base currency was used.",
+        )
+
+    return None, "Currency could not be resolved."
+
+
+def _build_preview_rule_key(rule):
+    conditions = tuple(
+        sorted(
+            str(condition).strip().casefold()
+            for condition in rule.get(
+                "conditions",
+                []
+            )
+            if condition
+        )
+    )
+
+    return (
+        rule.get("resolved_role_id")
+        or "__DEFAULT_EMPLOYEE__",
+        rule.get("category"),
+        rule.get("currency"),
+        rule.get("limit_period"),
+        rule.get("domestic_or_international"),
+        conditions,
+    )
+def validate_policy_document_preview(
+    *,
+    preview,
+    company,
+):
+    rules = preview.get("rules", [])
+
+    warnings = []
+    errors = []
+    conflicts = []
+
+    validated_rules = []
+
+    grouped_rules = {}
+
+    for index, rule in enumerate(rules):
+        rule = dict(rule)
+
+        rule_index = rule.get(
+            "rule_index",
+            index,
+        )
+
+        review_reasons = []
+
+        category = str(
+            rule.get("category")
+            or "miscellaneous"
+        ).strip().lower()
+
+        if category not in VALID_CATEGORIES:
+            warnings.append({
+                "code": "UNKNOWN_CATEGORY",
+                "rule_index": rule_index,
+                "message": (
+                    f"Category '{category}' is not supported. "
+                    "It was mapped to miscellaneous."
+                ),
+            })
+
+            category = "miscellaneous"
+            review_reasons.append(
+                "Unsupported category was mapped to miscellaneous."
+            )
+
+        rule["category"] = category
+
+        role, role_error = _resolve_preview_role(
+            company,
+            rule,
+        )
+
+        if role_error:
+            errors.append({
+                "code": "ROLE_NOT_FOUND",
+                "rule_index": rule_index,
+                "message": role_error,
+            })
+
+            rule["resolved_role_id"] = None
+            rule["resolved_role_name"] = (
+                rule.get("role")
+            )
+            rule["role_matched"] = False
+
+            review_reasons.append(role_error)
+
+        else:
+            rule["resolved_role_id"] = str(role.id)
+            rule["resolved_role_name"] = role.name
+            rule["role_matched"] = True
+
+        currency, currency_warning = (
+            _resolve_preview_currency(
+                company,
+                preview,
+                rule,
+            )
+        )
+
+        if not currency:
+            errors.append({
+                "code": "CURRENCY_NOT_FOUND",
+                "rule_index": rule_index,
+                "message": currency_warning,
+            })
+
+            rule["currency"] = None
+            review_reasons.append(
+                "Currency could not be resolved."
+            )
+
+        else:
+            rule["currency"] = currency.code
+
+            if currency_warning:
+                warnings.append({
+                    "code": "BASE_CURRENCY_FALLBACK",
+                    "rule_index": rule_index,
+                    "message": currency_warning,
+                })
+
+        is_allowed = _parse_boolean(
+            rule.get("is_allowed"),
+            default=True,
+        )
+
+        is_unlimited = _parse_boolean(
+            rule.get("is_unlimited"),
+            default=False,
+        )
+
+        rule["is_allowed"] = is_allowed
+        rule["is_unlimited"] = is_unlimited
+
+        amount = _parse_policy_decimal(
+            rule.get("max_amount")
+        )
+
+        if not is_allowed:
+            amount = Decimal("0.00")
+            is_unlimited = False
+
+            rule["is_unlimited"] = False
+
+        elif is_unlimited:
+            amount = None
+
+        elif amount is None:
+            errors.append({
+                "code": "INVALID_AMOUNT",
+                "rule_index": rule_index,
+                "message": (
+                    "max_amount is required when the rule "
+                    "is allowed and is not unlimited."
+                ),
+            })
+
+            review_reasons.append(
+                "Maximum amount is missing or invalid."
+            )
+
+        rule["max_amount"] = (
+            format(amount, "f")
+            if amount is not None
+            else None
+        )
+
+        limit_period = str(
+            rule.get("limit_period")
+            or "NOT_SPECIFIED"
+        ).strip().upper()
+
+        if limit_period not in VALID_LIMIT_PERIODS:
+            warnings.append({
+                "code": "INVALID_LIMIT_PERIOD",
+                "rule_index": rule_index,
+                "message": (
+                    f"Unsupported limit period "
+                    f"'{limit_period}' was changed "
+                    "to NOT_SPECIFIED."
+                ),
+            })
+
+            limit_period = "NOT_SPECIFIED"
+
+        rule["limit_period"] = limit_period
+
+        travel_scope = str(
+            rule.get("domestic_or_international")
+            or "NOT_SPECIFIED"
+        ).strip().upper()
+
+        if travel_scope not in VALID_TRAVEL_SCOPES:
+            warnings.append({
+                "code": "INVALID_TRAVEL_SCOPE",
+                "rule_index": rule_index,
+                "message": (
+                    f"Unsupported travel scope "
+                    f"'{travel_scope}' was changed "
+                    "to NOT_SPECIFIED."
+                ),
+            })
+
+            travel_scope = "NOT_SPECIFIED"
+
+        rule[
+            "domestic_or_international"
+        ] = travel_scope
+
+        description = str(
+            rule.get("description")
+            or ""
+        ).strip()
+
+        if not description:
+            errors.append({
+                "code": "DESCRIPTION_REQUIRED",
+                "rule_index": rule_index,
+                "message": "Description is required.",
+            })
+
+            review_reasons.append(
+                "Description is missing."
+            )
+
+        rule["description"] = description
+
+        reason = str(
+            rule.get("reason")
+            or (
+                "The document defines this as the "
+                "applicable reimbursement policy."
+            )
+        ).strip()
+
+        rule["reason"] = reason
+
+        confidence = rule.get("confidence", 0)
+
+        try:
+            confidence = float(confidence)
+        except (
+            TypeError,
+            ValueError,
+        ):
+            confidence = 0.0
+
+        confidence = min(
+            max(confidence, 0.0),
+            1.0,
+        )
+
+        rule["confidence"] = confidence
+
+        translation_confidence = rule.get(
+            "translation_confidence",
+            0,
+        )
+
+        try:
+            translation_confidence = float(
+                translation_confidence
+            )
+        except (
+            TypeError,
+            ValueError,
+        ):
+            translation_confidence = 0.0
+
+        translation_confidence = min(
+            max(translation_confidence, 0.0),
+            1.0,
+        )
+
+        rule[
+            "translation_confidence"
+        ] = translation_confidence
+
+        if confidence < 0.75:
+            review_reasons.append(
+                "Extraction confidence is below 0.75."
+            )
+
+        if translation_confidence < 0.75:
+            review_reasons.append(
+                "Translation confidence is below 0.75."
+            )
+
+        rule["rule_index"] = rule_index
+        rule["duplicate_rule"] = False
+        rule["review_required"] = bool(
+            review_reasons
+        )
+        rule["review_reason"] = (
+            " | ".join(
+                dict.fromkeys(review_reasons)
+            )
+            if review_reasons
+            else None
+        )
+
+        validated_rules.append(rule)
+
+        grouped_rules.setdefault(
+            _build_preview_rule_key(rule),
+            [],
+        ).append(rule)
+
+    for _, grouped in grouped_rules.items():
+        if len(grouped) < 2:
+            continue
+
+        values = {
+            (
+                rule.get("max_amount"),
+                rule.get("is_unlimited"),
+                rule.get("is_allowed"),
+            )
+            for rule in grouped
+        }
+
+        if len(values) == 1:
+            for duplicate in grouped[1:]:
+                duplicate["duplicate_rule"] = True
+                duplicate["review_required"] = True
+
+                duplicate["review_reason"] = (
+                    (
+                        f"{duplicate.get('review_reason')} | "
+                        "Probable duplicate rule."
+                    )
+                    if duplicate.get("review_reason")
+                    else "Probable duplicate rule."
+                )
+
+                warnings.append({
+                    "code": "DUPLICATE_RULE",
+                    "rule_index": duplicate[
+                        "rule_index"
+                    ],
+                    "message": (
+                        "A probable duplicate policy "
+                        "rule was found."
+                    ),
+                })
+
+        else:
+            conflict = {
+                "role": (
+                    grouped[0].get(
+                        "resolved_role_name"
+                    )
+                    or grouped[0].get("role")
+                ),
+                "category": grouped[0].get(
+                    "category"
+                ),
+                "values": [
+                    (
+                        "Unlimited"
+                        if rule.get(
+                            "is_unlimited"
+                        )
+                        else (
+                            "Prohibited"
+                            if not rule.get(
+                                "is_allowed"
+                            )
+                            else (
+                                f"{rule.get('max_amount')} "
+                                f"{rule.get('currency') or ''}"
+                            ).strip()
+                        )
+                    )
+                    for rule in grouped
+                ],
+                "rule_indexes": [
+                    rule["rule_index"]
+                    for rule in grouped
+                ],
+                "message": (
+                    "Conflicting values were found "
+                    "for the same policy rule."
+                ),
+                "source_texts": [
+                    rule.get("source_text")
+                    for rule in grouped
+                    if rule.get("source_text")
+                ],
+            }
+
+            conflicts.append(conflict)
+
+            for rule in grouped:
+                rule["review_required"] = True
+                rule["review_reason"] = (
+                    (
+                        f"{rule.get('review_reason')} | "
+                        "Conflicting values require review."
+                    )
+                    if rule.get("review_reason")
+                    else (
+                        "Conflicting values require review."
+                    )
+                )
+
+    validated_preview = dict(preview)
+
+    validated_preview["rules"] = validated_rules
+    validated_preview["rules_found"] = len(
+        validated_rules
+    )
+    validated_preview[
+        "rules_requiring_review"
+    ] = sum(
+        1
+        for rule in validated_rules
+        if rule.get("review_required")
+    )
+
+    validated_preview["warnings"] = warnings
+    validated_preview["warning_count"] = len(
+        warnings
+    )
+
+    validated_preview["conflicts"] = conflicts
+    validated_preview["conflict_count"] = len(
+        conflicts
+    )
+
+    validated_preview["validation_errors"] = errors
+    validated_preview[
+        "validation_error_count"
+    ] = len(errors)
+
+    validated_preview["is_valid_for_import"] = (
+        len(errors) == 0
+        and len(conflicts) == 0
+    )
+
+    return validated_preview
+
+@api_view(["GET"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin,
+])
+def get_policy_document_preview(
+    request,
+    import_id,
+):
+    company = request.user.profile.company
+
+    try:
+        import_record = (
+            PolicyDocumentImport.objects
+            .select_related(
+                "company",
+                "uploaded_by",
+                "uploaded_by__user",
+            )
+            .get(
+                id=import_id,
+                company=company,
+            )
+        )
+
+    except PolicyDocumentImport.DoesNotExist:
+        return Response(
+            {
+                "error": (
+                    "Policy document import "
+                    "record not found."
+                )
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    return Response(
+        {
+            "import": {
+                "id": str(import_record.id),
+                "filename": (
+                    import_record.original_filename
+                ),
+                "status": import_record.status,
+                "uploaded_by": (
+                    import_record.uploaded_by.user.email
+                    if import_record.uploaded_by
+                    else None
+                ),
+                "error_message": (
+                    import_record.error_message
+                ),
+                "created_at": (
+                    import_record.created_at
+                ),
+                "updated_at": (
+                    import_record.updated_at
+                ),
+            },
+            "preview": (
+                import_record.extracted_json
+                or {}
+            ),
+            "warnings": (
+                import_record.warnings
+                or []
+            ),
+            "conflicts": (
+                import_record.conflicts
+                or []
+            ),
+        },
+        status=status.HTTP_200_OK,
+    )
+
+@api_view(["PATCH"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin,
+])
+def update_policy_document_preview(
+    request,
+    import_id,
+):
+    profile = request.user.profile
+    company = profile.company
+
+    try:
+        import_record = (
+            PolicyDocumentImport.objects
+            .select_for_update()
+            .get(
+                id=import_id,
+                company=company,
+            )
+        )
+
+    except PolicyDocumentImport.DoesNotExist:
+        return Response(
+            {
+                "error": (
+                    "Policy document import "
+                    "record not found."
+                )
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if (
+        import_record.status
+        == PolicyDocumentImport.STATUS_IMPORTED
+    ):
+        return Response(
+            {
+                "error": (
+                    "An imported policy preview "
+                    "cannot be edited."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    preview = dict(
+        import_record.extracted_json or {}
+    )
+
+    allowed_top_level_fields = {
+        "policy_name",
+        "policy_version",
+        "effective_date",
+        "expiry_date",
+        "policy_currency",
+        "document_summary",
+        "document_summary_original_language",
+        "document_level_conditions",
+        "document_level_conditions_original_language",
+    }
+
+    for field_name in allowed_top_level_fields:
+        if field_name in request.data:
+            preview[field_name] = (
+                request.data.get(field_name)
+            )
+
+    if "rules" in request.data:
+        rules = request.data.get("rules")
+
+        if not isinstance(rules, list):
+            return Response(
+                {
+                    "error": (
+                        "rules must be an array."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        preview["rules"] = rules
+
+    validated_preview = (
+        validate_policy_document_preview(
+            preview=preview,
+            company=company,
+        )
+    )
+
+    import_record.extracted_json = (
+        validated_preview
+    )
+    import_record.warnings = (
+        validated_preview.get(
+            "warnings",
+            [],
+        )
+    )
+    import_record.conflicts = (
+        validated_preview.get(
+            "conflicts",
+            [],
+        )
+    )
+    import_record.status = (
+        PolicyDocumentImport
+        .STATUS_REVIEW_REQUIRED
+    )
+    import_record.error_message = None
+
+    import_record.save(update_fields=[
+        "extracted_json",
+        "warnings",
+        "conflicts",
+        "status",
+        "error_message",
+        "updated_at",
+    ])
+
+    create_audit_log(
+        company=company,
+        action="AI_POLICY_PREVIEW_UPDATED",
+        action_by=profile,
+        message=(
+            "AI policy document preview updated."
+        ),
+        metadata={
+            "import_id": str(import_record.id),
+            "filename": (
+                import_record.original_filename
+            ),
+            "rules_found": (
+                validated_preview.get(
+                    "rules_found",
+                    0,
+                )
+            ),
+            "review_required": (
+                validated_preview.get(
+                    "rules_requiring_review",
+                    0,
+                )
+            ),
+            "validation_errors": (
+                validated_preview.get(
+                    "validation_error_count",
+                    0,
+                )
+            ),
+            "conflicts": (
+                validated_preview.get(
+                    "conflict_count",
+                    0,
+                )
+            ),
+        },
+    )
+
+    return Response(
+        {
+            "message": (
+                "Policy preview updated "
+                "and revalidated successfully."
+            ),
+            "import_id": str(import_record.id),
+            "status": import_record.status,
+            "preview": validated_preview,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin,
+])
+def revalidate_policy_document_preview(
+    request,
+    import_id,
+):
+    profile = request.user.profile
+    company = profile.company
+
+    try:
+        import_record = (
+            PolicyDocumentImport.objects
+            .get(
+                id=import_id,
+                company=company,
+            )
+        )
+
+    except PolicyDocumentImport.DoesNotExist:
+        return Response(
+            {
+                "error": (
+                    "Policy document import "
+                    "record not found."
+                )
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if (
+        import_record.status
+        == PolicyDocumentImport.STATUS_IMPORTED
+    ):
+        return Response(
+            {
+                "error": (
+                    "An imported policy document "
+                    "cannot be revalidated."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    preview = (
+        import_record.extracted_json
+        or {}
+    )
+
+    validated_preview = (
+        validate_policy_document_preview(
+            preview=preview,
+            company=company,
+        )
+    )
+
+    import_record.extracted_json = (
+        validated_preview
+    )
+    import_record.warnings = (
+        validated_preview.get(
+            "warnings",
+            [],
+        )
+    )
+    import_record.conflicts = (
+        validated_preview.get(
+            "conflicts",
+            [],
+        )
+    )
+    import_record.status = (
+        PolicyDocumentImport
+        .STATUS_REVIEW_REQUIRED
+    )
+    import_record.error_message = None
+
+    import_record.save(update_fields=[
+        "extracted_json",
+        "warnings",
+        "conflicts",
+        "status",
+        "error_message",
+        "updated_at",
+    ])
+
+    return Response(
+        {
+            "message": (
+                "Policy preview revalidated."
+            ),
+            "import_id": str(import_record.id),
+            "status": import_record.status,
+            "is_valid_for_import": (
+                validated_preview.get(
+                    "is_valid_for_import",
+                    False,
+                )
+            ),
+            "validation_error_count": (
+                validated_preview.get(
+                    "validation_error_count",
+                    0,
+                )
+            ),
+            "warning_count": (
+                validated_preview.get(
+                    "warning_count",
+                    0,
+                )
+            ),
+            "conflict_count": (
+                validated_preview.get(
+                    "conflict_count",
+                    0,
+                )
+            ),
+            "preview": validated_preview,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+from django.db import transaction
+from django.shortcuts import get_object_or_404
+
+from .models import (
+    CompanyPolicy,
+    PolicyVersion,
+)
+
+from .serializers import (
+    PolicyVersionSerializer,
+)
+
+from .policy_version_service import (
+    create_policy_version,
+    activate_policy_version,
+    archive_policy_version,
+    duplicate_policy_version,
+    rollback_policy_version,
+    delete_draft_policy_version,
+)
+
+@api_view(["POST"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin,
+])
+def create_policy_version_api(request):
+
+    profile = request.user.profile
+    company = profile.company
+
+    policy, _ = CompanyPolicy.objects.get_or_create(
+        company=company
+    )
+
+    title = request.data.get("title")
+    description = request.data.get("description")
+
+    copy_active_rules = request.data.get(
+        "copy_active_rules",
+        True,
+    )
+
+    if isinstance(copy_active_rules, str):
+        copy_active_rules = (
+            copy_active_rules.strip().lower()
+            in ["true", "1", "yes"]
+        )
+
+    result = create_policy_version(
+        policy=policy,
+        action_by=profile,
+        title=title,
+        description=description,
+        imported_from_document=None,
+        copy_active_rules=copy_active_rules,
+    )
+
+    if not result.get("success"):
+        return Response(
+            result,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    version = PolicyVersion.objects.get(
+        id=result["version"]["id"]
+    )
+
+    return Response(
+        {
+            "message": (
+                "Policy version created successfully."
+            ),
+            "copied_rules": result.get(
+                "copied_rules",
+                0,
+            ),
+            "copied_from": result.get(
+                "copied_from"
+            ),
+            "version": PolicyVersionSerializer(
+                version
+            ).data,
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+@api_view(["GET"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin,
+])
+def list_policy_versions(request):
+
+    profile = request.user.profile
+    company = profile.company
+
+    policy, _ = CompanyPolicy.objects.get_or_create(
+        company=company
+    )
+
+    status_filter = request.GET.get("status")
+    is_active_filter = request.GET.get("is_active")
+
+    versions = (
+        PolicyVersion.objects
+        .filter(
+            policy=policy
+        )
+        .select_related(
+            "created_by",
+            "created_by__user",
+            "activated_by",
+            "activated_by__user",
+            "imported_from_document",
+        )
+        .prefetch_related(
+            "rules"
+        )
+        .order_by(
+            "-version_number"
+        )
+    )
+
+    if status_filter:
+        status_filter = status_filter.strip().upper()
+
+        valid_statuses = {
+            PolicyVersion.STATUS_DRAFT,
+            PolicyVersion.STATUS_ACTIVE,
+            PolicyVersion.STATUS_ARCHIVED,
+        }
+
+        if status_filter not in valid_statuses:
+            return Response(
+                {
+                    "error": (
+                        "Invalid status filter. "
+                        "Use DRAFT, ACTIVE, or ARCHIVED."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        versions = versions.filter(
+            status=status_filter
+        )
+
+    if is_active_filter is not None:
+        active_value = (
+            str(is_active_filter)
+            .strip()
+            .lower()
+        )
+
+        if active_value in ["true", "1", "yes"]:
+            versions = versions.filter(
+                is_active=True
+            )
+
+        elif active_value in [
+            "false",
+            "0",
+            "no",
+        ]:
+            versions = versions.filter(
+                is_active=False
+            )
+
+        else:
+            return Response(
+                {
+                    "error": (
+                        "is_active must be true or false."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    serializer = PolicyVersionSerializer(
+        versions,
+        many=True,
+    )
+
+    active_version = versions.filter(
+        is_active=True
+    ).first()
+
+    return Response(
+        {
+            "count": versions.count(),
+            "active_version": (
+                PolicyVersionSerializer(
+                    active_version
+                ).data
+                if active_version
+                else None
+            ),
+            "results": serializer.data,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+@api_view(["GET"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin,
+])
+def get_policy_version(
+    request,
+    version_id,
+):
+
+    profile = request.user.profile
+
+    try:
+        version = (
+            PolicyVersion.objects
+            .select_related(
+                "policy",
+                "policy__company",
+                "created_by",
+                "created_by__user",
+                "activated_by",
+                "activated_by__user",
+                "imported_from_document",
+            )
+            .prefetch_related(
+                "rules",
+                "rules__company_role",
+            )
+            .get(
+                id=version_id,
+                policy__company=profile.company,
+            )
+        )
+
+    except PolicyVersion.DoesNotExist:
+        return Response(
+            {
+                "error": "Policy version not found."
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    rules = version.rules.select_related(
+        "company_role"
+    ).order_by(
+        "company_role__name",
+        "category_name",
+    )
+
+    rules_data = []
+
+    for rule in rules:
+        rules_data.append({
+            "id": str(rule.id),
+            "company_role": {
+                "id": str(
+                    rule.company_role.id
+                ),
+                "name": (
+                    rule.company_role.name
+                ),
+            },
+            "category_name": (
+                rule.category_name
+            ),
+            "max_amount": (
+                str(rule.max_amount)
+                if rule.max_amount is not None
+                else None
+            ),
+            "currency": rule.currency,
+            "is_unlimited": (
+                rule.is_unlimited
+            ),
+            "category_description": (
+                rule.category_description
+            ),
+            "policy_reason": (
+                rule.policy_reason
+            ),
+            "source_text": rule.source_text,
+            "ai_confidence": (
+                str(rule.ai_confidence)
+                if rule.ai_confidence is not None
+                else None
+            ),
+            "is_ai_generated": (
+                rule.is_ai_generated
+            ),
+            "is_active": rule.is_active,
+        })
+
+    return Response(
+        {
+            "version": (
+                PolicyVersionSerializer(
+                    version
+                ).data
+            ),
+            "rules": rules_data,
+            "total_rules": len(
+                rules_data
+            ),
+        },
+        status=status.HTTP_200_OK,
+    )
+
+@api_view(["PATCH"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin,
+])
+def activate_policy_version_api(
+    request,
+    version_id,
+):
+
+    profile = request.user.profile
+
+    try:
+        version = PolicyVersion.objects.select_related(
+            "policy",
+            "policy__company",
+        ).get(
+            id=version_id,
+            policy__company=profile.company,
+        )
+
+    except PolicyVersion.DoesNotExist:
+        return Response(
+            {
+                "error": "Policy version not found."
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    result = activate_policy_version(
+        version=version,
+        action_by=profile,
+    )
+
+    if not result.get("success"):
+        return Response(
+            result,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    version.refresh_from_db()
+
+    return Response(
+        {
+            "message": result["message"],
+            "previous_active_version": result.get(
+                "previous_active_version"
+            ),
+            "version": PolicyVersionSerializer(
+                version
+            ).data,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+@api_view(["PATCH"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin,
+])
+def archive_policy_version_api(
+    request,
+    version_id,
+):
+
+    profile = request.user.profile
+
+    try:
+        version = PolicyVersion.objects.select_related(
+            "policy",
+            "policy__company",
+        ).get(
+            id=version_id,
+            policy__company=profile.company,
+        )
+
+    except PolicyVersion.DoesNotExist:
+        return Response(
+            {
+                "error": "Policy version not found."
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    result = archive_policy_version(
+        version=version,
+        action_by=profile,
+    )
+
+    if not result.get("success"):
+        return Response(
+            result,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    version.refresh_from_db()
+
+    return Response(
+        {
+            "message": result["message"],
+            "version": PolicyVersionSerializer(
+                version
+            ).data,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+        
+
+@api_view(["POST"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin,
+])
+def duplicate_policy_version_api(
+    request,
+    version_id,
+):
+
+    profile = request.user.profile
+
+    try:
+        source_version = (
+            PolicyVersion.objects
+            .select_related(
+                "policy",
+                "policy__company",
+            )
+            .get(
+                id=version_id,
+                policy__company=profile.company,
+            )
+        )
+
+    except PolicyVersion.DoesNotExist:
+        return Response(
+            {
+                "error": "Policy version not found."
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    result = duplicate_policy_version(
+        source_version=source_version,
+        action_by=profile,
+        title=request.data.get("title"),
+        description=request.data.get(
+            "description"
+        ),
+    )
+
+    if not result.get("success"):
+        return Response(
+            result,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    new_version = PolicyVersion.objects.get(
+        id=result["version"]["id"]
+    )
+
+    return Response(
+        {
+            "message": result["message"],
+            "copied_rules": result.get(
+                "copied_rules",
+                0,
+            ),
+            "source_version": result.get(
+                "source_version"
+            ),
+            "version": PolicyVersionSerializer(
+                new_version
+            ).data,
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+@api_view(["POST"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin,
+])
+def rollback_policy_version_api(
+    request,
+    version_id,
+):
+
+    profile = request.user.profile
+
+    try:
+        source_version = (
+            PolicyVersion.objects
+            .select_related(
+                "policy",
+                "policy__company",
+            )
+            .get(
+                id=version_id,
+                policy__company=profile.company,
+            )
+        )
+
+    except PolicyVersion.DoesNotExist:
+        return Response(
+            {
+                "error": "Policy version not found."
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    result = rollback_policy_version(
+        source_version=source_version,
+        action_by=profile,
+        title=request.data.get("title"),
+        description=request.data.get(
+            "description"
+        ),
+    )
+
+    if not result.get("success"):
+        return Response(
+            result,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    new_version = PolicyVersion.objects.get(
+        id=result["version"]["id"]
+    )
+
+    return Response(
+        {
+            "message": result["message"],
+            "copied_rules": result.get(
+                "copied_rules",
+                0,
+            ),
+            "source_version": result.get(
+                "source_version"
+            ),
+            "previous_active_version": (
+                result.get(
+                    "previous_active_version"
+                )
+            ),
+            "version": PolicyVersionSerializer(
+                new_version
+            ).data,
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+@api_view(["DELETE"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin,
+])
+def delete_draft_policy_version_api(
+    request,
+    version_id,
+):
+
+    profile = request.user.profile
+
+    try:
+        version = PolicyVersion.objects.select_related(
+            "policy",
+            "policy__company",
+        ).get(
+            id=version_id,
+            policy__company=profile.company,
+        )
+
+    except PolicyVersion.DoesNotExist:
+        return Response(
+            {
+                "error": "Policy version not found."
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    result = delete_draft_policy_version(
+        version=version,
+        action_by=profile,
+    )
+
+    if not result.get("success"):
+        return Response(
+            result,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        result,
+        status=status.HTTP_200_OK,
+    )
+from .policy_difference import (
+    compare_policy_versions,
+)
+
+@api_view(["GET"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin,
+])
+def compare_policy_versions_api(request):
+
+    profile = request.user.profile
+    company = profile.company
+
+    old_version_id = request.GET.get(
+        "old_version_id"
+    )
+
+    new_version_id = request.GET.get(
+        "new_version_id"
+    )
+
+    include_unchanged_raw = request.GET.get(
+        "include_unchanged",
+        "false",
+    )
+
+    include_ai_summary_raw = request.GET.get(
+        "include_ai_summary",
+        "true",
+    )
+
+    refresh_raw = request.GET.get(
+        "refresh",
+        "false",
+    )
+
+    include_unchanged = (
+        str(include_unchanged_raw)
+        .strip()
+        .lower()
+        in {"true", "1", "yes"}
+    )
+
+    include_ai_summary = (
+        str(include_ai_summary_raw)
+        .strip()
+        .lower()
+        in {"true", "1", "yes"}
+    )
+
+    refresh = (
+        str(refresh_raw)
+        .strip()
+        .lower()
+        in {"true", "1", "yes"}
+    )
+
+    if not old_version_id:
+        return Response(
+            {
+                "error": (
+                    "old_version_id is required."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not new_version_id:
+        return Response(
+            {
+                "error": (
+                    "new_version_id is required."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        old_version = (
+            PolicyVersion.objects
+            .select_related(
+                "policy",
+                "policy__company",
+            )
+            .prefetch_related(
+                "rules",
+                "rules__company_role",
+            )
+            .get(
+                id=old_version_id,
+                policy__company=company,
+            )
+        )
+
+    except (
+        PolicyVersion.DoesNotExist,
+        ValueError,
+    ):
+        return Response(
+            {
+                "error": (
+                    "Old policy version not found."
+                )
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        new_version = (
+            PolicyVersion.objects
+            .select_related(
+                "policy",
+                "policy__company",
+            )
+            .prefetch_related(
+                "rules",
+                "rules__company_role",
+            )
+            .get(
+                id=new_version_id,
+                policy__company=company,
+            )
+        )
+
+    except (
+        PolicyVersion.DoesNotExist,
+        ValueError,
+    ):
+        return Response(
+            {
+                "error": (
+                    "New policy version not found."
+                )
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if (
+        old_version.policy_id
+        != new_version.policy_id
+    ):
+        return Response(
+            {
+                "error": (
+                    "Selected versions belong to "
+                    "different policies."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if old_version.id == new_version.id:
+        return Response(
+            {
+                "error": (
+                    "Select two different policy versions."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    language_settings = (
+        get_company_output_language(
+            company
+        )
+    )
+
+    output_language_name = (
+        language_settings.get("name")
+        or "English"
+    )
+
+    output_language_code = (
+        language_settings.get("code")
+        or "en"
+    )
+
+    # --------------------------------------------------
+    # Return cached comparison unless refresh is requested
+    # --------------------------------------------------
+
+    cached_comparison = (
+        PolicyVersionComparison.objects
+        .filter(
+            policy=old_version.policy,
+            old_version=old_version,
+            new_version=new_version,
+            include_unchanged=include_unchanged,
+            output_language_code=(
+                output_language_code
+            ),
+        )
+        .first()
+    )
+
+    cached_has_required_ai_summary = (
+        cached_comparison
+        and (
+            not include_ai_summary
+            or cached_comparison.ai_summary_generated
+        )
+    )
+
+    if (
+        cached_comparison
+        and cached_has_required_ai_summary
+        and not refresh
+    ):
+        return Response(
+            {
+                "success": True,
+                "cached": True,
+                "comparison_id": str(
+                    cached_comparison.id
+                ),
+                "comparison": (
+                    cached_comparison.comparison_data
+                ),
+                "ai_summary_enabled": (
+                    include_ai_summary
+                ),
+                "ai_summary": (
+                    cached_comparison.ai_summary
+                    if include_ai_summary
+                    else None
+                ),
+                "generated_by": (
+                    cached_comparison.generated_by
+                    if include_ai_summary
+                    else None
+                ),
+                "output_language": {
+                    "name": (
+                        cached_comparison.output_language
+                    ),
+                    "code": (
+                        cached_comparison
+                        .output_language_code
+                    ),
+                },
+                "last_generated_at": (
+                    cached_comparison
+                    .updated_at
+                    .isoformat()
+                ),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    # --------------------------------------------------
+    # Deterministic comparison
+    # --------------------------------------------------
+
+    comparison_result = compare_policy_versions(
+        old_version=old_version,
+        new_version=new_version,
+        include_unchanged=include_unchanged,
+    )
+
+    if not comparison_result.get("success"):
+        return Response(
+            comparison_result,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    ai_summary = {}
+    ai_summary_generated = False
+    generated_by = None
+    ai_model = None
+    ai_message = None
+
+    # --------------------------------------------------
+    # Optional Gemini explanation
+    # --------------------------------------------------
+
+    if include_ai_summary:
+
+        ai_result = (
+            generate_ai_difference_summary(
+                comparison_result=(
+                    comparison_result
+                ),
+                company=company,
+            )
+        )
+
+        ai_summary = (
+            ai_result.get("ai_summary")
+            or {}
+        )
+
+        ai_message = ai_result.get(
+            "message"
+        )
+
+        ai_summary_generated = bool(
+            ai_summary
+        )
+
+        generated_by = ai_summary.get(
+            "generated_by"
+        )
+
+        ai_model = ai_summary.get(
+            "ai_model"
+        )
+
+    # --------------------------------------------------
+    # Create or update cached comparison
+    # --------------------------------------------------
+
+    comparison_record, created = (
+        PolicyVersionComparison.objects
+        .update_or_create(
+            policy=old_version.policy,
+            old_version=old_version,
+            new_version=new_version,
+            include_unchanged=include_unchanged,
+            output_language_code=(
+                output_language_code
+            ),
+            defaults={
+                "comparison_data": (
+                    comparison_result
+                ),
+                "ai_summary": ai_summary,
+                "ai_summary_generated": (
+                    ai_summary_generated
+                ),
+                "generated_by": generated_by,
+                "ai_model": ai_model,
+                "output_language": (
+                    output_language_name
+                ),
+                "created_by": profile,
+            },
+        )
+    )
+
+    # --------------------------------------------------
+    # Audit log
+    # --------------------------------------------------
+
+    comparison_summary = (
+        comparison_result.get(
+            "summary",
+            {},
+        )
+    )
+
+    create_audit_log(
+        company=company,
+        action="POLICY_VERSIONS_COMPARED",
+        action_by=profile,
+        message=(
+            f"Policy version "
+            f"{old_version.version_number} was compared "
+            f"with version "
+            f"{new_version.version_number}."
+        ),
+        metadata={
+            "comparison_id": str(
+                comparison_record.id
+            ),
+            "comparison_record_created": (
+                created
+            ),
+            "policy_id": str(
+                old_version.policy_id
+            ),
+            "old_version_id": str(
+                old_version.id
+            ),
+            "old_version_number": (
+                old_version.version_number
+            ),
+            "new_version_id": str(
+                new_version.id
+            ),
+            "new_version_number": (
+                new_version.version_number
+            ),
+            "include_unchanged": (
+                include_unchanged
+            ),
+            "include_ai_summary": (
+                include_ai_summary
+            ),
+            "refresh_requested": refresh,
+            "total_changes": (
+                comparison_summary.get(
+                    "total_changes",
+                    0,
+                )
+            ),
+            "added_rules": (
+                comparison_summary.get(
+                    "added_rules",
+                    0,
+                )
+            ),
+            "removed_rules": (
+                comparison_summary.get(
+                    "removed_rules",
+                    0,
+                )
+            ),
+            "modified_rules": (
+                comparison_summary.get(
+                    "modified_rules",
+                    0,
+                )
+            ),
+            "changed_roles": (
+                comparison_summary.get(
+                    "changed_roles",
+                    [],
+                )
+            ),
+            "changed_categories": (
+                comparison_summary.get(
+                    "changed_categories",
+                    [],
+                )
+            ),
+            "ai_summary_generated": (
+                ai_summary_generated
+            ),
+            "generated_by": generated_by,
+            "ai_model": ai_model,
+            "output_language": (
+                output_language_name
+            ),
+            "output_language_code": (
+                output_language_code
+            ),
+        },
+    )
+
+    return Response(
+        {
+            "success": True,
+            "cached": False,
+            "comparison_id": str(
+                comparison_record.id
+            ),
+            "comparison": comparison_result,
+            "ai_summary_enabled": (
+                include_ai_summary
+            ),
+            "ai_summary_message": (
+                ai_message
+            ),
+            "ai_summary": (
+                ai_summary
+                if include_ai_summary
+                else None
+            ),
+            "generated_by": (
+                generated_by
+                if include_ai_summary
+                else None
+            ),
+            "output_language": {
+                "name": output_language_name,
+                "code": output_language_code,
+            },
+        },
+        status=status.HTTP_200_OK,
+    )
+
+from .models import CompanyPreferences
+from .serializers import CompanyPreferencesSerializer
+
+@api_view(["GET", "PATCH"])
+@permission_classes([
+    IsAuthenticated,
+    IsCompanyAdmin,
+])
+def company_language_preferences(request):
+    profile = request.user.profile
+    company = profile.company
+
+    preferences, _ = CompanyPreferences.objects.get_or_create(
+        company=company,
+        defaults={
+            "output_language_code": "en",
+            "output_language_name": "English",
+            "preserve_original_text": True,
+        }
+    )
+
+    if request.method == "GET":
+        return Response(
+            CompanyPreferencesSerializer(
+                preferences
+            ).data,
+            status=status.HTTP_200_OK,
+        )
+
+    serializer = CompanyPreferencesSerializer(
+        preferences,
+        data=request.data,
+        partial=True,
+    )
+
+    if not serializer.is_valid():
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    preferences = serializer.save()
+
+    create_audit_log(
+        company=company,
+        action="COMPANY_LANGUAGE_UPDATED",
+        action_by=profile,
+        message=(
+            "Company AI output language preferences updated."
+        ),
+        metadata={
+            "language_code": (
+                preferences.output_language_code
+            ),
+            "language_name": (
+                preferences.output_language_name
+            ),
+            "preserve_original_text": (
+                preferences.preserve_original_text
+            ),
+        },
+    )
+
+    return Response(
+        {
+            "message": (
+                "Company language preferences updated successfully."
+            ),
+            "preferences": CompanyPreferencesSerializer(
+                preferences
+            ).data,
+        },
+        status=status.HTTP_200_OK,
     )

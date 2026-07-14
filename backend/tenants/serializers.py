@@ -14,6 +14,7 @@ from .models import (
     ReimbursementEmailConfig,
     CompanySMTPConfig,
 )
+from .models import PolicyVersion
 
 
 class DepartmentSerializer(serializers.ModelSerializer):
@@ -421,11 +422,12 @@ from .models import PolicyCategoryRule
 
 
 class PolicyCategoryRuleSerializer(serializers.ModelSerializer):
-
     company_role_name = serializers.CharField(
         source="company_role.name",
         read_only=True
     )
+
+    effective_limit = serializers.SerializerMethodField()
 
     class Meta:
         model = PolicyCategoryRule
@@ -433,15 +435,18 @@ class PolicyCategoryRuleSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "policy",
-
             "company_role",
             "company_role_name",
-
             "category_name",
             "max_amount",
-
+            "currency",
+            "is_unlimited",
+            "effective_limit",
             "category_description",
-
+            "policy_reason",
+            "source_text",
+            "ai_confidence",
+            "is_ai_generated",
             "is_active",
             "updated_at",
         ]
@@ -449,18 +454,37 @@ class PolicyCategoryRuleSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "policy",
-            "updated_at",
             "company_role_name",
+            "effective_limit",
+            "updated_at",
         ]
 
-    def validate(self, attrs):
+    def get_effective_limit(self, obj):
+        if obj.is_unlimited:
+            return "Unlimited"
 
+        return f"{obj.max_amount} {obj.currency}"
+
+    def validate_currency(self, value):
+        value = value.strip().upper()
+
+        if len(value) != 3:
+            raise serializers.ValidationError(
+                "Use a three-letter currency code such as INR or USD."
+            )
+
+        return value
+
+    def validate_category_name(self, value):
+        return value.strip().lower()
+
+    def validate(self, attrs):
         instance = getattr(self, "instance", None)
 
         policy = (
             instance.policy
             if instance
-            else self.context["policy"]
+            else self.context.get("policy")
         )
 
         company_role = attrs.get(
@@ -473,27 +497,45 @@ class PolicyCategoryRuleSerializer(serializers.ModelSerializer):
             instance.category_name if instance else None
         )
 
+        is_unlimited = attrs.get(
+            "is_unlimited",
+            instance.is_unlimited if instance else False
+        )
+
+        max_amount = attrs.get(
+            "max_amount",
+            instance.max_amount if instance else None
+        )
+
         if not company_role:
             raise serializers.ValidationError({
-                "company_role":
-                "Company role is required."
+                "company_role": "Company role is required."
             })
 
-        exists = PolicyCategoryRule.objects.filter(
+        if not is_unlimited and max_amount is None:
+            raise serializers.ValidationError({
+                "max_amount": (
+                    "max_amount is required when is_unlimited is false."
+                )
+            })
+
+        if is_unlimited:
+            attrs["max_amount"] = None
+
+        duplicate = PolicyCategoryRule.objects.filter(
             policy=policy,
             company_role=company_role,
             category_name__iexact=category_name,
         )
 
         if instance:
-            exists = exists.exclude(id=instance.id)
+            duplicate = duplicate.exclude(id=instance.id)
 
-        if exists.exists():
+        if duplicate.exists():
             raise serializers.ValidationError({
-                "category_name":
-                (
-                    f"Policy for '{category_name}' already exists "
-                    f"for role '{company_role.name}'."
+                "category_name": (
+                    f"A policy rule already exists for "
+                    f"'{company_role.name}' and '{category_name}'."
                 )
             })
 
@@ -670,3 +712,90 @@ class CurrencySerializer(serializers.ModelSerializer):
             "id",
             "created_at",
         ]        
+
+
+class PolicyVersionSerializer(serializers.ModelSerializer):
+
+    created_by_name = serializers.SerializerMethodField()
+    activated_by_name = serializers.SerializerMethodField()
+    total_rules = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PolicyVersion
+
+        fields = [
+            "id",
+            "version_number",
+            "title",
+            "description",
+            "status",
+            "is_active",
+
+            "created_by",
+            "created_by_name",
+
+            "activated_by",
+            "activated_by_name",
+
+            "activated_at",
+
+            "created_at",
+            "updated_at",
+
+            "total_rules",
+        ]
+
+    def get_created_by_name(self, obj):
+
+        if obj.created_by:
+            return obj.created_by.user.get_full_name()
+
+        return None
+
+    def get_activated_by_name(self, obj):
+
+        if obj.activated_by:
+            return obj.activated_by.user.get_full_name()
+
+        return None
+
+    def get_total_rules(self, obj):
+        return obj.rules.count()
+    
+
+from .models import CompanyPreferences
+
+class CompanyPreferencesSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CompanyPreferences
+
+        fields = [
+            "output_language_code",
+            "output_language_name",
+            "preserve_original_text",
+            "updated_at",
+        ]
+
+        read_only_fields = [
+            "updated_at",
+        ]
+
+    def validate_output_language_code(self, value):
+        value = value.strip().lower()
+
+        if not value:
+            raise serializers.ValidationError(
+                "Language code is required."
+            )
+
+        return value
+
+    def validate_output_language_name(self, value):
+        value = value.strip()
+
+        if not value:
+            raise serializers.ValidationError(
+                "Language name is required."
+            )
+
+        return value

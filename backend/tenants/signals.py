@@ -19,8 +19,13 @@ def create_company_finance_settings(
         return
 
     currency = Currency.objects.filter(
-        code="INR"
+        code="USD"
     ).first()
+
+    if not currency:
+        currency = Currency.objects.filter(
+            code="INR"
+        ).first()
 
     if currency:
 

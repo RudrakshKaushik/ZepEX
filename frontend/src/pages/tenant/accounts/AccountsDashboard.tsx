@@ -12,7 +12,9 @@ import { useAuth } from '@/context/AuthContext'
 import { buildAccountsNav, canApproveExpense, canMarkPaid } from '@/lib/rolePermissions'
 import { approvedReportsPath, pendingReportsPath } from '@/lib/reportQueuePaths'
 import { loadApprovedQueueReports, loadPendingQueueReports } from '@/lib/reportQueue'
+import { getFinanceSettings } from '@/api'
 import { loadApprovedReportsForPayment } from '@/lib/accountsReports'
+import { financeCurrencyCode } from '@/lib/financeSettings'
 import type { ExpenseReport } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 
@@ -24,16 +26,23 @@ export function AccountsDashboard() {
   const [paymentQueueReports, setPaymentQueueReports] = useState<ExpenseReport[]>([])
   const [rejectedForAccounts, setRejectedForAccounts] = useState<ExpenseReport[]>([])
   const [pendingReports, setPendingReports] = useState<ExpenseReport[]>([])
+  const [currency, setCurrency] = useState('USD')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function loadAll() {
       setLoading(true)
       try {
-        const paymentResult = await loadApprovedReportsForPayment()
+        const [paymentResult, financeRes] = await Promise.all([
+          loadApprovedReportsForPayment(),
+          getFinanceSettings().catch(() => null),
+        ])
         setPayment(paymentResult.payment)
         setPaymentQueueReports(paymentResult.paymentQueueReports)
         setRejectedForAccounts(paymentResult.rejectedReportsForAccounts)
+        if (financeRes?.data.settings) {
+          setCurrency(financeCurrencyCode(financeRes.data.settings))
+        }
 
         const canApprove = canApproveExpense(user)
         const canPay = canMarkPaid(user)
@@ -100,7 +109,7 @@ export function AccountsDashboard() {
         />
         <MetricCard
           title="Paid amount"
-          value={formatCurrency(String(metrics?.paid_amount ?? 0))}
+          value={formatCurrency(String(metrics?.paid_amount ?? 0), currency)}
           icon={DollarSign}
           accent="blue"
         />
@@ -136,13 +145,13 @@ export function AccountsDashboard() {
       <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           title="Approved awaiting payment"
-          value={formatCurrency(String(metrics?.approved_amount ?? 0))}
+          value={formatCurrency(String(metrics?.approved_amount ?? 0), currency)}
           icon={Clock}
           accent="orange"
         />
         <MetricCard
           title="Rejected amount"
-          value={formatCurrency(String(metrics?.rejected_amount ?? 0))}
+          value={formatCurrency(String(metrics?.rejected_amount ?? 0), currency)}
           icon={FileText}
           accent="orange"
         />
@@ -236,7 +245,7 @@ export function AccountsDashboard() {
                   className="flex items-center justify-between py-3 text-sm"
                 >
                   <span className="font-medium text-gray-900">{row.department}</span>
-                  <span className="text-gray-600">{formatCurrency(row.total_paid)}</span>
+                  <span className="text-gray-600">{formatCurrency(row.total_paid, currency)}</span>
                 </div>
               ))}
             </div>

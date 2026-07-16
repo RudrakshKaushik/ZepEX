@@ -1,4 +1,4 @@
-import { Power, PowerOff, Shield } from 'lucide-react'
+import { Shield } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
   activatePolicyRule,
@@ -15,6 +15,7 @@ import {
 import { getApiErrorMessage } from '@/api/client'
 import { AdminBulkActions } from '@/components/admin/AdminBulkActions'
 import { CsvImportDialog } from '@/components/admin/CsvImportDialog'
+import { AdminConfirmDialog } from '@/components/admin/AdminConfirmDialog'
 import { AdminListSearchBar } from '@/components/admin/AdminListSearchBar'
 import { AdminListPanel } from '@/components/admin/AdminListPanel'
 import { AdminModalFooter } from '@/components/admin/AdminModalFooter'
@@ -72,7 +73,8 @@ export function PolicyPage() {
   const [search, setSearch] = useState('')
   const [filterRoleId, setFilterRoleId] = useState('')
   const [importOpen, setImportOpen] = useState(false)
-  const [policyCurrency, setPolicyCurrency] = useState('INR')
+  const [policyCurrency, setPolicyCurrency] = useState('USD')
+  const [confirmDeactivate, setConfirmDeactivate] = useState<PolicyRule | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -197,16 +199,31 @@ export function PolicyPage() {
     try {
       if (rule.is_active === false) {
         await activatePolicyRule(rule.id)
+        toast.success('Policy rule activated.')
       } else {
         await deactivatePolicyRule(rule.id)
+        toast.success('Policy rule deactivated.')
       }
+      setConfirmDeactivate(null)
       await load()
     } catch (err) {
       setError(getApiErrorMessage(err))
+      toast.error(getApiErrorMessage(err))
     } finally {
       setSaving(false)
     }
   }
+
+  const requestToggle = (rule: PolicyRule) => {
+    if (rule.is_active === false) {
+      void toggleRule(rule)
+      return
+    }
+    setConfirmDeactivate(rule)
+  }
+
+  const activeRules = rules.filter((r) => r.is_active !== false)
+  const inactiveRules = rules.filter((r) => r.is_active === false)
 
   if (loading) {
     return (
@@ -235,6 +252,12 @@ export function PolicyPage() {
             Initialize Company Policy
             <img src={AssignIcon} alt="Assign" className="w-6 h-6" />
           </Button>
+          <PolicyToolsPanel
+                roles={roles}
+                currency={policyCurrency}
+                disabled={saving}
+                onCopied={load}
+              />
           <AdminBulkActions
             onImport={() => setImportOpen(true)}
             onDownloadTemplate={downloadPolicyRulesTemplate}
@@ -253,7 +276,7 @@ export function PolicyPage() {
 
       <AdminListPanel
         title="Policy Rules"
-        count={totalCount}
+        count={activeRules.length}
         description="Role-based limits. Roles without a rule inherit Employee policy."
         toolbar={
           <div className="space-y-3">
@@ -268,32 +291,42 @@ export function PolicyPage() {
               placeholder="Search policy rules…"
               disabled={saving}
             />
-            <select
-              className={selectClassName}
-              value={filterRoleId}
-              onChange={(e) => setFilterRoleId(e.target.value)}
-              disabled={saving}
-            >
-              <option value="">All roles</option>
-              {roles.map((role) => (
-                <option key={role.id} value={String(role.id)}>
-                  {role.name}
-                </option>
-              ))}
-            </select>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <select
+                className={selectClassName}
+                value={filterRoleId}
+                onChange={(e) => setFilterRoleId(e.target.value)}
+                disabled={saving}
+              >
+                <option value="">All roles</option>
+                {roles.map((role) => (
+                  <option key={role.id} value={String(role.id)}>
+                    {role.name}
+                  </option>
+                ))}
+              </select>
+
+            </div>
           </div>
         }
       >
-        {rules.length === 0 ? (
+        {activeRules.length === 0 ? (
           <p className="px-5 py-8 text-sm text-gray-400 sm:px-6">No policy rules configured.</p>
         ) : (
           <div>
-            {rules.map((rule) => (
+            <div className="hidden border-b border-[#e2e8f0] px-5 py-2 text-xs font-medium uppercase tracking-wide text-gray-400 sm:grid sm:grid-cols-[minmax(0,1fr)_8rem_14rem] sm:gap-4 sm:px-6">
+              <span>Rule</span>
+              <span className="text-right">Limit</span>
+              <span className="text-right">Action</span>
+            </div>
+            {activeRules.map((rule) => (
               <AdminPolicyRuleCard
                 key={rule.id}
                 rule={rule}
                 currency={policyCurrency}
+                disabled={saving}
                 onEdit={() => openEdit(rule)}
+                onToggleActive={() => requestToggle(rule)}
               />
             ))}
           </div>
@@ -307,30 +340,22 @@ export function PolicyPage() {
         />
       </AdminListPanel>
 
-      <PolicyToolsPanel roles={roles} currency={policyCurrency} disabled={saving} />
-
-      {rules.some((r) => r.is_active === false) && (
+      {inactiveRules.length > 0 && (
         <div className="mt-6">
           <AdminListPanel
             title="Inactive Rules"
-            count={rules.filter((r) => r.is_active === false).length}
+            count={inactiveRules.length}
           >
-            {rules
-              .filter((r) => r.is_active === false)
-              .map((rule) => (
-                <div
-                  key={rule.id}
-                  className="flex items-center justify-between border-b border-[#e2e8f0] px-5 py-3 last:border-b-0 sm:px-6"
-                >
-                  <span className="text-sm capitalize text-gray-600">
-                    {rule.category_name.replace(/_/g, ' ')}
-                  </span>
-                  <Button size="sm" variant="ghost" disabled={saving} onClick={() => toggleRule(rule)}>
-                    <Power className="h-3.5 w-3.5 text-green-600" />
-                    Activate
-                  </Button>
-                </div>
-              ))}
+            {inactiveRules.map((rule) => (
+              <AdminPolicyRuleCard
+                key={rule.id}
+                rule={rule}
+                currency={policyCurrency}
+                disabled={saving}
+                onEdit={() => openEdit(rule)}
+                onToggleActive={() => requestToggle(rule)}
+              />
+            ))}
           </AdminListPanel>
         </div>
       )}
@@ -452,27 +477,25 @@ export function PolicyPage() {
                 required
               />
             </div>
-            <div className="flex gap-2">
-              {editing && editing.is_active !== false && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={saving}
-                  onClick={() => {
-                    toggleRule(editing)
-                    setEditOpen(false)
-                  }}
-                >
-                  <PowerOff className="h-4 w-4" />
-                  Deactivate
-                </Button>
-              )}
-            </div>
             {error && editOpen && <p className="text-sm text-red-600">{error}</p>}
             <AdminModalFooter onCancel={() => setEditOpen(false)} submitLabel="Save" submitting={saving} />
           </form>
         </DialogContent>
       </Dialog>
+
+      <AdminConfirmDialog
+        open={Boolean(confirmDeactivate)}
+        onOpenChange={(next) => !next && setConfirmDeactivate(null)}
+        title="Deactivate policy rule"
+        description={
+          confirmDeactivate
+            ? `Deactivate "${confirmDeactivate.category_name.replace(/_/g, ' ')}" for ${confirmDeactivate.company_role_name}?`
+            : 'Deactivate this policy rule?'
+        }
+        confirmLabel="Deactivate"
+        onConfirm={() => confirmDeactivate && toggleRule(confirmDeactivate)}
+        loading={saving}
+      />
 
       <CsvImportDialog
         open={importOpen}

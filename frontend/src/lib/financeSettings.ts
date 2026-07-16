@@ -15,6 +15,6 @@ export function financeCurrencyLabel(
 export function financeCurrencyCode(
   settings: Pick<FinanceSettings, 'base_currency_code' | 'base_currency_details'> | null | undefined,
 ): string {
-  return settings?.base_currency_details?.code ?? settings?.base_currency_code ?? 'INR'
+  return settings?.base_currency_details?.code ?? settings?.base_currency_code ?? 'USD'
 }
 

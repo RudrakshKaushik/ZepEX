@@ -46,7 +46,7 @@ export function reportDisplayCurrency(report: ExpenseReport): string {
       return currency
     }
   }
-  return 'INR'
+  return 'USD'
 }
 
 export function formatReportTotal(report: ExpenseReport): string {

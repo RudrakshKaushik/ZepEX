@@ -21,7 +21,9 @@ class Company(models.Model):
         related_name="companies"
     )
 
-    name = models.CharField(max_length=255)
+    name = models.CharField(
+        max_length=255
+    )
 
     domain = models.CharField(
         max_length=255,
@@ -40,7 +42,8 @@ class Company(models.Model):
     reimbursement_email = models.EmailField(
         unique=True,
         null=True,
-        blank=True
+        blank=True,
+        default=None,
     )
 
     # ZepEx forwarding email setup
@@ -57,15 +60,61 @@ class Company(models.Model):
         blank=True
     )
 
-    is_verified = models.BooleanField(default=False)
+    is_verified = models.BooleanField(
+        default=False
+    )
 
-    is_active = models.BooleanField(default=True)
+    is_active = models.BooleanField(
+        default=True
+    )
 
-    updated_at = models.DateTimeField(auto_now=True)
+    updated_at = models.DateTimeField(
+        auto_now=True
+    )
 
     created_at = models.DateTimeField(
         auto_now_add=True
     )
+
+    def save(self, *args, **kwargs):
+
+        # Normalize company domain
+        if self.domain:
+            self.domain = (
+                self.domain
+                .strip()
+                .lower()
+            )
+
+        # Normalize reimbursement email
+        if self.reimbursement_email:
+            self.reimbursement_email = (
+                self.reimbursement_email
+                .strip()
+                .lower()
+            )
+        else:
+            self.reimbursement_email = None
+
+        # Normalize forwarding email
+        if self.inbound_forwarding_email:
+            self.inbound_forwarding_email = (
+                self.inbound_forwarding_email
+                .strip()
+                .lower()
+            )
+        else:
+            self.inbound_forwarding_email = None
+
+        # Normalize forwarding code
+        if self.inbound_email_code:
+            self.inbound_email_code = (
+                self.inbound_email_code
+                .strip()
+                .lower()
+            )
+
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
@@ -303,6 +352,14 @@ class CompanyPolicy(models.Model):
 
 class PolicyCategoryRule(models.Model):
 
+    SCOPE_ALL = "ALL"
+    SCOPE_ROLE = "ROLE"
+
+    SCOPE_CHOICES = [
+        (SCOPE_ALL, "All Employees"),
+        (SCOPE_ROLE, "Specific Role"),
+    ]
+
     id = models.UUIDField(
         primary_key=True,
         default=uuid.uuid4,
@@ -323,10 +380,18 @@ class PolicyCategoryRule(models.Model):
         blank=True,
     )
 
+    scope = models.CharField(
+        max_length=20,
+        choices=SCOPE_CHOICES,
+        default=SCOPE_ROLE,
+    )
+
     company_role = models.ForeignKey(
         CompanyRole,
         on_delete=models.CASCADE,
         related_name="policy_category_rules",
+        null=True,
+        blank=True,
     )
 
     category_name = models.CharField(
@@ -385,32 +450,88 @@ class PolicyCategoryRule(models.Model):
 
     class Meta:
         ordering = [
+            "scope",
             "company_role__name",
             "category_name",
         ]
 
         constraints = [
-            # Versioned rules:
-            # Employee → food can exist once inside each policy version.
+            # --------------------------------------------------
+            # Versioned role-specific rules
+            # --------------------------------------------------
             models.UniqueConstraint(
                 fields=[
                     "policy_version",
                     "company_role",
                     "category_name",
                 ],
-                condition=Q(policy_version__isnull=False),
-                name="unique_rule_per_policy_version",
+                condition=(
+                    Q(
+                        policy_version__isnull=False,
+                        scope="ROLE",
+                    )
+                ),
+                name=(
+                    "unique_role_rule_per_policy_version"
+                ),
             ),
 
-            # Legacy rules without a version remain protected.
+            # --------------------------------------------------
+            # Versioned rules applying to all employees
+            # --------------------------------------------------
+            models.UniqueConstraint(
+                fields=[
+                    "policy_version",
+                    "category_name",
+                ],
+                condition=(
+                    Q(
+                        policy_version__isnull=False,
+                        scope="ALL",
+                    )
+                ),
+                name=(
+                    "unique_all_rule_per_policy_version"
+                ),
+            ),
+
+            # --------------------------------------------------
+            # Legacy role-specific rules
+            # --------------------------------------------------
             models.UniqueConstraint(
                 fields=[
                     "policy",
                     "company_role",
                     "category_name",
                 ],
-                condition=Q(policy_version__isnull=True),
-                name="unique_legacy_policy_rule",
+                condition=(
+                    Q(
+                        policy_version__isnull=True,
+                        scope="ROLE",
+                    )
+                ),
+                name=(
+                    "unique_legacy_role_policy_rule"
+                ),
+            ),
+
+            # --------------------------------------------------
+            # Legacy rules applying to all employees
+            # --------------------------------------------------
+            models.UniqueConstraint(
+                fields=[
+                    "policy",
+                    "category_name",
+                ],
+                condition=(
+                    Q(
+                        policy_version__isnull=True,
+                        scope="ALL",
+                    )
+                ),
+                name=(
+                    "unique_legacy_all_policy_rule"
+                ),
             ),
         ]
 
@@ -418,6 +539,10 @@ class PolicyCategoryRule(models.Model):
         from django.core.exceptions import ValidationError
 
         errors = {}
+
+        # --------------------------------------------------
+        # Normalize values
+        # --------------------------------------------------
 
         self.category_name = (
             self.category_name.strip().lower()
@@ -431,12 +556,54 @@ class PolicyCategoryRule(models.Model):
             else self.currency
         )
 
+        self.scope = (
+            self.scope.strip().upper()
+            if self.scope
+            else self.scope
+        )
+
+        # --------------------------------------------------
+        # Category validation
+        # --------------------------------------------------
+
         if not self.category_name:
             errors["category_name"] = (
                 "Category name is required."
             )
 
-        if self.company_role_id and self.policy_id:
+        # --------------------------------------------------
+        # Scope validation
+        # --------------------------------------------------
+
+        if self.scope not in {
+            self.SCOPE_ALL,
+            self.SCOPE_ROLE,
+        }:
+            errors["scope"] = (
+                "Scope must be ALL or ROLE."
+            )
+
+        elif self.scope == self.SCOPE_ALL:
+            # Global policy rule must not belong to one role.
+            self.company_role = None
+
+        elif (
+            self.scope == self.SCOPE_ROLE
+            and not self.company_role_id
+        ):
+            errors["company_role"] = (
+                "company_role is required when scope is ROLE."
+            )
+
+        # --------------------------------------------------
+        # Company-role validation
+        # --------------------------------------------------
+
+        if (
+            self.scope == self.SCOPE_ROLE
+            and self.company_role_id
+            and self.policy_id
+        ):
             if (
                 self.company_role.company_id
                 != self.policy.company_id
@@ -445,7 +612,11 @@ class PolicyCategoryRule(models.Model):
                     "Company role belongs to another company."
                 )
 
-        if self.policy_version_id:
+        # --------------------------------------------------
+        # Policy-version validation
+        # --------------------------------------------------
+
+        if self.policy_version_id and self.policy_id:
             if (
                 self.policy_version.policy_id
                 != self.policy_id
@@ -454,10 +625,17 @@ class PolicyCategoryRule(models.Model):
                     "Policy version does not belong to this policy."
                 )
 
+        # --------------------------------------------------
+        # Amount validation
+        # --------------------------------------------------
+
         if self.is_unlimited:
             self.max_amount = None
 
-        if not self.is_unlimited and self.max_amount is None:
+        if (
+            not self.is_unlimited
+            and self.max_amount is None
+        ):
             errors["max_amount"] = (
                 "max_amount is required when the policy "
                 "is not unlimited."
@@ -471,6 +649,10 @@ class PolicyCategoryRule(models.Model):
                 "max_amount cannot be negative."
             )
 
+        # --------------------------------------------------
+        # Currency validation
+        # --------------------------------------------------
+
         if not self.currency:
             errors["currency"] = (
                 "Currency is required."
@@ -478,8 +660,13 @@ class PolicyCategoryRule(models.Model):
 
         elif len(self.currency) != 3:
             errors["currency"] = (
-                "Use a three-letter currency code such as INR or USD."
+                "Use a three-letter currency code "
+                "such as INR or USD."
             )
+
+        # --------------------------------------------------
+        # AI confidence validation
+        # --------------------------------------------------
 
         if self.ai_confidence is not None:
             if (
@@ -506,14 +693,24 @@ class PolicyCategoryRule(models.Model):
 
         version = (
             f"v{self.policy_version.version_number}"
-            if self.policy_version
+            if self.policy_version_id
             else "Legacy"
+        )
+
+        scope_display = (
+            "All Employees"
+            if self.scope == self.SCOPE_ALL
+            else (
+                self.company_role.name
+                if self.company_role_id
+                else "Role Not Assigned"
+            )
         )
 
         return (
             f"{self.policy.company.name} - "
             f"{version} - "
-            f"{self.company_role.name} - "
+            f"{scope_display} - "
             f"{self.category_name} - "
             f"{limit}"
         )

@@ -218,12 +218,15 @@ class ExtractedRoleMatch(BaseModel):
     matched_role_id: Optional[str] = None
     match_type: str = "ROLE_NOT_FOUND"
 
-
+from typing import Literal
 class ExtractedPolicyRule(BaseModel):
     role: Optional[str] = None
     role_original_text: Optional[str] = None
     role_match: Optional[ExtractedRoleMatch] = None
-
+    scope: Literal[
+        "ALL",
+        "ROLE",
+    ] = "ALL"
     category: str
     original_category: Optional[str] = None
 
@@ -1071,8 +1074,17 @@ def _detect_duplicates_and_conflicts(rules):
 # ============================================================
 
 def _parse_response(response):
-    if getattr(response, "parsed", None):
-        parsed = response.parsed
+    """
+    Parse and validate Gemini structured output.
+    """
+
+    parsed = getattr(
+        response,
+        "parsed",
+        None,
+    )
+
+    if parsed is not None:
 
         if isinstance(
             parsed,
@@ -1080,9 +1092,27 @@ def _parse_response(response):
         ):
             return parsed
 
-        return ExtractedPolicyDocument.model_validate(
-            parsed
-        )
+        try:
+            return ExtractedPolicyDocument.model_validate(
+                parsed
+            )
+
+        except ValidationError as exc:
+            error_details = json.dumps(
+                exc.errors(
+                    include_url=False,
+                    include_context=False,
+                ),
+                indent=2,
+                ensure_ascii=False,
+                default=str,
+            )
+
+            raise ValueError(
+                "Gemini parsed output did not match "
+                "the policy schema.\n\n"
+                f"{error_details}"
+            ) from exc
 
     response_text = getattr(
         response,
@@ -1096,13 +1126,28 @@ def _parse_response(response):
         )
 
     try:
-        return ExtractedPolicyDocument.model_validate_json(
-            response_text
+        return (
+            ExtractedPolicyDocument
+            .model_validate_json(
+                response_text
+            )
         )
+
     except ValidationError as exc:
+        error_details = json.dumps(
+            exc.errors(
+                include_url=False,
+                include_context=False,
+            ),
+            indent=2,
+            ensure_ascii=False,
+            default=str,
+        )
+
         raise ValueError(
             "Gemini returned JSON that did not match "
-            "the policy schema."
+            "the policy schema.\n\n"
+            f"{error_details}"
         ) from exc
 
 
@@ -1110,9 +1155,8 @@ def _structured_config():
     return types.GenerateContentConfig(
         temperature=0.1,
         response_mime_type="application/json",
-        response_json_schema=(
-            ExtractedPolicyDocument.model_json_schema()
-        ),
+        response_schema=ExtractedPolicyDocument,
+        max_output_tokens=65536,
     )
 
 

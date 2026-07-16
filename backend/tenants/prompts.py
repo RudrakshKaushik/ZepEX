@@ -266,16 +266,9 @@ def _build_category_reference(existing_categories):
     return "\n".join(lines)
 
 from .language_utils import get_company_output_language
-def build_policy_document_prompt(company):
-    language_settings = get_company_output_language(
-    company
-    )
 
-    output_language_code = language_settings["code"]
-    output_language_name = language_settings["name"]
-    preserve_original_text = language_settings[
-    "preserve_original_text"
-]
+
+def build_policy_document_prompt(company):
     """
     Build a company-aware, multilingual policy extraction prompt.
 
@@ -325,13 +318,18 @@ def build_policy_document_prompt(company):
         "rules": [
             {
                 "role": None,
-                "role_original_text": None,
-                "role_match": {
-                    "matched": True,
-                    "matched_role_name": "Employee",
-                    "matched_role_id": None,
-                    "match_type": "DEFAULT_EMPLOYEE_FALLBACK",
-                },
+"role_original_text": None,
+"role_match": {
+    "role": None,
+"scope": "ALL",
+"role_original_text": None,
+"role_match": {
+    "matched": True,
+    "matched_role_name": None,
+    "matched_role_id": None,
+    "match_type": "ALL_EMPLOYEES"
+},
+},
                 "category": "food",
                 "original_category": "भोजन भत्ता",
                 "max_amount": "1000.00",
@@ -346,9 +344,9 @@ def build_policy_document_prompt(company):
                     "कर्मचारी प्रतिदिन भोजन के लिए ₹1000 तक दावा कर सकते हैं।"
                 ),
                 "reason": (
-                    "No specific role is mentioned, so this appears "
-                    "to be a general company policy rule."
-                ),
+    "No specific role, designation, grade, or department "
+    "is mentioned, so this rule applies to all employees."
+),
                 "reason_original_language": None,
                 "source_text": (
                     "कर्मचारी प्रतिदिन भोजन के लिए ₹1000 तक दावा कर सकते हैं।"
@@ -723,24 +721,39 @@ only when the company actually has that matching role.
 
 5. Do not make aggressive assumptions.
 
-6. If no role is mentioned:
+6. If no role, designation, grade, employee group, or department
+   is explicitly mentioned:
+
    - role = null
    - role_original_text = null
-   - role_match.match_type = DEFAULT_EMPLOYEE_FALLBACK
+   - role_match.matched = true
+   - role_match.matched_role_name = null
+   - role_match.matched_role_id = null
+   - role_match.match_type = ALL_EMPLOYEES
+   - review_required must not be set to true only because the role is null
 
-7. The backend will map a null role to the active Employee role.
+7. A null role means the rule applies to all employees.
 
-8. If a role is mentioned but does not match an existing role:
-   - preserve the role wording
-   - role_match.matched = false
-   - role_match.match_type = ROLE_NOT_FOUND
-   - review_required = true
-   - add ROLE_NOT_FOUND warning
+8. Never convert a missing role into Employee, Manager, CEO, or any
+   other company role.
 
-9. Never silently map an unknown named role to Employee.
+9. Do not guess a role from the reimbursement amount, category,
+   wording style, document section, or employee seniority.
 
-10. If the policy says all staff, all employees, or company-wide,
-    return role = null unless a more specific role is stated.
+10. If the policy says any of the following, treat it as applying
+    to all employees unless a narrower scope is explicitly stated:
+
+    - all employees
+    - all staff
+    - every employee
+    - company-wide
+    - employees of the company
+    - personnel
+    - staff members
+    - employees
+
+11. If a named role is explicitly mentioned but cannot be matched,
+    do not treat it as an all-employees rule.
 
 ============================================================
 AMOUNT ANALYSIS RULES
@@ -953,8 +966,8 @@ Reason rules:
 
 6. When no role is stated, use:
 
-"No specific role is mentioned, so this appears to be a general company
-policy rule."
+"No specific role, designation, department, or employee group is mentioned.
+This reimbursement rule applies to all employees."
 
 ============================================================
 SOURCE TRACEABILITY RULES
@@ -1222,9 +1235,13 @@ Before returning JSON, verify:
 4. Every category uses normalized English backend values.
 5. Every role is matched against company roles.
 6. Unknown roles are not silently mapped.
-7. Rules without a role use role = null.
-8. Every non-unlimited allowed rule has a numeric amount or requires review.
-9. Every currency is supported or null.
+7. Rules without an explicitly stated role use role = null and
+   role_match.match_type = ALL_EMPLOYEES.
+
+8. A null role must never be converted to Employee or another role.
+
+9. Explicitly named unknown roles must remain role-specific and
+   require review; they must not become ALL_EMPLOYEES.
 10. Every rule has an English description.
 11. Every rule has an English reason.
 12. Every rule has confidence.

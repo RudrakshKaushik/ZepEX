@@ -4006,6 +4006,22 @@ def upload_policy_document(request):
         # ---------------------------------------------
 
         preview = result["preview"]
+        import json
+
+        print("=" * 80)
+        print("AI EXTRACTED PREVIEW")
+        print("=" * 80)
+
+        print(
+        json.dumps(
+        preview,
+        indent=4,
+        ensure_ascii=False,
+        default=str,
+    )
+)
+
+        print("=" * 80)
 
         warnings = preview.get(
             "warnings",
@@ -4892,6 +4908,7 @@ def get_policy_document_preview(
     IsAuthenticated,
     IsCompanyAdmin,
 ])
+@transaction.atomic
 def update_policy_document_preview(
     request,
     import_id,

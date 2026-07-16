@@ -203,7 +203,6 @@ REST_FRAMEWORK = {
 # GEMINI
 # --------------------------------------------------
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # --------------------------------------------------
 # CELERY
@@ -343,3 +342,22 @@ PLATFORM_RECEIPT_EMAIL = os.getenv(
     "PLATFORM_RECEIPT_EMAIL",
     "receipts@zepex.ai"
 )
+
+import os
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# Receipt AI Model
+GEMINI_RECEIPT_MODEL = os.getenv(
+    "GEMINI_RECEIPT_MODEL",
+    "gemini-2.5-flash"
+)
+
+# Policy AI Model
+GEMINI_POLICY_MODEL = os.getenv(
+    "GEMINI_POLICY_MODEL",
+    "gemini-2.5-flash"
+)
+
+# API Base URL
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models"

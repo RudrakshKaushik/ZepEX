@@ -1,47 +1,57 @@
 from .models import CompanyRole, PolicyCategoryRule
+from .models import (
+    CompanyPolicy,
+    PolicyCategoryRule,
+    PolicyVersion,
+)
 
-
-def get_policy_rule_for_employee(employee, category_name):
-    """
-    Returns role-based policy rule.
-    If employee role rule does not exist, falls back to Employee role rule.
-    """
-
-    if not employee or not employee.company or not category_name:
-        return None
-
-    category_name = category_name.strip().lower()
-
-    policy = getattr(employee.company, "policy", None)
+def get_policy_rule_for_employee(
+    employee,
+    category_name,
+):
+    policy = CompanyPolicy.objects.filter(
+        company=employee.company,
+    ).first()
 
     if not policy:
         return None
 
-    if employee.company_role:
+    category_name = str(
+        category_name or ""
+    ).strip().lower()
+
+    active_version = PolicyVersion.objects.filter(
+        policy=policy,
+        status=PolicyVersion.STATUS_ACTIVE,
+        is_active=True,
+    ).first()
+
+    if not active_version:
+        return None
+
+    base_filters = {
+        "policy": policy,
+        "policy_version": active_version,
+        "category_name__iexact": category_name,
+        "is_active": True,
+    }
+
+    # First priority: role-specific override.
+    if employee.company_role_id:
         role_rule = PolicyCategoryRule.objects.filter(
-            policy=policy,
+            **base_filters,
+            scope=PolicyCategoryRule.SCOPE_ROLE,
             company_role=employee.company_role,
-            category_name__iexact=category_name,
-            is_active=True,
         ).first()
 
         if role_rule:
             return role_rule
 
-    employee_role = CompanyRole.objects.filter(
-        company=employee.company,
-        name__iexact="Employee",
-        is_active=True,
-    ).first()
-
-    if not employee_role:
-        return None
-
+    # Second priority: rule applying to all employees.
     return PolicyCategoryRule.objects.filter(
-        policy=policy,
-        company_role=employee_role,
-        category_name__iexact=category_name,
-        is_active=True,
+        **base_filters,
+        scope=PolicyCategoryRule.SCOPE_ALL,
+        company_role__isnull=True,
     ).first()
 
 from .models import (

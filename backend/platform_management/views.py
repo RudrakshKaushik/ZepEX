@@ -169,93 +169,307 @@ def list_company_requests(request):
 from django.conf import settings
 from .utils import generate_inbound_email_code
 from tenants.views import generate_employee_password
-
+from django.db import IntegrityError, transaction
+from tenants.role_utils import ensure_default_company_roles
 @api_view(["POST"])
 @permission_classes([
     IsAuthenticated,
-    IsPlatformOwner
+    IsPlatformOwner,
 ])
+@transaction.atomic
 def approve_company_request(request, request_id):
 
+    # =========================================================
+    # Lock registration request
+    # =========================================================
+
     try:
-        company_request = CompanyRegistrationRequest.objects.get(
-            id=request_id
+        company_request = (
+            CompanyRegistrationRequest.objects
+            .select_for_update()
+            .get(id=request_id)
         )
 
     except CompanyRegistrationRequest.DoesNotExist:
         return Response(
             {
-                "error": "Request not found"
+                "success": False,
+                "error": "Company registration request not found.",
+                "error_code": "REGISTRATION_REQUEST_NOT_FOUND",
             },
-            status=status.HTTP_404_NOT_FOUND
+            status=status.HTTP_404_NOT_FOUND,
         )
+
+    # =========================================================
+    # Validate registration request
+    # =========================================================
 
     if company_request.status != "PENDING":
         return Response(
             {
-                "error": "Request already processed."
+                "success": False,
+                "error": "Only pending requests can be approved.",
+                "error_code": "REQUEST_ALREADY_PROCESSED",
+                "current_status": company_request.status,
             },
-            status=status.HTTP_400_BAD_REQUEST
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
     if not company_request.is_email_verified:
         return Response(
-            {"error": "Admin email is not verified yet. OTP verification is required."},
+            {
+                "success": False,
+                "error": (
+                    "Admin email is not verified. "
+                    "OTP verification is required before approval."
+                ),
+                "error_code": "ADMIN_EMAIL_NOT_VERIFIED",
+            },
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    if company_request.company_name == "PENDING":
+    company_name = str(
+        company_request.company_name or ""
+    ).strip()
+
+    company_domain = str(
+        company_request.company_domain or ""
+    ).strip().lower()
+
+    admin_name = str(
+        company_request.admin_name or ""
+    ).strip()
+
+    admin_email = str(
+        company_request.admin_email or ""
+    ).strip().lower()
+
+    reimbursement_email = str(
+        company_request.reimbursement_email or ""
+    ).strip().lower() or None
+
+    if not company_name or company_name.upper() == "PENDING":
         return Response(
-            {"error": "Registration details are incomplete. Awaiting full submission."},
+            {
+                "success": False,
+                "error": (
+                    "Registration details are incomplete. "
+                    "A valid company name is required."
+                ),
+                "error_code": "INVALID_COMPANY_NAME",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not company_domain:
+        return Response(
+            {
+                "success": False,
+                "error": "Company domain is required.",
+                "error_code": "COMPANY_DOMAIN_REQUIRED",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not admin_email:
+        return Response(
+            {
+                "success": False,
+                "error": "Company admin email is required.",
+                "error_code": "ADMIN_EMAIL_REQUIRED",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # =========================================================
+    # Prevent duplicates
+    # =========================================================
+
+    if User.objects.filter(
+        email__iexact=admin_email
+    ).exists():
+        return Response(
+            {
+                "success": False,
+                "error": (
+                    "A user with this admin email already exists."
+                ),
+                "error_code": "ADMIN_EMAIL_ALREADY_EXISTS",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if Company.objects.filter(
+        domain__iexact=company_domain
+    ).exists():
+        return Response(
+            {
+                "success": False,
+                "error": (
+                    "A company with this domain already exists."
+                ),
+                "error_code": "COMPANY_DOMAIN_ALREADY_EXISTS",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if (
+        reimbursement_email
+        and Company.objects.filter(
+            reimbursement_email__iexact=reimbursement_email
+        ).exists()
+    ):
+        return Response(
+            {
+                "success": False,
+                "error": (
+                    "This reimbursement email is already assigned "
+                    "to another company."
+                ),
+                "error_code": (
+                    "REIMBURSEMENT_EMAIL_ALREADY_EXISTS"
+                ),
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # =========================================================
+    # Resolve platform owner
+    # =========================================================
+
+    platform_owner = getattr(
+        request.user,
+        "platform_owner",
+        None,
+    )
+
+    if platform_owner is None:
+        return Response(
+            {
+                "success": False,
+                "error": (
+                    "The logged-in platform owner profile "
+                    "is not configured."
+                ),
+                "error_code": "PLATFORM_OWNER_PROFILE_NOT_FOUND",
+            },
             status=status.HTTP_400_BAD_REQUEST,
         )
 
     temp_password = "Admin@123"
 
-    user = User.objects.create_user(
-        username=company_request.admin_email,
-        email=company_request.admin_email,
-        password=temp_password,
-        first_name=company_request.admin_name
-    )
+    try:
+        # =====================================================
+        # Create company admin user
+        # =====================================================
 
-    company = Company.objects.create(
-        owner=request.user.platform_owner,
-        name=company_request.company_name,
-        domain=company_request.company_domain,
-        reimbursement_email=company_request.reimbursement_email,
-        is_verified=True
-    )
+        user = User.objects.create_user(
+            username=admin_email,
+            email=admin_email,
+            password=temp_password,
+            first_name=admin_name,
+        )
 
-    from tenants.role_utils import ensure_default_company_roles
+        # =====================================================
+        # Create company
+        # =====================================================
 
-    ensure_default_company_roles(company)
+        company = Company.objects.create(
+            owner=platform_owner,
+            name=company_name,
+            domain=company_domain,
 
-    profile = UserProfile.objects.create(
-        user=user,
-        company=company,
-        role="COMPANY_ADMIN",
-        temporary_password=temp_password,
-        force_password_change=True,
-        invite_email_sent=False,
-        invite_email_sent_at=None,
-    )
+            # Important:
+            # Blank reimbursement email must be stored as NULL,
+            # not as an empty string.
+            reimbursement_email=reimbursement_email,
 
-    company_request.status = "APPROVED"
+            is_verified=True,
+        )
 
-    company_request.save(update_fields=[
-        "status"
-    ])
+        # =====================================================
+        # Create default company roles
+        # =====================================================
+
+        ensure_default_company_roles(company)
+
+        # =====================================================
+        # Create company admin profile
+        # =====================================================
+
+        profile = UserProfile.objects.create(
+            user=user,
+            company=company,
+            role="COMPANY_ADMIN",
+            temporary_password=temp_password,
+            force_password_change=True,
+            invite_email_sent=False,
+            invite_email_sent_at=None,
+        )
+
+        # =====================================================
+        # Mark registration request approved
+        # =====================================================
+
+        company_request.status = "APPROVED"
+
+        company_request.save(
+            update_fields=[
+                "status",
+            ]
+        )
+
+    except IntegrityError as exc:
+        # Because the API is atomic, created records are rolled back.
+        transaction.set_rollback(True)
+
+        return Response(
+            {
+                "success": False,
+                "error": (
+                    "Company approval failed because one of the "
+                    "user, domain, or email values already exists."
+                ),
+                "error_code": "COMPANY_APPROVAL_CONFLICT",
+                "details": str(exc),
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    except Exception as exc:
+        transaction.set_rollback(True)
+
+        return Response(
+            {
+                "success": False,
+                "error": (
+                    "An unexpected error occurred while approving "
+                    "the company."
+                ),
+                "error_code": "COMPANY_APPROVAL_FAILED",
+                "details": str(exc),
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    # =========================================================
+    # Platform receipt email
+    # =========================================================
 
     platform_receipt_email = getattr(
         settings,
         "PLATFORM_RECEIPT_EMAIL",
-        "receipts@zepex.ai"
+        "receipts@zepex.ai",
     )
 
-    # Send Welcome Email
-    try:
+    # =========================================================
+    # Send approval email
+    # =========================================================
 
+    email_sent = False
+    email_error = None
+
+    try:
         send_company_approved_email(
             company=company,
             company_request=company_request,
@@ -266,38 +480,91 @@ def approve_company_request(request, request_id):
         profile.invite_email_sent = True
         profile.invite_email_sent_at = timezone.now()
 
-        profile.save(update_fields=[
-            "invite_email_sent",
-            "invite_email_sent_at",
-        ])
-
-    except Exception as e:
-
-        print("Company approval email failed:", e)
-
-    return Response({
-
-        "success": True,
-
-        "message": "Company approved successfully.",
-
-        "company_id": str(company.id),
-
-        "admin_email": user.email,
-
-        "temporary_password": temp_password,
-
-        "reimbursement_email": company.reimbursement_email,
-
-        "platform_receipt_email": platform_receipt_email,
-
-        "forwarding_instruction": (
-            f"Forward all reimbursement emails from "
-            f"{company.reimbursement_email} "
-            f"to {platform_receipt_email}"
+        profile.save(
+            update_fields=[
+                "invite_email_sent",
+                "invite_email_sent_at",
+            ]
         )
-    })
 
+        email_sent = True
+
+    except Exception as exc:
+        email_error = str(exc)
+
+        print(
+            "Company approval email failed:",
+            email_error,
+        )
+
+    # =========================================================
+    # Forwarding information
+    # =========================================================
+
+    forwarding_instruction = None
+
+    if reimbursement_email:
+        forwarding_instruction = (
+            f"Forward all reimbursement emails from "
+            f"{reimbursement_email} to "
+            f"{platform_receipt_email}."
+        )
+
+    # =========================================================
+    # Response
+    # =========================================================
+
+    return Response(
+        {
+            "success": True,
+            "message": "Company approved successfully.",
+
+            "company": {
+                "id": str(company.id),
+                "name": company.name,
+                "domain": company.domain,
+                "is_verified": company.is_verified,
+            },
+
+            "company_admin": {
+                "user_id": user.id,
+                "profile_id": str(profile.id),
+                "name": admin_name,
+                "email": user.email,
+                "temporary_password": temp_password,
+                "force_password_change": (
+                    profile.force_password_change
+                ),
+            },
+
+            "reimbursement_email": (
+                company.reimbursement_email
+            ),
+
+            "platform_receipt_email": (
+                platform_receipt_email
+            ),
+
+            "forwarding_required": bool(
+                reimbursement_email
+            ),
+
+            "forwarding_instruction": (
+                forwarding_instruction
+            ),
+
+            "invite_email": {
+                "sent": email_sent,
+                "error": email_error,
+            },
+
+            "registration_request": {
+                "id": str(company_request.id),
+                "status": company_request.status,
+            },
+        },
+        status=status.HTTP_201_CREATED,
+    )
 @api_view(["POST"])
 @permission_classes([
     IsAuthenticated,

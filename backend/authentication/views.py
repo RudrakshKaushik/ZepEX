@@ -350,31 +350,176 @@ from .serializers import EditProfileSerializer
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def profile_detail_api(request):
-    profile = request.user.profile
+    """
+    Return the authenticated user's profile.
 
-    return Response({
-        "id": request.user.id,
-        "email": request.user.email,
-        "first_name": request.user.first_name,
-        "last_name": request.user.last_name,
-        "role": profile.role,
-        "company_role": (
-            profile.company_role.name
-            if profile.company_role
-            else None
-        ),
-        "company_role_id": (
-            profile.company_role.id
-            if profile.company_role
-            else None
-        ),
-        "company": profile.company.name,
-        "department": profile.department.name if profile.department else None,
-        "phone_number": profile.phone_number,
-        "address": profile.address,
-        "profile_picture": request.build_absolute_uri(profile.profile_picture.url) if profile.profile_picture else None,
-        "permissions": permissions_for_profile(profile),
-    })
+    Supports:
+    - Platform Owner / superuser without UserProfile
+    - Company Admin
+    - Employee
+    - Approver
+    - Accounts / Payment users
+    """
+
+    user = request.user
+
+    profile = getattr(
+        user,
+        "profile",
+        None,
+    )
+
+    # =========================================================
+    # Platform owner / superuser
+    # =========================================================
+
+    if profile is None:
+        platform_owner = getattr(
+            user,
+            "platform_owner",
+            None,
+        )
+
+        if user.is_superuser or platform_owner:
+            return Response(
+                {
+                    "success": True,
+                    "user": {
+                        "id": user.id,
+                        "email": user.email,
+                        "first_name": user.first_name,
+                        "last_name": user.last_name,
+                        "full_name": (
+                            user.get_full_name()
+                            or user.username
+                        ),
+                        "role": "PLATFORM_OWNER",
+                        "is_superuser": user.is_superuser,
+                        "is_staff": user.is_staff,
+                    },
+                    "profile": None,
+                    "permissions": {},
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        return Response(
+            {
+                "success": False,
+                "error": "User profile is not configured.",
+                "error_code": "PROFILE_NOT_FOUND",
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # =========================================================
+    # Company user profile
+    # =========================================================
+
+    company = getattr(
+        profile,
+        "company",
+        None,
+    )
+
+    company_role = getattr(
+        profile,
+        "company_role",
+        None,
+    )
+
+    department = getattr(
+        profile,
+        "department",
+        None,
+    )
+
+    profile_picture_url = None
+
+    if profile.profile_picture:
+        try:
+            profile_picture_url = (
+                request.build_absolute_uri(
+                    profile.profile_picture.url
+                )
+            )
+        except ValueError:
+            profile_picture_url = None
+
+    return Response(
+        {
+            "success": True,
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "full_name": (
+                    user.get_full_name()
+                    or user.username
+                ),
+                "is_superuser": user.is_superuser,
+                "is_staff": user.is_staff,
+            },
+            "profile": {
+                "role": profile.role,
+
+                "company_role": (
+                    company_role.name
+                    if company_role
+                    else None
+                ),
+
+                "company_role_id": (
+                    str(company_role.id)
+                    if company_role
+                    else None
+                ),
+
+                "company": (
+                    company.name
+                    if company
+                    else None
+                ),
+
+                "company_id": (
+                    str(company.id)
+                    if company
+                    else None
+                ),
+
+                "department": (
+                    department.name
+                    if department
+                    else None
+                ),
+
+                "department_id": (
+                    str(department.id)
+                    if department
+                    else None
+                ),
+
+                "phone_number": (
+                    profile.phone_number
+                ),
+
+                "address": (
+                    profile.address
+                ),
+
+                "profile_picture": (
+                    profile_picture_url
+                ),
+            },
+            "permissions": (
+                permissions_for_profile(
+                    profile
+                )
+            ),
+        },
+        status=status.HTTP_200_OK,
+    )
 
 
 @api_view(["PATCH"])

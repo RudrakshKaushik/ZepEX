@@ -55,6 +55,22 @@ from .views import (
     preview_role_policy,
     simulate_policy_rule,
     copy_role_policy,
+    upload_policy_document,
+    confirm_policy_document_import,
+    get_policy_document_preview,
+    update_policy_document_preview,
+    revalidate_policy_document_preview,
+    create_policy_version_api,
+    list_policy_versions,
+    get_policy_version,
+    activate_policy_version_api,
+    archive_policy_version_api,
+    duplicate_policy_version_api,
+    rollback_policy_version_api,
+    delete_draft_policy_version_api,
+    compare_policy_versions_api,
+    company_language_preferences,
+    
 
 
 )
@@ -182,5 +198,92 @@ path(
     "policy/copy/",
     copy_role_policy,
     name="copy-role-policy"
+),
+
+path(
+    "policy/document/upload/",
+    upload_policy_document,
+    name="upload-policy-document",
+),
+
+path(
+    "policy/document/<uuid:import_id>/confirm/",
+    confirm_policy_document_import,
+    name="confirm-policy-document-import",
+),
+path(
+    "policy/document/<uuid:import_id>/preview/",
+    get_policy_document_preview,
+    name="get-policy-document-preview",
+),
+
+path(
+    "policy/document/<uuid:import_id>/preview/update/",
+    update_policy_document_preview,
+    name="update-policy-document-preview",
+),
+
+path(
+    "policy/document/<uuid:import_id>/preview/revalidate/",
+    revalidate_policy_document_preview,
+    name="revalidate-policy-document-preview",
+),
+
+path(
+    "policy/versions/create/",
+    create_policy_version_api,
+    name="create-policy-version",
+),
+
+path(
+    "policy/versions/",
+    list_policy_versions,
+    name="list-policy-versions",
+),
+
+path(
+    "policy/versions/<uuid:version_id>/",
+    get_policy_version,
+    name="get-policy-version",
+),
+
+path(
+    "policy/versions/<uuid:version_id>/activate/",
+    activate_policy_version_api,
+    name="activate-policy-version",
+),
+
+path(
+    "policy/versions/<uuid:version_id>/archive/",
+    archive_policy_version_api,
+    name="archive-policy-version",
+),
+
+path(
+    "policy/versions/<uuid:version_id>/duplicate/",
+    duplicate_policy_version_api,
+    name="duplicate-policy-version",
+),
+
+path(
+    "policy/versions/<uuid:version_id>/rollback/",
+    rollback_policy_version_api,
+    name="rollback-policy-version",
+),
+
+path(
+    "policy/versions/<uuid:version_id>/delete/",
+    delete_draft_policy_version_api,
+    name="delete-draft-policy-version",
+),
+path(
+    "policy/versions/compare/",
+    compare_policy_versions_api,
+    name="compare-policy-versions",
+),
+path(
+    "company/language-preferences/",
+    company_language_preferences,
+    name="company-language-preferences",
 ),
 ]

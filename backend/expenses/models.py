@@ -383,12 +383,41 @@ class ExpenseReceipt(models.Model):
         null=True,
         blank=True
     )
+    ai_extracted_data = models.JSONField(
+    default=dict,
+    blank=True,
+    )
+
+    original_language = models.CharField(
+    max_length=100,
+    null=True,
+    blank=True,
+)
+
+    original_language_code = models.CharField(
+    max_length=20,
+    null=True,
+    blank=True,
+)
+
+    output_language = models.CharField(
+    max_length=100,
+    null=True,
+    blank=True,
+)
+
+    output_language_code = models.CharField(
+    max_length=20,
+    null=True,
+    blank=True,
+)
 
     exchange_rate_provider = models.CharField(
         max_length=100,
         blank=True,
         null=True
     )
+    
 
     class Meta:
         ordering = [
@@ -415,9 +444,10 @@ class ExpenseLineItem(models.Model):
         related_name="line_items"
     )
 
-    description = models.CharField(
-        max_length=500
-    )
+    description = models.TextField(
+    blank=True,
+    default="",
+)
 
     category = models.CharField(
         max_length=100

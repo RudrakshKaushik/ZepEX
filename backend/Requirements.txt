@@ -13,3 +13,6 @@ psycopg2-binary
 pymysql 
 pyodbc 
 oracledb
+google-genai
+pydantic
+python-docx

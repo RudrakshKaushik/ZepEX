@@ -1,4 +1,4 @@
-import { Shield } from 'lucide-react'
+import { FileUp, Shield } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
   activatePolicyRule,
@@ -10,6 +10,10 @@ import {
   importPolicyRulesCsv,
   listCompanyRoles,
   listPolicyRules,
+  listPolicyVersions,
+  activatePolicyVersion,
+  archivePolicyVersion,
+  deleteDraftPolicyVersion,
   updatePolicyRule,
 } from '@/api'
 import { getApiErrorMessage } from '@/api/client'
@@ -20,9 +24,13 @@ import { AdminListSearchBar } from '@/components/admin/AdminListSearchBar'
 import { AdminListPanel } from '@/components/admin/AdminListPanel'
 import { AdminModalFooter } from '@/components/admin/AdminModalFooter'
 import { AdminPolicyRuleCard } from '@/components/admin/AdminPolicyRuleCard'
+import { PolicyDocumentImportDialog } from '@/components/admin/PolicyDocumentImportDialog'
 import { PolicyToolsPanel } from '@/components/admin/PolicyToolsPanel'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { useAdminNav } from '@/hooks/useAdminNav'
+import {
+  usePersistedPolicyDocumentImportJob,
+} from '@/hooks/usePersistedPolicyDocumentImportJob'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -37,7 +45,7 @@ import { CardsGridShimmer } from '@/components/ui/shimmer'
 import { PaginationControls } from '@/components/ui/pagination-controls'
 import { toast } from '@/lib/toast'
 import { financeCurrencyCode } from '@/lib/financeSettings'
-import type { CompanyRole, PolicyRule } from '@/types'
+import type { CompanyRole, PolicyRule, PolicyVersion } from '@/types'
 import AssignIcon from '@/assets/assign.png'
 import UploadIcon from '@/assets/upload.png'
 
@@ -74,12 +82,35 @@ export function PolicyPage() {
   const [filterRoleId, setFilterRoleId] = useState('')
   const [importOpen, setImportOpen] = useState(false)
   const [policyCurrency, setPolicyCurrency] = useState('USD')
+  const [policyDocOpen, setPolicyDocOpen] = useState(false)
+  const [reviewImportId, setReviewImportId] = useState<string | null>(null)
   const [confirmDeactivate, setConfirmDeactivate] = useState<PolicyRule | null>(null)
+
+  const handlePolicyDocReady = useCallback((preview: import('@/types').PolicyDocumentPreviewResponse) => {
+    setReviewImportId(preview.import.id)
+    setPolicyDocOpen(true)
+    toast.success('Policy document extracted. Review the extracted rules.')
+  }, [])
+
+  const handlePolicyDocFailed = useCallback((_importId: string, message: string) => {
+    toast.error(message)
+  }, [])
+
+  const { job: policyDocJob, setJob: setPolicyDocJob } = usePersistedPolicyDocumentImportJob({
+    onReady: handlePolicyDocReady,
+    onFailed: handlePolicyDocFailed,
+  })
+
+  const [policyVersions, setPolicyVersions] = useState<PolicyVersion[]>([])
+  const [confirmPolicyVersionAction, setConfirmPolicyVersionAction] = useState<null | {
+    mode: 'activate' | 'archive' | 'delete'
+    versionId: string
+  }>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [rulesRes, financeRes, rolesRes] = await Promise.all([
+      const [rulesRes, financeRes, rolesRes, versionsRes] = await Promise.all([
         listPolicyRules({
           page,
           search: search || undefined,
@@ -87,11 +118,17 @@ export function PolicyPage() {
         }),
         getFinanceSettings().catch(() => null),
         listCompanyRoles(),
+        listPolicyVersions().catch(() => null),
       ])
       setRules(rulesRes.data.results)
       setTotalPages(rulesRes.data.total_pages)
       setTotalCount(rulesRes.data.count)
       setRoles(rolesRes.data.results.filter((role) => role.is_active !== false))
+      if (versionsRes?.data) {
+        setPolicyVersions(versionsRes.data.results)
+      } else {
+        setPolicyVersions([])
+      }
       if (financeRes?.data.settings) {
         setPolicyCurrency(financeCurrencyCode(financeRes.data.settings))
       }
@@ -99,6 +136,7 @@ export function PolicyPage() {
       setRules([])
       setTotalPages(1)
       setTotalCount(0)
+      setPolicyVersions([])
     } finally {
       setLoading(false)
     }
@@ -222,6 +260,34 @@ export function PolicyPage() {
     setConfirmDeactivate(rule)
   }
 
+  const handlePolicyVersionAction = async (
+    mode: 'activate' | 'archive' | 'delete',
+    versionId: string,
+  ) => {
+    setSaving(true)
+    setError('')
+    try {
+      if (mode === 'activate') {
+        await activatePolicyVersion(versionId)
+        toast.success('Policy version activated.')
+      } else if (mode === 'archive') {
+        await archivePolicyVersion(versionId)
+        toast.success('Policy version archived.')
+      } else {
+        const res = await deleteDraftPolicyVersion(versionId)
+        toast.success(res.data.message || 'Draft policy version deleted.')
+      }
+      setConfirmPolicyVersionAction(null)
+      await load()
+    } catch (err) {
+      const message = getApiErrorMessage(err)
+      setError(message)
+      toast.error(message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const activeRules = rules.filter((r) => r.is_active !== false)
   const inactiveRules = rules.filter((r) => r.is_active === false)
 
@@ -252,12 +318,6 @@ export function PolicyPage() {
             Initialize Company Policy
             <img src={AssignIcon} alt="Assign" className="w-6 h-6" />
           </Button>
-          <PolicyToolsPanel
-                roles={roles}
-                currency={policyCurrency}
-                disabled={saving}
-                onCopied={load}
-              />
           <AdminBulkActions
             onImport={() => setImportOpen(true)}
             onDownloadTemplate={downloadPolicyRulesTemplate}
@@ -267,11 +327,69 @@ export function PolicyPage() {
             Add Policy Rules
             <img src={UploadIcon} alt="Upload" className="w-6 h-6" />
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={saving}
+            onClick={() => setPolicyDocOpen(true)}
+          >
+            <FileUp className="h-4 w-4" />
+            Import Policy Document
+          </Button>
+          <PolicyToolsPanel roles={roles} currency={policyCurrency} disabled={saving} onCopied={load} />
         </div>
       }
     >
       {error && !open && !editOpen && (
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      )}
+
+      {policyDocJob?.status === 'PROCESSING' && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          <p>
+            Extracting policy rules from <span className="font-medium">{policyDocJob.filename}</span> in the
+            background…
+          </p>
+        </div>
+      )}
+
+      {policyDocJob?.status === 'REVIEW_REQUIRED' && !policyDocOpen && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p>
+            Policy document <span className="font-medium">{policyDocJob.filename}</span> is ready for review.
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              setReviewImportId(policyDocJob.importId)
+              setPolicyDocOpen(true)
+            }}
+          >
+            Review import
+          </Button>
+        </div>
+      )}
+
+      {policyDocJob?.status === 'FAILED' && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <p>
+            Policy extraction failed
+            {policyDocJob.errorMessage ? `: ${policyDocJob.errorMessage}` : '.'}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setPolicyDocJob(null)
+              setReviewImportId(null)
+              setPolicyDocOpen(true)
+            }}
+          >
+            Retry upload
+          </Button>
+        </div>
       )}
 
       <AdminListPanel
@@ -305,7 +423,6 @@ export function PolicyPage() {
                   </option>
                 ))}
               </select>
-
             </div>
           </div>
         }
@@ -338,6 +455,83 @@ export function PolicyPage() {
           onPageChange={setPage}
           disabled={saving}
         />
+      </AdminListPanel>
+
+      <AdminListPanel
+        title="Policy Versions"
+        count={policyVersions.length}
+        description="Drafts and active policy versions created from policy document imports."
+      >
+        {policyVersions.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-gray-400 sm:px-6">No policy versions yet.</p>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {policyVersions.map((version) => {
+              const status = String(version.status ?? '').toUpperCase()
+              const isDraft = status === 'DRAFT'
+              const isArchived = status === 'ARCHIVED'
+              return (
+                <div
+                  key={version.id}
+                  className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 sm:px-6"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-gray-900">
+                      {version.title} <span className="text-gray-500">· v{version.version_number}</span>
+                    </p>
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      {status}
+                      {version.is_active ? ' · Active' : ''}
+                      {version.activated_at ? ` · ${new Date(version.activated_at).toLocaleDateString('en-US')}` : ''}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {!version.is_active && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={saving}
+                        onClick={() =>
+                          setConfirmPolicyVersionAction({ mode: 'activate', versionId: version.id })
+                        }
+                      >
+                        Activate
+                      </Button>
+                    )}
+                    {!isArchived && !version.is_active && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        disabled={saving}
+                        onClick={() =>
+                          setConfirmPolicyVersionAction({ mode: 'archive', versionId: version.id })
+                        }
+                      >
+                        Archive
+                      </Button>
+                    )}
+                    {isDraft && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        disabled={saving}
+                        onClick={() =>
+                          setConfirmPolicyVersionAction({ mode: 'delete', versionId: version.id })
+                        }
+                      >
+                        Delete
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </AdminListPanel>
 
       {inactiveRules.length > 0 && (
@@ -495,6 +689,55 @@ export function PolicyPage() {
         confirmLabel="Deactivate"
         onConfirm={() => confirmDeactivate && toggleRule(confirmDeactivate)}
         loading={saving}
+      />
+
+      <AdminConfirmDialog
+        open={Boolean(confirmPolicyVersionAction)}
+        onOpenChange={(next) => !next && setConfirmPolicyVersionAction(null)}
+        title={
+          confirmPolicyVersionAction?.mode === 'activate'
+            ? 'Activate policy version'
+            : confirmPolicyVersionAction?.mode === 'archive'
+              ? 'Archive policy version'
+              : 'Delete draft policy version'
+        }
+        description={
+          confirmPolicyVersionAction
+            ? `${confirmPolicyVersionAction.mode === 'activate' ? 'Activate' : confirmPolicyVersionAction.mode === 'archive' ? 'Archive' : 'Delete'} "${policyVersions.find((v) => v.id === confirmPolicyVersionAction.versionId)?.title ?? 'this version'}"?`
+            : 'Are you sure?'
+        }
+        confirmLabel={
+          confirmPolicyVersionAction?.mode === 'activate'
+            ? 'Activate'
+            : confirmPolicyVersionAction?.mode === 'archive'
+              ? 'Archive'
+              : 'Delete'
+        }
+        onConfirm={() => {
+          if (!confirmPolicyVersionAction) return
+          handlePolicyVersionAction(confirmPolicyVersionAction.mode, confirmPolicyVersionAction.versionId)
+        }}
+        loading={saving}
+      />
+
+      <PolicyDocumentImportDialog
+        open={policyDocOpen}
+        onOpenChange={(next) => {
+          setPolicyDocOpen(next)
+          if (!next) setReviewImportId(null)
+        }}
+        reviewImportId={reviewImportId}
+        onUploadQueued={(importId, filename) => {
+          setPolicyDocJob({ importId, filename, status: 'PROCESSING' })
+          setReviewImportId(null)
+          toast.success('Document uploaded. Extracting policy rules in the background.')
+        }}
+        onImported={() => {
+          setPolicyDocJob(null)
+          setReviewImportId(null)
+          load()
+        }}
+        disabled={saving}
       />
 
       <CsvImportDialog

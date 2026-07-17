@@ -3808,63 +3808,13 @@ from .models import (
     PolicyDocumentImport,
 )
 
-from .policy_document_service import (
-    extract_policy_document,
+from .policy_document_tasks import (
+    enqueue_policy_document_processing,
 )
-
 from .policy_document_importer import (
     import_policy_document_preview,
 )
-def classify_policy_extraction_error(error_message):
 
-    message = str(
-        error_message or ""
-    ).lower()
-
-    if "api key" in message:
-        return "GEMINI_API_KEY_ERROR"
-
-    if (
-        "404" in message
-        or "model not found" in message
-        or "not found" in message
-    ):
-        return "GEMINI_MODEL_NOT_FOUND"
-
-    if (
-        "429" in message
-        or "quota" in message
-        or "rate limit" in message
-    ):
-        return "GEMINI_RATE_LIMIT"
-
-    if (
-        "timeout" in message
-        or "timed out" in message
-    ):
-        return "GEMINI_TIMEOUT"
-
-    if (
-        "json" in message
-        or "schema" in message
-        or "validation" in message
-    ):
-        return "AI_RESPONSE_VALIDATION_ERROR"
-
-    if (
-        "unsupported" in message
-        or "mime" in message
-        or "file type" in message
-    ):
-        return "UNSUPPORTED_FILE"
-
-    if (
-        "empty" in message
-        or "no readable content" in message
-    ):
-        return "UNREADABLE_DOCUMENT"
-
-    return "POLICY_EXTRACTION_FAILED"
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def upload_policy_document(request):
@@ -3898,279 +3848,24 @@ def upload_policy_document(request):
         uploaded_by=profile,
         document=uploaded_file,
         original_filename=uploaded_file.name,
-        status=PolicyDocumentImport.STATUS_UPLOADED,
+        status=PolicyDocumentImport.STATUS_PROCESSING,
     )
 
-    try:
+    enqueue_policy_document_processing(str(import_record.id))
 
-        # ---------------------------------------------
-        # Processing
-        # ---------------------------------------------
-
-        import_record.status = (
-            PolicyDocumentImport.STATUS_PROCESSING
-        )
-
-        import_record.error_message = None
-
-        import_record.save(
-            update_fields=[
-                "status",
-                "error_message",
-                "updated_at",
-            ]
-        )
-
-        # ---------------------------------------------
-        # AI Extraction
-        # ---------------------------------------------
-
-        result = extract_policy_document(
-            uploaded_file=uploaded_file,
-            company=profile.company,
-        )
-
-        # ---------------------------------------------
-        # Extraction Failed
-        # ---------------------------------------------
-
-        if not result.get("success"):
-
-            error_message = (
-                result.get("error")
-                or "Policy extraction failed."
-            )
-
-            validation_errors = (
-                result.get(
-                    "validation_errors",
-                    []
-                )
-            )
-
-            import_record.status = (
-                PolicyDocumentImport.STATUS_FAILED
-            )
-
-            import_record.error_message = (
-                error_message
-            )
-
-            import_record.warnings = (
-                validation_errors
-            )
-
-            import_record.save(
-                update_fields=[
-                    "status",
-                    "error_message",
-                    "warnings",
-                    "updated_at",
-                ]
-            )
-
-            create_audit_log(
-                company=profile.company,
-                action="AI_POLICY_DOCUMENT_EXTRACTION_FAILED",
-                action_by=profile,
-                message=(
-                    f"AI extraction failed for "
-                    f"{uploaded_file.name}"
-                ),
-                metadata={
-                    "import_id": str(import_record.id),
-                    "filename": uploaded_file.name,
-                    "error": error_message,
-                    "validation_errors": validation_errors,
-                    "status": import_record.status,
-                },
-            )
-
-            return Response(
-                {
-                    "success": False,
-                    "message": "Policy extraction failed.",
-                    "error": error_message,
-                    "error_code": classify_policy_extraction_error(
-                        error_message
-                    ),
-                    "import_id": str(import_record.id),
-                    "status": import_record.status,
-                    "validation_errors": validation_errors,
-                },
-                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            )
-
-        # ---------------------------------------------
-        # Success
-        # ---------------------------------------------
-
-        preview = result["preview"]
-        import json
-
-        print("=" * 80)
-        print("AI EXTRACTED PREVIEW")
-        print("=" * 80)
-
-        print(
-        json.dumps(
-        preview,
-        indent=4,
-        ensure_ascii=False,
-        default=str,
+    return Response(
+        {
+            "success": True,
+            "message": (
+                "Policy document uploaded. "
+                "Extraction and validation started in the background."
+            ),
+            "import_id": str(import_record.id),
+            "status": import_record.status,
+            "preview": {},
+        },
+        status=status.HTTP_202_ACCEPTED,
     )
-)
-
-        print("=" * 80)
-
-        warnings = preview.get(
-            "warnings",
-            [],
-        )
-
-        conflicts = preview.get(
-            "conflicts",
-            [],
-        )
-
-        import_record.extracted_json = preview
-        import_record.warnings = warnings
-        import_record.conflicts = conflicts
-        import_record.error_message = None
-
-        if (
-            preview.get(
-                "rules_requiring_review",
-                0,
-            ) > 0
-            or warnings
-            or conflicts
-        ):
-            import_record.status = (
-                PolicyDocumentImport.STATUS_REVIEW_REQUIRED
-            )
-
-        else:
-            import_record.status = (
-                PolicyDocumentImport.STATUS_IMPORTED
-            )
-
-        import_record.save(
-            update_fields=[
-                "extracted_json",
-                "warnings",
-                "conflicts",
-                "error_message",
-                "status",
-                "updated_at",
-            ]
-        )
-
-        create_audit_log(
-            company=profile.company,
-            action="AI_POLICY_DOCUMENT_EXTRACTED",
-            action_by=profile,
-            message=(
-                f"Policy document "
-                f"{uploaded_file.name} extracted successfully."
-            ),
-            metadata={
-                "import_id": str(import_record.id),
-                "filename": uploaded_file.name,
-                "status": import_record.status,
-                "rules_found": preview.get(
-                    "rules_found",
-                    0,
-                ),
-                "rules_requiring_review": preview.get(
-                    "rules_requiring_review",
-                    0,
-                ),
-                "warning_count": len(
-                    warnings
-                ),
-                "conflict_count": len(
-                    conflicts
-                ),
-                "document_language": preview.get(
-                    "document_language"
-                ),
-                "output_language": preview.get(
-                    "output_language"
-                ),
-                "policy_currency": preview.get(
-                    "policy_currency"
-                ),
-                "ai_model": preview.get(
-                    "ai_model"
-                ),
-            },
-        )
-
-        return Response(
-            {
-                "success": True,
-                "message": (
-                    "Policy document extracted successfully."
-                ),
-                "import_id": str(import_record.id),
-                "status": import_record.status,
-                "preview": preview,
-            },
-            status=status.HTTP_201_CREATED,
-        )
-
-    except Exception as exc:
-
-        error_message = str(exc)
-
-        import_record.status = (
-            PolicyDocumentImport.STATUS_FAILED
-        )
-
-        import_record.error_message = (
-            error_message
-        )
-
-        import_record.save(
-            update_fields=[
-                "status",
-                "error_message",
-                "updated_at",
-            ]
-        )
-
-        create_audit_log(
-            company=profile.company,
-            action="AI_POLICY_DOCUMENT_EXTRACTION_FAILED",
-            action_by=profile,
-            message=(
-                f"Unexpected error while extracting "
-                f"{uploaded_file.name}"
-            ),
-            metadata={
-                "import_id": str(import_record.id),
-                "filename": uploaded_file.name,
-                "error": error_message,
-                "status": import_record.status,
-            },
-        )
-
-        return Response(
-            {
-                "success": False,
-                "message": (
-                    "Unexpected error while processing the policy document."
-                ),
-                "error": error_message,
-                "error_code": classify_policy_extraction_error(
-                    error_message
-                ),
-                "import_id": str(import_record.id),
-                "status": import_record.status,
-            },
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])

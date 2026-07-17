@@ -22,6 +22,12 @@ import type {
   PolicyPreviewResponse,
   PolicySimulateResponse,
   PolicyCopyResponse,
+  PolicyDocumentUploadResponse,
+  PolicyDocumentPreviewResponse,
+  PolicyDocumentUpdatePreviewResponse,
+  PolicyDocumentRevalidateResponse,
+  PolicyDocumentConfirmImportResponse,
+  PolicyVersionsListResponse,
   WorkflowSimulateResponse,
   PlatformEmailServiceResponse,
   ReimbursementEmailConfigResponse,
@@ -267,6 +273,97 @@ export const copyRolePolicy = (data: {
   to_role: number
   overwrite_existing?: boolean
 }) => api.post<PolicyCopyResponse>('/tenants/policy/copy/', data)
+
+// Policy document import (PDF/DOCX/TXT/etc.)
+// Upload returns quickly; AI extraction + validation run in a background job.
+export const uploadPolicyDocument = (
+  file: File,
+  onUploadProgress?: (percent: number) => void,
+) => {
+  const formData = new FormData()
+  formData.append('document', file)
+
+  return api.post<PolicyDocumentUploadResponse>(
+    '/tenants/policy/document/upload/',
+    formData,
+    {
+      timeout: 5 * 60 * 1000,
+      onUploadProgress: (event) => {
+        if (!onUploadProgress || !event.total) return
+        onUploadProgress(Math.round((event.loaded / event.total) * 100))
+      },
+    },
+  )
+}
+
+export const getPolicyDocumentPreview = (importId: string) =>
+  api.get<PolicyDocumentPreviewResponse>(
+    `/tenants/policy/document/${importId}/preview/`,
+  )
+
+export const updatePolicyDocumentPreview = (
+  importId: string,
+  data: {
+    policy_name?: string
+    policy_version?: string
+    effective_date?: string
+    expiry_date?: string
+    policy_currency?: string
+    document_summary?: string
+    document_summary_original_language?: string
+    document_level_conditions?: string[]
+    document_level_conditions_original_language?: string[]
+    rules?: unknown[]
+  },
+) => api.patch<PolicyDocumentUpdatePreviewResponse>(
+  `/tenants/policy/document/${importId}/preview/update/`,
+  data,
+)
+
+export const revalidatePolicyDocumentPreview = (importId: string) =>
+  api.post<PolicyDocumentRevalidateResponse>(
+    `/tenants/policy/document/${importId}/preview/revalidate/`,
+    {},
+  )
+
+export const confirmPolicyDocumentImport = (
+  importId: string,
+  data: {
+    overwrite_existing?: boolean
+    allow_review_required?: boolean
+  },
+) =>
+  api.post<PolicyDocumentConfirmImportResponse>(
+    `/tenants/policy/document/${importId}/confirm/`,
+    data,
+  )
+
+// Policy versions
+export const createPolicyVersion = (data: {
+  title: string
+  description?: string
+  copy_active_rules?: boolean
+}) => api.post('/tenants/policy/versions/create/', data)
+
+export const listPolicyVersions = (params?: {
+  status?: 'DRAFT' | 'ACTIVE' | 'ARCHIVED'
+  is_active?: boolean
+}) =>
+  api.get<PolicyVersionsListResponse>('/tenants/policy/versions/', {
+    params,
+  })
+
+export const activatePolicyVersion = (versionId: string) =>
+  api.patch(`/tenants/policy/versions/${versionId}/activate/`)
+
+export const archivePolicyVersion = (versionId: string) =>
+  api.patch(`/tenants/policy/versions/${versionId}/archive/`)
+
+export const deleteDraftPolicyVersion = (versionId: string) =>
+  api.delete<{
+    success: boolean
+    message: string
+  }>(`/tenants/policy/versions/${versionId}/delete/`)
 
 export const getReimbursementEmailConfig = () =>
   api.get<ReimbursementEmailConfigResponse>('/tenants/reimbursement-email/')

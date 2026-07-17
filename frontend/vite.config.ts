@@ -15,6 +15,9 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
+        // Policy document upload runs synchronous AI extraction (can take several minutes).
+        timeout: 10 * 60 * 1000,
+        proxyTimeout: 10 * 60 * 1000,
       },
       '/receipts': {
         target: 'http://127.0.0.1:8000',

@@ -208,6 +208,110 @@ export interface PolicyCopyResponse {
   overwrite_existing: boolean
 }
 
+export type PolicyDocumentImportStatus =
+  | 'UPLOADED'
+  | 'PROCESSING'
+  | 'REVIEW_REQUIRED'
+  | 'IMPORTED'
+  | 'FAILED'
+
+export interface PolicyDocumentUploadResponse {
+  success: boolean
+  message: string
+  import_id: string
+  status: PolicyDocumentImportStatus
+  preview: Record<string, unknown>
+}
+
+export interface PolicyDocumentImportRecord {
+  id: string
+  filename: string
+  status: PolicyDocumentImportStatus
+  uploaded_by?: string | null
+  error_message?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface PolicyDocumentPreviewResponse {
+  import: PolicyDocumentImportRecord
+  preview: Record<string, unknown>
+  warnings: unknown[]
+  conflicts: unknown[]
+}
+
+export interface PolicyDocumentUpdatePreviewResponse {
+  message: string
+  import_id: string
+  status: PolicyDocumentImportStatus
+  preview: Record<string, unknown>
+}
+
+export interface PolicyDocumentRevalidateResponse {
+  message: string
+  import_id: string
+  status: PolicyDocumentImportStatus
+  is_valid_for_import: boolean
+  validation_error_count: number
+  warning_count: number
+  conflict_count: number
+  preview: Record<string, unknown>
+}
+
+export interface PolicyDocumentConfirmImportResponse {
+  success: boolean
+  message: string
+  import_id: string
+  policy_id: string
+  policy_version: {
+    id: string
+    version_number: number
+    title: string
+    status: string
+    is_active: boolean
+    activated_at?: string | null
+  }
+  previous_version: {
+    id: string
+    version_number: number
+    status: string
+    is_active: boolean
+  } | null
+  status: PolicyDocumentImportStatus
+  summary: {
+    created: number
+    updated: number
+    unchanged?: number
+    skipped: number
+    failed: number
+    non_monetary_skipped?: number
+    duplicates_skipped?: number
+    review_required_skipped?: number
+    processed?: number
+    cloned_from_previous_version?: number
+    total_rules_in_new_version?: number
+  }
+  warnings: unknown[]
+  errors: unknown[]
+  rules: unknown[]
+}
+
+export interface PolicyVersion {
+  id: string
+  version_number: number
+  title: string
+  description?: string
+  status: string
+  is_active?: boolean
+  activated_at?: string | null
+}
+
+export interface PolicyVersionsListResponse {
+  count: number
+  active_version: PolicyVersion | null
+  results: PolicyVersion[]
+}
+
 export interface WorkflowSimulateStep {
   step_order: number
   status: string

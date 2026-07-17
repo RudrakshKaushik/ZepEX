@@ -28,6 +28,9 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Token ${token}`
   }
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type']
+  }
   return config
 })
 
@@ -86,6 +89,12 @@ export function getApiErrorMessage(error: unknown): string {
         if (Array.isArray(val)) return String(val[0])
         return String(val)
       }
+    }
+    if (error.code === 'ECONNABORTED') {
+      return 'Request timed out. Policy extraction can take several minutes — please try again and keep this tab active.'
+    }
+    if (error.message?.includes('Network Error') || error.message?.includes('ERR_NETWORK')) {
+      return 'Network connection was interrupted. Keep this tab open while the document is being extracted (this can take a few minutes).'
     }
     return error.message
   }

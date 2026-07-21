@@ -1,9 +1,10 @@
 import axios from 'axios'
+import { getApiBaseUrl } from '@/lib/backendUrl'
 
 const TOKEN_KEY = 'zepex_token'
 
 export const api = axios.create({
-  baseURL: '/api',
+  baseURL: getApiBaseUrl(),
   headers: {
     'Content-Type': 'application/json',
   },

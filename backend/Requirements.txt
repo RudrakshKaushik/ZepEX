@@ -1,5 +1,7 @@
 django
 gunicorn
+requests
+django-anymail
 djangorestframework
 dj-database-url
 psycopg2-binary

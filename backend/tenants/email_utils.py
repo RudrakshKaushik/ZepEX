@@ -22,13 +22,7 @@ def _send_with_connection(
             "error": "No recipient email provided."
         }
 
-    connection = get_connection(
-        host=settings.EMAIL_HOST,
-        port=settings.EMAIL_PORT,
-        username=settings.EMAIL_HOST_USER,
-        password=settings.EMAIL_HOST_PASSWORD,
-        use_tls=settings.EMAIL_USE_TLS,
-    )
+    connection = get_connection()
 
     email_message = EmailMultiAlternatives(
         subject=subject,

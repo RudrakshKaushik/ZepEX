@@ -35,6 +35,8 @@ if not SECRET_KEY:
 
 DEBUG = os.getenv("DJANGO_DEBUG", "False") == "True"
 
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
+
 ALLOWED_HOSTS = _env_list(
     "DJANGO_ALLOWED_HOSTS",
     "127.0.0.1,localhost",
@@ -58,6 +60,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'corsheaders',
     'django_celery_beat',
+    'anymail',
 
     # Project Apps
     'platform_management',
@@ -252,11 +255,6 @@ CSRF_TRUSTED_ORIGINS = _local_dev_origins + _env_list("DJANGO_CSRF_TRUSTED_ORIGI
 # EMAIL CONFIG
 # --------------------------------------------------
 
-EMAIL_BACKEND = os.getenv(
-    "EMAIL_BACKEND",
-    "django.core.mail.backends.smtp.EmailBackend"
-)
-
 EMAIL_HOST = os.getenv("EMAIL_HOST") or os.getenv("SMTP_HOST")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT") or os.getenv("SMTP_PORT") or 587)
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER") or os.getenv("SMTP_USER")
@@ -271,6 +269,32 @@ if _email_use_tls is None:
     EMAIL_USE_TLS = smtp_secure not in ("true", "1", "yes")
 else:
     EMAIL_USE_TLS = _email_use_tls.strip().lower() in ("true", "1", "yes")
+
+EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
+
+EMAIL_BACKEND = None
+ANYMAIL = {}
+
+match ENVIRONMENT:
+    case "testing":
+        # Render / staging — Resend (SMTP blocked on most PaaS hosts)
+        EMAIL_BACKEND = "anymail.backends.resend.EmailBackend"
+        ANYMAIL = {
+            "RESEND_API_KEY": os.getenv("RESEND_API_KEY", ""),
+        }
+    case "development" | "local":
+        # Local machine — Gmail SMTP
+        EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    case "production":
+        # Not configured yet — set EMAIL_BACKEND when ready
+        pass
+    case _:
+        EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+
+if os.getenv("EMAIL_BACKEND"):
+    EMAIL_BACKEND = os.getenv("EMAIL_BACKEND")
+elif EMAIL_BACKEND is None:
+    EMAIL_BACKEND = "django.core.mail.backends.dummy.EmailBackend"
 
 
 

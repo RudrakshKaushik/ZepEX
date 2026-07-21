@@ -1001,6 +1001,19 @@ from tenants.email_utils import send_company_registration_otp
 @authentication_classes([])
 @permission_classes([AllowAny])
 def request_company_registration_otp(request):
+    try:
+        return _request_company_registration_otp(request)
+    except Exception as exc:
+        return Response(
+            {
+                "success": False,
+                "error": str(exc),
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+def _request_company_registration_otp(request):
 
     admin_email = request.data.get("admin_email", "").lower().strip()
     company_name = request.data.get("company_name", "").strip()

@@ -1061,6 +1061,7 @@ def request_company_registration_otp(request):
         )
 
     otp = str(random.randint(100000, 999999))
+    reimbursement_email = f"expenses@{company_domain}"
 
     company_request, created = CompanyRegistrationRequest.objects.get_or_create(
         admin_email=admin_email,
@@ -1069,6 +1070,7 @@ def request_company_registration_otp(request):
             "company_domain": company_domain,
             "admin_name": admin_name,
             "expected_employee_count": expected_employee_count,
+            "reimbursement_email": reimbursement_email,
         }
     )
 
@@ -1083,6 +1085,8 @@ def request_company_registration_otp(request):
         company_request.company_domain = company_domain
         company_request.admin_name = admin_name
         company_request.expected_employee_count = expected_employee_count
+        if not company_request.reimbursement_email:
+            company_request.reimbursement_email = reimbursement_email
 
     company_request.otp = otp
     company_request.otp_expires_at = timezone.now() + timedelta(minutes=10)

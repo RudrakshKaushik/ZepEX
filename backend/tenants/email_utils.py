@@ -126,10 +126,16 @@ def send_company_registration_otp(email, otp):
 
     text_content = strip_tags(html_content)
 
-    return _send_with_connection(
-        subject="Verify your company registration - ZepEx",
-        text_content=text_content,
-        html_content=html_content,
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        to_emails=[email],
-    )
+    try:
+        return _send_with_connection(
+            subject="Verify your company registration - ZepEx",
+            text_content=text_content,
+            html_content=html_content,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to_emails=[email],
+        )
+    except Exception as exc:
+        return {
+            "success": False,
+            "error": str(exc),
+        }

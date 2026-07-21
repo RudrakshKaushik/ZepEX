@@ -312,4 +312,4 @@ def validate_policy_json(policy_json):
             )
         )
 
-    return errorss
+    return errors

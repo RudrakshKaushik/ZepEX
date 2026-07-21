@@ -35,10 +35,10 @@ if not SECRET_KEY:
 
 DEBUG = os.getenv("DJANGO_DEBUG", "False") == "True"
 
-ALLOWED_HOSTS = os.getenv(
+ALLOWED_HOSTS = _env_list(
     "DJANGO_ALLOWED_HOSTS",
-    "127.0.0.1,localhost"
-).split(",")
+    "127.0.0.1,localhost",
+)
 
 # --------------------------------------------------
 # APPLICATIONS
@@ -235,21 +235,18 @@ CELERY_TASK_EAGER_PROPAGATES = True
 # CORS
 # --------------------------------------------------
 
-CORS_ALLOWED_ORIGINS = [
+_local_dev_origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
+
+CORS_ALLOWED_ORIGINS = _local_dev_origins + _env_list("DJANGO_CORS_ALLOWED_ORIGINS")
 
 CORS_ALLOW_CREDENTIALS = True
 
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
+CSRF_TRUSTED_ORIGINS = _local_dev_origins + _env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
 
 # --------------------------------------------------
 # EMAIL CONFIG

@@ -6,7 +6,7 @@ from django.db import transaction
 from audit_logs.utils import create_audit_log
 
 from .models import ExpenseReceipt
-from .services import extract_receipt_with_gemini
+from .services import _apply_ai_failure, extract_receipt_with_gemini
 
 
 logger = logging.getLogger(__name__)
@@ -64,6 +64,12 @@ def _run_receipt_ai_with_audit(
 
     except Exception as exc:
         logger.exception("Receipt AI processing failed.")
+
+        try:
+            receipt = ExpenseReceipt.objects.get(id=receipt_id)
+            _apply_ai_failure(receipt, str(exc))
+        except ExpenseReceipt.DoesNotExist:
+            pass
 
         create_audit_log(
             company=company,

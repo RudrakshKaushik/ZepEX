@@ -16,3 +16,4 @@ oracledb
 google-genai
 pydantic
 python-docx
+email-validator

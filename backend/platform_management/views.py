@@ -14,16 +14,7 @@ from tenants.models import Company, UserProfile
 from django.contrib.auth.models import User
 from tenants.permissions import IsCompanyAdmin
 from tenants.models import Company
-from rest_framework.decorators import (
-    api_view,
-    permission_classes
-)
-
-from rest_framework.permissions import IsAuthenticated
-
-from rest_framework.response import Response
-
-from rest_framework import status
+# decorators, permissions, response and status already imported above
 
 from django.core.paginator import Paginator
 from django.db.models import Q
@@ -57,6 +48,10 @@ from platform_management.email_service import (
     send_company_rejected_email,
 )
 
+from platform_management.domain_validator import (
+    validate_company_email_domain,
+)
+
 @api_view(["POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
@@ -78,6 +73,34 @@ def create_company_request(request):
             )
 
     admin_email = request.data.get("admin_email", "").lower().strip()
+    # =====================================================
+    # Validate company email domain
+    # =====================================================
+
+    if settings.CHECK_COMPANY_DOMAIN_AUTHENTICITY:
+
+        is_valid, error = (
+            validate_company_email_domain(
+                admin_email
+            )
+        )
+
+        if not is_valid:
+
+            return Response(
+                {
+                    "success": False,
+                    "error": (
+                        "The company email domain "
+                        "could not be verified."
+                    ),
+                    "details": error,
+                    "error_code": (
+                        "INVALID_COMPANY_EMAIL_DOMAIN"
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
     otp = request.data.get("otp", "").strip()
 
     try:

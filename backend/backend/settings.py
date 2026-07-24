@@ -361,3 +361,11 @@ GEMINI_POLICY_MODEL = os.getenv(
 
 # API Base URL
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+
+VERIFY_COMPANY_EMAIL_DOMAIN = (
+    os.getenv(
+        "VERIFY_COMPANY_EMAIL_DOMAIN",
+        "False",
+    ).lower()
+    == "true"
+)

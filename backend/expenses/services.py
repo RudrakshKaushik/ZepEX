@@ -933,18 +933,12 @@ Return exactly this JSON structure:
       ],
 
       "taxes":[
-
-{
-
-"type":"GST",
-
-"percentage":18,
-
-"amount":120
-
-}
-
-],
+        {{
+          "type": "GST",
+          "percentage": 18,
+          "amount": 120
+        }}
+      ],
 
       "subtotal": null,
       "discount": null,
@@ -959,15 +953,12 @@ Return exactly this JSON structure:
 
       "extraction_notes": "",
 
-      "confidence": {{"translation":{
-
-"source_language":"",
-
-"target_language":"",
-
-"confidence":0.0
-
-},
+      "confidence": {{
+        "translation": {{
+          "source_language": "",
+          "target_language": "",
+          "confidence": 0.0
+        }},
         "overall": 0.0,
         "vendor": 0.0,
         "amount": 0.0,
@@ -975,54 +966,37 @@ Return exactly this JSON structure:
         "bill_date": 0.0,
         "category": 0.0,
         "translation": 0.0
+      }},
+      "receipt_quality": {{
+        "score": 0.0,
+        "status": "",
+        "issues": []
       }}
-      "receipt_quality": {
-    "score": 0.0,
-    "status": "",
-    "issues": []
-    },
     }}
-    "fraud_analysis":{
-
-"suspicious":false,
-
-"duplicate_probability":0.0,
-
-"edited_probability":0.0,
-
-"reasons":[]
-},
-"document_metadata":{
-
-"receipt_type":"",
-
-"page_count":1,
-
-"contains_handwriting":false,
-
-"contains_signature":false,
-
-"contains_stamp":false,
-
-"contains_qr":false,
-
-"contains_barcode":false
-
-},
-"payment":{
-
-"method":"",
-
-"card_last_four":"",
-
-"transaction_id":"",
-
-"reference_number":""
-
-},
-"review_notes":[]
-]
-"ocr_confidence":0.0
+  ],
+  "fraud_analysis": {{
+    "suspicious": false,
+    "duplicate_probability": 0.0,
+    "edited_probability": 0.0,
+    "reasons": []
+  }},
+  "document_metadata": {{
+    "receipt_type": "",
+    "page_count": 1,
+    "contains_handwriting": false,
+    "contains_signature": false,
+    "contains_stamp": false,
+    "contains_qr": false,
+    "contains_barcode": false
+  }},
+  "payment": {{
+    "method": "",
+    "card_last_four": "",
+    "transaction_id": "",
+    "reference_number": ""
+  }},
+  "review_notes": [],
+  "ocr_confidence": 0.0
 }}
 
 Return JSON only.
@@ -1598,25 +1572,7 @@ Do not return any explanation outside the JSON.
         # ====================================================
 
     except Exception as e:
-        receipt.status = ExpenseReceipt.STATUS_AI_FAILED
-        receipt.ai_status = ExpenseReceipt.AI_FAILED
-        receipt.ai_error_message = str(e)
-
-        receipt.save(
-            update_fields=[
-                "status",
-                "ai_status",
-                "ai_error_message",
-                "updated_at",
-            ]
-        )
-
-        return {
-            "success": False,
-            "receipt_id": str(receipt.id),
-            "ai_status": ExpenseReceipt.AI_FAILED,
-            "error": str(e),
-        }
+        return _apply_ai_failure(receipt, str(e))
 
     return {
     "success": True,

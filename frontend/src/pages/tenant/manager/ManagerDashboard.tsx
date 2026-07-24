@@ -14,7 +14,7 @@ import { buildManagerNav, canApproveExpense, canManageOwnExpenses, canMarkPaid }
 import { approvedReportsPath, pendingReportsPath } from '@/lib/reportQueuePaths'
 import { loadApprovedQueueReports, loadPendingQueueReports } from '@/lib/reportQueue'
 import type { ExpenseReport } from '@/types'
-import UploadIcon from '@/assets/Upload.png'
+import UploadIcon from '@/assets/upload.png'
 
 interface ApproverDashboardData {
   approver: {

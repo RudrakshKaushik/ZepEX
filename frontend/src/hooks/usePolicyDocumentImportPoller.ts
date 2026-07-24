@@ -29,13 +29,14 @@ export function usePolicyDocumentImportPoller(
   useEffect(() => {
     if (!job || job.status !== 'PROCESSING') return
 
+    const importId = job.importId
     let cancelled = false
     const started = Date.now()
 
     async function poll() {
       while (!cancelled && Date.now() - started < MAX_POLL_MS) {
         try {
-          const res = await getPolicyDocumentPreview(job.importId)
+          const res = await getPolicyDocumentPreview(importId)
           const status = res.data.import.status
 
           if (status === 'PROCESSING' || status === 'UPLOADED') {
@@ -45,7 +46,7 @@ export function usePolicyDocumentImportPoller(
 
           if (status === 'FAILED') {
             onFailed(
-              job.importId,
+              importId,
               res.data.import.error_message || 'Policy extraction failed.',
             )
             return
@@ -59,7 +60,7 @@ export function usePolicyDocumentImportPoller(
       }
 
       if (!cancelled) {
-        onFailed(job.importId, 'Policy extraction timed out. Please try again.')
+        onFailed(importId, 'Policy extraction timed out. Please try again.')
       }
     }
 

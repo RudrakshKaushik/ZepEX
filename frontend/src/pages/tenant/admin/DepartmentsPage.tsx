@@ -36,7 +36,7 @@ import type { DepartmentRecord, EmployeeRecord } from '@/types'
 import { fetchAllPages } from '@/lib/pagination'
 import { toast } from '@/lib/toast'
 import { formatDate } from '@/lib/utils'
-import UploadIcon from '@/assets/Upload.png'
+import UploadIcon from '@/assets/upload.png'
 
 const selectClassName =
   'flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm'

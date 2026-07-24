@@ -22,13 +22,7 @@ def _send_with_connection(
             "error": "No recipient email provided."
         }
 
-    connection = get_connection(
-        host=settings.EMAIL_HOST,
-        port=settings.EMAIL_PORT,
-        username=settings.EMAIL_HOST_USER,
-        password=settings.EMAIL_HOST_PASSWORD,
-        use_tls=settings.EMAIL_USE_TLS,
-    )
+    connection = get_connection()
 
     email_message = EmailMultiAlternatives(
         subject=subject,
@@ -126,10 +120,16 @@ def send_company_registration_otp(email, otp):
 
     text_content = strip_tags(html_content)
 
-    return _send_with_connection(
-        subject="Verify your company registration - ZepEx",
-        text_content=text_content,
-        html_content=html_content,
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        to_emails=[email],
-    )
+    try:
+        return _send_with_connection(
+            subject="Verify your company registration - ZepEx",
+            text_content=text_content,
+            html_content=html_content,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to_emails=[email],
+        )
+    except Exception as exc:
+        return {
+            "success": False,
+            "error": str(exc),
+        }

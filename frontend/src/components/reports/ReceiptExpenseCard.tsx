@@ -13,7 +13,6 @@ import {
   canRetryReceiptAi,
   isAiExtractionFailed,
   isAiExtractionPending,
-  receiptAiStatusLabel,
   receiptDisplayTitle,
 } from '@/lib/receiptAi'
 
@@ -115,16 +114,21 @@ export function ReceiptExpenseCard({
         </div>
       </header>
 
-      {(receipt.ai_status && receipt.ai_status !== 'AI_COMPLETED') || isAiExtractionPending(receipt) ? (
+      {isAiExtractionPending(receipt) ? (
         <div className="border-b border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900 sm:px-5">
           <div className="flex items-center gap-2 font-medium">
             <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
             </span>
-            {isAiExtractionPending(receipt)
-              ? 'Extracting vendor, amounts, and line items…'
-              : `${receiptAiStatusLabel(receipt.ai_status)}${receipt.ai_error_message ? ` — ${receipt.ai_error_message}` : ''}`}
+            Extracting vendor, amounts, and line items…
+          </div>
+        </div>
+      ) : isAiExtractionFailed(receipt) ? (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:px-5">
+          <div className="flex items-center gap-2 font-medium">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            {receipt.ai_error_message || 'AI extraction failed. Retry or upload a clearer receipt.'}
           </div>
         </div>
       ) : null}

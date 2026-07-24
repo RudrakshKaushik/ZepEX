@@ -15,7 +15,7 @@ import { DashboardPageShimmer } from '@/components/ui/shimmer'
 import { buildEmployeeNav } from '@/lib/rolePermissions'
 import { normalizeCurrentMonthReport } from '@/lib/expenseReport'
 import type { EmployeeDashboardResponse } from '@/types'
-import UploadIcon from '@/assets/Upload.png'
+import UploadIcon from '@/assets/upload.png'
 
 function normalizeDashboardCurrentReport(
   block: EmployeeDashboardResponse['current_month_report'],

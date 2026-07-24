@@ -51,7 +51,7 @@ import {
   type EmployeeExpenseFilters,
 } from '@/lib/reportFilters'
 import { toast } from '@/lib/toast'
-import UploadIcon from '@/assets/Upload.png'
+import UploadIcon from '@/assets/upload.png'
 
 function formatUploadError(message: string) {
   if (message.includes('company role is not assigned')) {

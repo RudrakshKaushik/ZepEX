@@ -1,3 +1,5 @@
+import { resolveBackendAssetUrl } from '@/lib/backendUrl'
+
 export function resolveMediaUrl(url: string | null | undefined): string | undefined {
   if (!url) return undefined
 
@@ -10,7 +12,7 @@ export function resolveMediaUrl(url: string | null | undefined): string | undefi
     try {
       const parsed = new URL(url)
       if (parsed.pathname.startsWith('/media/')) {
-        return parsed.pathname
+        return resolveBackendAssetUrl(parsed.pathname)
       }
     } catch {
       return url
@@ -18,7 +20,7 @@ export function resolveMediaUrl(url: string | null | undefined): string | undefi
     return url
   }
 
-  return url.startsWith('/') ? url : `/${url}`
+  return resolveBackendAssetUrl(url.startsWith('/') ? url : `/${url}`)
 }
 
 export function getUserInitial(
